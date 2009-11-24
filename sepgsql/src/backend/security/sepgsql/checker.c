@@ -120,8 +120,9 @@ sepgsql_check_relation_perms(uint32 required,
 	 */
 	if (sepgsql_get_enforce())
 	{
+
 		/*
-		 * SE-PgSQL prevents to modify system catalogs by hand.
+		 * SE-PgSQL prevents to modify system catalogs using DMLs.
 		 * It should be set up with regular DDL statements.
 		 */
 		if (IsSystemNamespace(get_rel_namespace(relOid)) &&
@@ -130,16 +131,16 @@ sepgsql_check_relation_perms(uint32 required,
 						 SEPG_DB_TABLE__DELETE)) != 0)
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("SE-PgSQL prevents to modify \"%s\" by hand",
+					 errmsg("SELinux: permission denied: \"%s\" is a system catalog",
 							get_rel_name(relOid))));
 		/*
-		 * SE-PgSQL prevents to access toast table by hand.
+		 * SE-PgSQL prevents to access toast table using DMLs.
 		 * It should be accesses using regular toast mechanism.
 		 */
 		if (get_rel_relkind(relOid) == RELKIND_TOASTVALUE)
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("SE-PgSQL prevents to access \"%s\" by hand",
+					 errmsg("SELinux: permission denied: \"%s\" is a toast relation",
 							get_rel_name(relOid))));
 	}
 

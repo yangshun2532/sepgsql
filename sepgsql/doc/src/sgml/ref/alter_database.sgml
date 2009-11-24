@@ -37,7 +37,7 @@ ALTER DATABASE <replaceable class="PARAMETER">name</replaceable> SET <replaceabl
 ALTER DATABASE <replaceable class="PARAMETER">name</replaceable> SET <replaceable>configuration_parameter</replaceable> FROM CURRENT
 ALTER DATABASE <replaceable class="PARAMETER">name</replaceable> RESET <replaceable>configuration_parameter</replaceable>
 ALTER DATABASE <replaceable class="PARAMETER">name</replaceable> RESET ALL
-ALTER DATABASE <replaceable class="PARAMETER">name</replaceable> SECURITY_CONTEXT TO <replaceable>new_security_context</replaceable>
+ALTER DATABASE <replaceable class="PARAMETER">name</replaceable> SECURITY CONTEXT TO <replaceable>new_security_context</replaceable>
 </synopsis>
  </refsynopsisdiv>
 
@@ -174,8 +174,8 @@ ALTER DATABASE <replaceable class="PARAMETER">name</replaceable> SECURITY_CONTEX
      <para>
       Relabel this database's security context by the given
       <replaceable>new_security_context</replaceable>.
-      This option is unavailable, unless SE-PostgreSQL is enabled.
-      See <xref linkend="sepostgresql"> for more details.
+      This option is unavailable, unless SELinux support is enabled.
+      See <xref linkend="selinux-support"> for more details.
      </para>
     </listitem>
    </varlistentry>

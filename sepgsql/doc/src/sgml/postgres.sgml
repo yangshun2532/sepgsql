@@ -150,7 +150,7 @@
   &config;
   &client-auth;
   &user-manag;
-  &sepgsql;
+  &selinux;
   &manage-ag;
   &charset;
   &maintenance;

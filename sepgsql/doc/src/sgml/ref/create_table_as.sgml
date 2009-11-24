@@ -26,7 +26,7 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } ] TABLE <replaceable>table_name
     [ WITH ( <replaceable class="PARAMETER">storage_parameter</replaceable> [= <replaceable class="PARAMETER">value</replaceable>] [, ... ] ) | WITH OIDS | WITHOUT OIDS ]
     [ ON COMMIT { PRESERVE ROWS | DELETE ROWS | DROP } ]
     [ TABLESPACE <replaceable class="PARAMETER">tablespace</replaceable> ]
-    [ SECURITY_CONTEXT [=] <replaceable class="PARAMETER">security_context</replaceable> ]
+    [ SECURITY CONTEXT <replaceable class="PARAMETER">security_context</replaceable> ]
     AS <replaceable>query</replaceable>
     [ WITH [ NO ] DATA ]
 </synopsis>
@@ -199,8 +199,8 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } ] TABLE <replaceable>table_name
      <para>
       An explicit security context to be assigned on the new table,
       instead of the default one.
-      This options is unavailable, unless SE-PostgreSQL is enabled.
-      See <xref linkend="sepostgresql"> for more details.
+      This options is unavailable, unless SELinux support is enabled.
+      See <xref linkend="selinux-support"> for more details.
      </para>
     </listitem>
    </varlistentry>

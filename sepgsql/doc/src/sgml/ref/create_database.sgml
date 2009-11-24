@@ -29,7 +29,7 @@ CREATE DATABASE <replaceable class="PARAMETER">name</replaceable>
            [ LC_CTYPE [=] <replaceable class="parameter">lc_ctype</replaceable> ]
            [ TABLESPACE [=] <replaceable class="parameter">tablespace</replaceable> ]
            [ CONNECTION LIMIT [=] <replaceable class="parameter">connlimit</replaceable> ]
-           [ SECURITY_CONTEXT [=] <replaceable class="parameter">security_context</replaceable> ] ]
+           [ SECURITY CONTEXT [=] <replaceable class="parameter">security_context</replaceable> ] ]
 </synopsis>
  </refsynopsisdiv>
 
@@ -168,10 +168,10 @@ CREATE DATABASE <replaceable class="PARAMETER">name</replaceable>
       <term><replaceable class="parameter">security_context</replaceable></term>
       <listitem>
        <para>
-	An explicit security context to be assigned on the new database,
-	instead of the default one.
-	This options is unavailable, unless SE-PostgreSQL is enabled.
-	See <xref linkend="sepostgresql"> for more details.
+        An explicit security context to be assigned on the new database,
+        instead of the default one.
+        This options is unavailable, unless SELinux support is enabled.
+        See <xref linkend="selinux-support"> for more details.
        </para>
       </listitem>
      </varlistentry>
