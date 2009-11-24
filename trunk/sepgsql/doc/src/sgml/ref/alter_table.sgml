@@ -30,7 +30,7 @@ ALTER TABLE <replaceable class="PARAMETER">name</replaceable>
 ALTER TABLE <replaceable class="PARAMETER">name</replaceable>
     SET SCHEMA <replaceable class="PARAMETER">new_schema</replaceable>
 ALTER TABLE <replaceable class="PARAMETER">name</replaceable>
-    SECURITY_CONTEXT TO <replaceable class="PARAMETER">new_security_context</replaceable>
+    SECURITY CONTEXT TO <replaceable class="PARAMETER">new_security_context</replaceable>
 
 <phrase>where <replaceable class="PARAMETER">action</replaceable> is one of:</phrase>
 
@@ -43,6 +43,7 @@ ALTER TABLE <replaceable class="PARAMETER">name</replaceable>
     ALTER [ COLUMN ] <replaceable class="PARAMETER">column</replaceable> SET STATISTICS <replaceable class="PARAMETER">integer</replaceable>
     ALTER [ COLUMN ] <replaceable class="PARAMETER">column</replaceable> SET STATISTICS DISTINCT <replaceable class="PARAMETER">number</replaceable>
     ALTER [ COLUMN ] <replaceable class="PARAMETER">column</replaceable> SET STORAGE { PLAIN | EXTERNAL | EXTENDED | MAIN }
+    ALTER [ COLUMN ] <replaceable class="PARAMETER">column</replaceable> SECURITY CONTEXT TO <replaceable class="PARAMETER">new_security_context</replaceable>
     ADD <replaceable class="PARAMETER">table_constraint</replaceable>
     DROP CONSTRAINT [ IF EXISTS ]  <replaceable class="PARAMETER">constraint_name</replaceable> [ RESTRICT | CASCADE ]
     DISABLE TRIGGER [ <replaceable class="PARAMETER">trigger_name</replaceable> | ALL | USER ]
@@ -447,12 +448,13 @@ ALTER TABLE <replaceable class="PARAMETER">name</replaceable>
    </varlistentry>
 
    <varlistentry>
-    <term><literal>SECURITY_CONTEXT</literal></term>
+    <term><literal>SECURITY CONTEXT</literal></term>
     <listitem>
      <para>
-      The <literal>SECURITY_CONTEXT</literal> form relabels the security
+      The <literal>SECURITY CONTEXT</literal> form relabels the security
       context of a table or an individual column in a table.
-      This form is unavailable, unless SE-PostgreSQL is enabled.
+      This form is unavailable, unless SELinux support is enabled.
+      See <xref linkend="selinux-support"> for more details.
      </para>
     </listitem>
    </varlistentry>
@@ -462,7 +464,7 @@ ALTER TABLE <replaceable class="PARAMETER">name</replaceable>
 
   <para>
    All the actions except <literal>RENAME</literal>, <literal>SET SCHEMA</>
-   and <literal>SECURITY_CONTEXT</literal> can be combined into
+   and <literal>SECURITY CONTEXT</literal> can be combined into
    a list of multiple alterations to apply in parallel.  For example, it
    is possible to add several columns and/or alter the type of several
    columns in a single command.  This is particularly useful with large
@@ -673,7 +675,7 @@ ALTER TABLE <replaceable class="PARAMETER">name</replaceable>
       <term><replaceable class="PARAMETER">new_security_context</replaceable></term>
       <listitem>
        <para>
-	The security context of the table newly assigned on a table or a column.
+        The security context of the table newly assigned on a table or a column.
        </para>
       </listitem>
      </varlistentry>

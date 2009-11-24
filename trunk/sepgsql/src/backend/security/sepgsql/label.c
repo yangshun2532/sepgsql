@@ -337,7 +337,7 @@ sepgsql_getcon(PG_FUNCTION_ARGS)
 	if (!sepgsql_is_enabled())
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("SE-PostgreSQL is disabled now")));
+				 errmsg("SELinux support is now disabled")));
 
 	context = sepgsql_get_client_context();
 	context = sepgsql_mcstrans_out(context);
@@ -361,7 +361,7 @@ sepgsql_database_getcon(PG_FUNCTION_ARGS)
 	if (!sepgsql_is_enabled())
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("SE-PostgreSQL is disabled now")));
+				 errmsg("SELinux support is now disabled")));
 
 	tuple = SearchSysCache(DATABASEOID,
 						   ObjectIdGetDatum(datOid),
@@ -402,7 +402,7 @@ sepgsql_schema_getcon(PG_FUNCTION_ARGS)
 	if (!sepgsql_is_enabled())
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("SE-PostgreSQL is disabled now")));
+				 errmsg("SELinux support is now disabled")));
 
 	tuple = SearchSysCache(NAMESPACEOID,
 						   ObjectIdGetDatum(nspOid),
@@ -443,7 +443,7 @@ sepgsql_relation_getcon(PG_FUNCTION_ARGS)
 	if (!sepgsql_is_enabled())
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("SE-PostgreSQL is disabled now")));
+				 errmsg("SELinux support is now disabled")));
 
 	if (get_rel_relkind(relOid) != RELKIND_RELATION)
 		PG_RETURN_NULL();
@@ -488,7 +488,7 @@ sepgsql_attribute_getcon(PG_FUNCTION_ARGS)
 	if (!sepgsql_is_enabled())
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("SE-PostgreSQL is disabled now")));
+				 errmsg("SELinux support is now disabled")));
 
 	if (get_rel_relkind(relOid) != RELKIND_RELATION)
 		PG_RETURN_NULL();

@@ -605,7 +605,7 @@ sepgsql_template1_getcon(PG_FUNCTION_ARGS)
 	if (!sepgsql_is_enabled())
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("SE-PostgreSQL is disabled now")));
+				 errmsg("SELinux support is now disabled")));
 
 	/*
 	 * At the initdb phase, all the database objects are unlabeled, so we
@@ -689,7 +689,7 @@ sepgsql_default_getcon(PG_FUNCTION_ARGS)
 	if (!sepgsql_is_enabled())
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("SE-PostgreSQL is disabled now")));
+				 errmsg("SELinux support is now disabled")));
 
 	scontext = sepgsql_mcstrans_in(scontext);
 	if (security_check_context_raw(scontext) < 0)

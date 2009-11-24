@@ -1061,8 +1061,8 @@
       <entry><type>text</type></entry>
       <entry></entry>
       <entry>
-       Security context of SE-PostgreSQL; see
-       <xref linkend="sepostgresql"> for details
+       Security context for SELinux support; see
+       <xref linkend="selinux-support"> for details
       </entry>
      </row>
     </tbody>
@@ -1692,8 +1692,8 @@
       <entry><type>text</type></entry>
       <entry></entry>
       <entry>
-       Security context of SE-PostgreSQL; see
-       <xref linkend="sepostgresql"> for details
+       Security context for SELinux support; see
+       <xref linkend="selinux-support"> for details
       </entry>
      </row>
     </tbody>
@@ -2177,8 +2177,8 @@
       <entry><type>text</type></entry>
       <entry></entry>
       <entry>
-       Security context of SE-PostgreSQL; see
-       <xref linkend="sepostgresql"> for details
+       Security context of SELinux support; see
+       <xref linkend="selinux-support"> for details
       </entry>
      </row>
     </tbody>
@@ -3289,8 +3289,8 @@
       <entry><type>text</type></entry>
       <entry></entry>
       <entry>
-       Security context of SE-PostgreSQL; see
-       <xref linkend="sepostgresql"> for details
+       Security context of SELinux support; see
+       <xref linkend="selinux-support"> for details
       </entry>
      </row>
     </tbody>

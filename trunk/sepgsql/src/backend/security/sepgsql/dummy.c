@@ -26,12 +26,12 @@
  * actual implementation. See also, selinux.c, hooks.c and others.
  */
 
-#define	unavailable_function()											\
-	do {																\
-		ereport(ERROR,													\
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),				\
-				 errmsg("SE-PgSQL is disabled in this build.")));		\
-	} while(0)															\
+#define	unavailable_function()									\
+	do {														\
+		ereport(ERROR,											\
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),		\
+				 errmsg("SELinux support is now disabled")));	\
+	} while(0)													\
 
 /*
  * Dummy routines for selinux.c

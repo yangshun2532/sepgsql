@@ -347,7 +347,7 @@
 #define ERRCODE_NO_DATA_FOUND				MAKE_SQLSTATE('P','0', '0','0','2')
 #define ERRCODE_TOO_MANY_ROWS				MAKE_SQLSTATE('P','0', '0','0','3')
 
-/* Class SE - SE-PostgreSQL Error (SE-PgSQL-specific error class) */
+/* Class SE - SELinux support Error (PostgreSQL-specific error class) */
 #define ERRCODE_SELINUX_INTERNAL_ERROR		MAKE_SQLSTATE('S','E', '0','0','1')
 #define ERRCODE_INVALID_SECURITY_CONTEXT	MAKE_SQLSTATE('S','E', '0','0','2')
 #define ERRCODE_SELINUX_AUDIT_LOG			MAKE_SQLSTATE('S','E', '0','0','3')

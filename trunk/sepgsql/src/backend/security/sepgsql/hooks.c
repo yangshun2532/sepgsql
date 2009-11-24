@@ -208,7 +208,7 @@ sepgsql_database_relabel(Oid datOid, Node *datLabel)
 	if (!sepgsql_is_enabled())
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("SE-PostgreSQL is disabled")));
+				 errmsg("SELinux support is now disabled")));
 
 	Assert(IsA(datLabel, String));
 
@@ -450,7 +450,7 @@ sepgsql_schema_relabel(Oid nspOid, Node *nspLabel)
 	if (!sepgsql_is_enabled())
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("SE-PostgreSQL is disabled")));
+				 errmsg("SELinux support is now disabled")));
 
 	Assert(IsA(nspLabel, String));
 
@@ -950,7 +950,7 @@ sepgsql_relation_relabel(Oid relOid, Node *relLabel)
 	if (!sepgsql_is_enabled())
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("SE-PostgreSQL is disabled")));
+				 errmsg("SELinux support is now disabled")));
 
 	Assert(IsA(relLabel, String));
 
@@ -1322,7 +1322,7 @@ sepgsql_attribute_relabel(Oid relOid, const char *attname, Node *attLabel)
 	if (!sepgsql_is_enabled())
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("SE-PostgreSQL is disabled")));
+				 errmsg("SELinux support is now disabled")));
 
 	Assert(IsA(attLabel, String));
 
