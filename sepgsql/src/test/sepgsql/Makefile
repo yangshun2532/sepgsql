@@ -41,9 +41,9 @@ setup: launch_psql
 check:
 	@test -x $(PSQL) || \
 		(echo "HINT: $(PSQL) is not available"; exit 1)
-	@$(PSQL) -qt -c 'SHOW sepostgresql' -d $(DBNAME) 2>/dev/null | grep -q enforcing || \
+	@$(PSQL) -qt -c 'SHOW selinux_support' -d $(DBNAME) 2>/dev/null | grep -q enforcing || \
 		(echo "HINT: database \"$(DBNAME)\" is not available"; \
-		 echo "      or, SE-PgSQL may be disabled or permissive"; exit 1)
+		 echo "      or, SELinux support may not be enforcing mode"; exit 1)
 	@$(GETSEBOOL) allow_user_postgresql_connect | grep -q 'on$$' || \
 		(echo "HINT: check allow_user_postgresql_connect boolean"; exit 1)
 	@$(GETSEBOOL) sepgsql_regression_test_mode | grep -q 'on$$' || \

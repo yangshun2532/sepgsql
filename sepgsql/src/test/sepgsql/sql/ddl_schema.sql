@@ -23,27 +23,29 @@ CREATE SCHEMA scm1;
 CREATE SCHEMA scm2
        CREATE TABLE t2 (a int);
 CREATE SCHEMA scm3
-       SECURITY_CONTEXT = 'system_u:object_r:sepgsql_db_t:s0:c0';
+       SECURITY CONTEXT 'system_u:object_r:sepgsql_db_t:s0:c0';
 CREATE SCHEMA scm4
-       SECURITY_CONTEXT = 'system_u:object_r:sepgsql_db_t:s0:c1'
+       SECURITY CONTEXT 'system_u:object_r:sepgsql_db_t:s0:c1'
        CREATE TABLE t4 (x int);
 CREATE SCHEMA scm4
-       SECURITY_CONTEXT = 'invalid security context';			-- to be failed
+       SECURITY CONTEXT 'invalid security context';			-- to be failed
 
 SELECT nspname, sepgsql_schema_getcon(oid), nspsecon FROM pg_namespace
-       WHERE nspname in ('scm1', 'scm2', 'scm3', 'scm4', 'scm5');
+       WHERE nspname in ('scm1', 'scm2', 'scm3', 'scm4', 'scm5')
+       ORDER BY nspname;
 
 -- ALTER SCHEMA with SECURITY_CONTEXT option
 
 ALTER SCHEMA scm1
-      SECURITY_CONTEXT TO 'system_u:object_r:sepgsql_db_t:s0:c2';
+      SECURITY CONTEXT TO 'system_u:object_r:sepgsql_db_t:s0:c2';
 ALTER SCHEMA scm2
-      SECURITY_CONTEXT TO 'invalid security context';			-- to be failed
+      SECURITY CONTEXT TO 'invalid security context';			-- to be failed
 ALTER SCHEMA scm4
-      SECURITY_CONTEXT TO 'system_u:object_r:sepgsql_db_t:s0:c3';	-- no such schema
+      SECURITY CONTEXT TO 'system_u:object_r:sepgsql_db_t:s0:c3';	-- no such schema
 
 SELECT nspname, sepgsql_schema_getcon(oid), nspsecon FROM pg_namespace
-       WHERE nspname in ('scm1', 'scm2', 'scm3', 'scm4', 'scm5');
+       WHERE nspname in ('scm1', 'scm2', 'scm3', 'scm4', 'scm5')
+       ORDER BY nspname;
 
 -- disallow to modify system catalog by hand
 

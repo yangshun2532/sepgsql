@@ -1,5 +1,5 @@
 --@SECURITY_CONTEXT=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
-SET sepostgresql_mcstrans TO off;
+SET selinux_mcstrans TO off;
 SELECT sepgsql_getcon();
                    sepgsql_getcon                    
 -----------------------------------------------------
@@ -16,16 +16,16 @@ CREATE TABLE t1
 (
 	a	int,
 	b	text
-) SECURITY_CONTEXT = 'system_u:object_r:sepgsql_ro_table_t:s0';
+) SECURITY CONTEXT 'system_u:object_r:sepgsql_ro_table_t:s0';
 INSERT INTO t1 VALUES (1, 'aaa'), (2, 'bbb'), (3, 'ccc');
 CREATE TABLE t2
 (
 	x	int,
 	y	text
-) SECURITY_CONTEXT = 'system_u:object_r:sepgsql_secret_table_t:s0';
+) SECURITY CONTEXT 'system_u:object_r:sepgsql_secret_table_t:s0';
 INSERT INTO t2 VALUES (1, 'xxx'), (2, 'yyy'), (3, 'zzz');
 --@SECURITY_CONTEXT=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0
-SET sepostgresql_mcstrans TO off;
+SET selinux_mcstrans TO off;
 SELECT sepgsql_getcon();
                   sepgsql_getcon                   
 ---------------------------------------------------
@@ -40,7 +40,7 @@ SELECT * FROM t2;
 LOG:  SELinux: denied { select } scontext=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0 tcontext=system_u:object_r:sepgsql_secret_table_t:s0 tclass=db_table name=t2
 ERROR:  SELinux: security policy violation
 --@SECURITY_CONTEXT=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
-SET sepostgresql_mcstrans TO off;
+SET selinux_mcstrans TO off;
 SELECT sepgsql_getcon();
                    sepgsql_getcon                    
 -----------------------------------------------------
