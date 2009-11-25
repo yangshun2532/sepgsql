@@ -135,7 +135,7 @@ static struct
  *							  except for silence in audit logs
  * SEPGSQL_MODE_DISABLED	: It always disables SE-PgSQL configuration
  */
-int sepostgresql_mode;
+int sepgsql_mode;
 
 /*
  * sepgsql_initialize
@@ -156,7 +156,7 @@ sepgsql_initialize(void)
 		/*
 		 * SE-PgSQL does not prevent anything in single-user mode.
 		 */
-		sepostgresql_mode = SEPGSQL_MODE_INTERNAL;
+		sepgsql_mode = SEPGSQL_MODE_INTERNAL;
 
 		/*
 		 * When this server process was launched in single-user mode,
@@ -222,7 +222,7 @@ sepgsql_is_enabled(void)
 	 * If sepostgresql = disabled, it always returns FALSE
 	 * independently from the system status.
 	 */
-	if (sepostgresql_mode == SEPGSQL_MODE_DISABLED)
+	if (sepgsql_mode == SEPGSQL_MODE_DISABLED)
 		return false;
 
 	/*
@@ -250,25 +250,25 @@ sepgsql_is_enabled(void)
 bool
 sepgsql_get_enforce(void)
 {
-	if (sepostgresql_mode == SEPGSQL_MODE_DEFAULT)
+	if (sepgsql_mode == SEPGSQL_MODE_DEFAULT)
 	{
 		if (security_getenforce() == 1)
 			return true;
 	}
-	else if (sepostgresql_mode == SEPGSQL_MODE_ENFORCING)
+	else if (sepgsql_mode == SEPGSQL_MODE_ENFORCING)
 		return true;
 
 	return false;
 }
 
 /*
- * sepgsql_show_sepostgresql
+ * sepgsql_show_mode
  *
- * It returns the current performing mode ('sepostgresql' GUC)
+ * It returns the current performing mode ('selinux_support')
  * in human readable form.
  */
 char *
-sepgsql_show_sepostgresql(void)
+sepgsql_show_mode(void)
 {
 	if (!sepgsql_is_enabled())
 		return "disabled";
@@ -310,13 +310,11 @@ sepgsql_audit_log(bool denied, char *scontext, char *tcontext,
 	int				i;
 
 	/*
-	 * translation of security contexts to human readable format
+	 * translation of security contexts to human readable format,
+	 * if sepgsql_mcstrans is turned on.
 	 */
-	if (sepostgresql_mcstrans)
-	{
-		scontext = sepgsql_mcstrans_out(scontext);
-		tcontext = sepgsql_mcstrans_out(tcontext);
-	}
+	scontext = sepgsql_mcstrans_out(scontext);
+	tcontext = sepgsql_mcstrans_out(tcontext);
 
 	/* lookup name of the object class */
 	tclass_name = selinux_catalog[tclass].class_name;
@@ -482,8 +480,8 @@ sepgsql_compute_perms(char *scontext, char *tcontext,
 	denied = required & ~avd.allowed;
 	audited = denied ? (denied & avd.auditdeny)
 					 : (required & avd.auditallow);
-	if (audited &&
-		sepostgresql_mode != SEPGSQL_MODE_INTERNAL)
+
+	if (audited && sepgsql_mode != SEPGSQL_MODE_INTERNAL)
 	{
 		sepgsql_audit_log(!!denied, scontext, tcontext,
 						  tclass, audited, audit_name);

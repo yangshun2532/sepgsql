@@ -25,10 +25,10 @@ typedef char *sepgsql_label_t;
 #define SEPGSQL_MODE_INTERNAL		4
 #define SEPGSQL_MODE_DISABLED		5
 
-extern int	sepostgresql_mode;
+extern int	sepgsql_mode;
 
 /* GUC option to turn on/off mcstrans */
-extern bool	sepostgresql_mcstrans;
+extern bool	sepgsql_mcstrans;
 
 /* Internal code for object classes */
 enum {
@@ -93,7 +93,7 @@ extern bool sepgsql_is_enabled(void);
 
 extern bool sepgsql_get_enforce(void);
 
-extern char *sepgsql_show_sepostgresql(void);
+extern char *sepgsql_show_mode(void);
 
 typedef void (*sepgsql_audit_hook_t) (bool denied,
 									  const char *scontext,

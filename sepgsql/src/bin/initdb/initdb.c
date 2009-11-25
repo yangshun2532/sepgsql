@@ -1203,8 +1203,8 @@ setup_config(void)
 
 	if (enable_selinux)
 	{
-		strcpy(repltok, "sepostgresql = default");
-		conflines = replace_token(conflines, "#sepostgresql = disabled", repltok);
+		strcpy(repltok, "selinux_support = default");
+		conflines = replace_token(conflines, "#selinux_support = disabled", repltok);
 	}
 
 	snprintf(path, sizeof(path), "%s/postgresql.conf", pg_data);
@@ -1835,7 +1835,7 @@ setup_selinux(void)
 		/*
 		 * Disable mcstrans feature
 		 */
-		"SET sepostgresql_mcstrans = off;\n",
+		"SET selinux_mcstrans = off;\n",
 		/*
 		 * Pg_database initial labeling
 		 */

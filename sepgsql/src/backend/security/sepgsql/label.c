@@ -22,7 +22,7 @@
 #include <selinux/selinux.h>
 
 /* GUC option to turn on/off mcstrans feature */
-bool	sepostgresql_mcstrans;
+bool	sepgsql_mcstrans;
 
 /*
  * sepgsql_default_database_context
@@ -260,7 +260,7 @@ sepgsql_mcstrans_in(char *trans_context)
 	char	   *raw_context;
 	char	   *result;
 
-	if (!sepostgresql_mcstrans)
+	if (!sepgsql_mcstrans)
 		return trans_context;
 
 	if (selinux_trans_to_raw_context(trans_context, &raw_context) < 0)
@@ -301,7 +301,7 @@ sepgsql_mcstrans_out(char *raw_context)
 	char	   *trans_context;
 	char	   *result;
 
-	if (!sepostgresql_mcstrans)
+	if (!sepgsql_mcstrans)
 		return raw_context;
 
 	if (selinux_raw_to_trans_context(raw_context, &trans_context) < 0)

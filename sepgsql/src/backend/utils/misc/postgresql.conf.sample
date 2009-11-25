@@ -88,7 +88,7 @@
 #krb_srvname = 'postgres'		# (Kerberos only)
 #krb_caseins_users = off
 
-#sepostgresql = disabled		# [default|enforcing|permissive|disabled]
+#selinux_support = disabled		# [default|enforcing|permissive|disabled]
 
 # - TCP Keepalives -
 # see "man 7 tcp" for details
