@@ -25,7 +25,7 @@ CREATE TABLE t2
 	x	int,
 	y	text,
 	z	text
-		AS SECURITY_CONTEXT = 'system_u:object_r:sepgsql_ro_table_t:s0'
+		AS SECURITY CONTEXT 'system_u:object_r:sepgsql_ro_table_t:s0'
 );
 INSERT INTO t2 VALUES (1, 'XXX', 'AAA'), (2, 'YYY', 'BBB'), (3, 'ZZZ', 'CCC');
 
@@ -33,11 +33,11 @@ CREATE TABLE t3
 (
 	s	int,
 	t	text
-		AS SECURITY_CONTEXT = 'system_u:object_r:sepgsql_fixed_table_t:s0',
+		AS SECURITY CONTEXT 'system_u:object_r:sepgsql_fixed_table_t:s0',
 	u	text
-		AS SECURITY_CONTEXT = 'system_u:object_r:sepgsql_secret_table_t:s0'
+		AS SECURITY CONTEXT 'system_u:object_r:sepgsql_secret_table_t:s0'
 );
-INSERT INTO t4 VALUES (1, 'AAA', 'BBB'), (2, 'CCC', 'DDD'), (3, 'EEE', 'FFF');
+INSERT INTO t3 VALUES (1, 'AAA', 'BBB'), (2, 'CCC', 'DDD'), (3, 'EEE', 'FFF');
 
 --@SECURITY_CONTEXT=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0
 
@@ -64,6 +64,8 @@ COPY t3 (s, t) FROM stdin;
 COPY (SELECT * FROM t2) TO stdout;
 COPY (SELECT * FROM t3) TO stdout;	-- to be denied
 COPY (SELECT s, t FROM t3) TO stdout;
+
+--@SECURITY_CONTEXT=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
 
 -- cleanups
 SET client_min_messages TO 'error';

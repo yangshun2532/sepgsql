@@ -14,14 +14,14 @@ CREATE TABLE t1
 (
 	a	int,
 	b	text
-) SECURITY_CONTEXT = 'system_u:object_r:sepgsql_ro_table_t:s0';
+) SECURITY CONTEXT 'system_u:object_r:sepgsql_ro_table_t:s0';
 INSERT INTO t1 VALUES (1, 'aaa'), (2, 'bbb'), (3, 'ccc');
 
 CREATE TABLE t2
 (
 	x	int,
 	y	text
-) SECURITY_CONTEXT = 'system_u:object_r:sepgsql_secret_table_t:s0';
+) SECURITY CONTEXT 'system_u:object_r:sepgsql_secret_table_t:s0';
 INSERT INTO t2 VALUES (1, 'xxx'), (2, 'yyy'), (3, 'zzz');
 
 --@SECURITY_CONTEXT=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0

@@ -14,11 +14,11 @@ RESET client_min_messages;
 
 CREATE DATABASE sepgsql_regress_db_1;
 CREATE DATABASE sepgsql_regress_db_2
-       SECURITY_CONTEXT = 'system_u:object_r:sepgsql_db_t:s0:c0';
+       SECURITY CONTEXT 'system_u:object_r:sepgsql_db_t:s0:c0';
 CREATE DATABASE sepgsql_regress_db_3
-       SECURITY_CONTEXT = 'system_u:object_r:sepgsql_db_t:s0:c16';	-- to be denied
+       SECURITY CONTEXT 'system_u:object_r:sepgsql_db_t:s0:c16';	-- to be denied
 CREATE DATABASE sepgsql_regress_db_4
-       SECURITY_CONTEXT = 'invalid security context';			-- to be failed
+       SECURITY CONTEXT 'invalid security context';			-- to be failed
 
 SELECT datname, sepgsql_database_getcon(oid), datsecon FROM pg_database
        WHERE datname like 'sepgsql_regress_db_%';
@@ -26,16 +26,17 @@ SELECT datname, sepgsql_database_getcon(oid), datsecon FROM pg_database
 -- ALTER DATABASE with SECURITY_CONTEXT option
 
 ALTER DATABASE sepgsql_regress_db_1
-      SECURITY_CONTEXT TO 'system_u:object_r:sepgsql_db_t:s0:c1';
+      SECURITY CONTEXT TO 'system_u:object_r:sepgsql_db_t:s0:c1';
 ALTER DATABASE sepgsql_regress_db_1
-      SECURITY_CONTEXT TO 'system_u:object_r:sepgsql_db_t:s0:c20';	-- to be deined
+      SECURITY CONTEXT TO 'system_u:object_r:sepgsql_db_t:s0:c20';	-- to be deined
 ALTER DATABASE sepgsql_regress_db_2
-      SECURITY_CONTEXT TO 'invalid security context';			-- to be failed
+      SECURITY CONTEXT TO 'invalid security context';			-- to be failed
 ALTER DATABASE sepgsql_regress_db_3
-      SECURITY_CONTEXT TO 'system_u:object_r:sepgsql_db_t:s0:c2';	-- no such database
+      SECURITY CONTEXT TO 'system_u:object_r:sepgsql_db_t:s0:c2';	-- no such database
 
 SELECT datname, sepgsql_database_getcon(oid), datsecon FROM pg_database
-       WHERE datname like 'sepgsql_regress_db_%';
+       WHERE datname like 'sepgsql_regress_db_%'
+       ORDER BY datname;
 
 -- disallow to modify system catalog by hand
 
