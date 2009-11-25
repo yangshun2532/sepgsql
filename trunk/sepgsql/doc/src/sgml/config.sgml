@@ -726,10 +726,10 @@ SET ENABLE_SEQSCAN TO OFF;
       </listitem>
      </varlistentry>
 
-     <varlistentry id="guc-sepostgresql" xreflabel="sepostgresql">
-      <term><varname>sepostgresql</varname> (<type>enum</type>)</term>
+     <varlistentry id="guc-selinux-support" xreflabel="selinux_support">
+      <term><varname>selinux_support</varname> (<type>enum</type>)</term>
       <indexterm>
-       <primary><varname>sepostgresql</> configuration parameter</primary>
+       <primary><varname>selinux_support</> configuration parameter</primary>
       </indexterm>
       <listitem>
        <para>
@@ -791,18 +791,18 @@ SET ENABLE_SEQSCAN TO OFF;
       </listitem>
      </varlistentry>
 
-     <varlistentry id="guc-sepostgresql-mcstrans" xreflabel="sepostgresql_mcstrans">
-      <term><varname>sepostgresql_mcstrans</varname> (<type>bool</type>)</term>
+     <varlistentry id="guc-selinux-mcstrans" xreflabel="selinux_mcstrans">
+      <term><varname>selinux_mcstrans</varname> (<type>bool</type>)</term>
       <indexterm>
-       <primary><varname>sepostgresql_mcstrans</> configuration parameter</primary>
+       <primary><varname>selinux_mcstrans</> configuration parameter</primary>
       </indexterm>
       <listitem>
        <para>
         This parameter is available only when SELinux support was enabled
-        at the compile time. It enables to turn on/off mcstrans feature in
-        SE-PostgreSQL. It is on by default.
+        at the compile time. It enables to turn on/off mcstrans feature
+	when we import/export security context.
         Every users can set this parameter in their session without any
-        limitation.
+        restriction.
        </para>
        <para>
         A security context has two formats; raw and human-readable.
@@ -826,7 +826,7 @@ SET ENABLE_SEQSCAN TO OFF;
         We call such kind of translation as mcstrans.
        </para>
        <para>
-        When <varname>sepostgresql_mcstrans</varname> is turned on,
+        When <varname>selinux_mcstrans</varname> is turned on,
         we can give a security context in human-readable format as an
         argument of <literal>SECURITY CONTEXT</literal> option in
         <xref linkend="SQL-CREATETABLE" endterm="sql-createtable-title">,

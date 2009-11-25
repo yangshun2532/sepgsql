@@ -331,7 +331,7 @@ static const struct config_enum_entry constraint_exclusion_options[] = {
 };
 
 #ifdef HAVE_SELINUX
-static const struct config_enum_entry sepostgresql_mode_options[] = {
+static const struct config_enum_entry sepgsql_mode_options[] = {
 	{"default", SEPGSQL_MODE_DEFAULT, false},
 	{"enforcing", SEPGSQL_MODE_ENFORCING, false},
 	{"permissive", SEPGSQL_MODE_PERMISSIVE, false},
@@ -1235,14 +1235,13 @@ static struct config_bool ConfigureNamesBool[] =
 	},
 #ifdef HAVE_SELINUX
 	{
-		{"sepostgresql_mcstrans", PGC_USERSET, CONN_AUTH_SECURITY,
+		{"selinux_mcstrans", PGC_USERSET, CONN_AUTH_SECURITY,
 			gettext_noop("turn on/off mcstrans feature"),
-			gettext_noop("It is a feature to translate a security context between "
-						 "a human-readable and raw format. "
-						 "If disabled, we import/export them with only raw-format"),
+			gettext_noop("It allows to import/export a security context both of"
+						 "human-readable and raw format."),
 			GUC_NOT_IN_SAMPLE
 		},
-		&sepostgresql_mcstrans,
+		&sepgsql_mcstrans,
 		true, NULL, NULL
 	},
 #endif
@@ -2675,13 +2674,13 @@ static struct config_enum ConfigureNamesEnum[] =
 #endif
 #ifdef HAVE_SELINUX
 	{
-		{"sepostgresql", PGC_POSTMASTER, CONN_AUTH_SECURITY,
-			gettext_noop("Set the SE-PostgreSQL performing mode"),
+		{"selinux_support", PGC_POSTMASTER, CONN_AUTH_SECURITY,
+			gettext_noop("Sets the performing mode of SELinux support"),
 			NULL,
 		},
-		&sepostgresql_mode,
-		SEPGSQL_MODE_DISABLED, sepostgresql_mode_options,
-		NULL, sepgsql_show_sepostgresql
+		&sepgsql_mode,
+		SEPGSQL_MODE_DISABLED, sepgsql_mode_options,
+		NULL, sepgsql_show_mode
 	},
 #endif
 	{
