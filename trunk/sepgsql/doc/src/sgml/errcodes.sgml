@@ -1224,6 +1224,11 @@
 <entry>invalid_object_definition</entry>
 </row>
 
+<row>
+<entry><literal>42P18</literal></entry>
+<entry>INVALID SECURITY CONTEXT</entry>
+<entry>invalid_security_context</entry>
+</row>
 
 <row>
 <entry spanname="span13"><emphasis role="bold">Class 44 &mdash; WITH CHECK OPTION Violation</></entry>
@@ -1380,6 +1385,11 @@
 <entry>duplicate_file</entry>
 </row>
 
+<row>
+<entry><literal>58P03</literal></entry>
+<entry>SELINUX ERROR</entry>
+<entry>selinux_error</entry>
+</row>
 
 <row>
 <entry spanname="span13"><emphasis role="bold">Class F0 &mdash; Configuration File Error</></entry>
@@ -1426,27 +1436,6 @@
 <entry>too_many_rows</entry>
 </row>
 
-<row>
-<entry spanname="span13"><emphasis role="bold">Class SE &mdash; SELinux support Error</></entry>
-</row>
-
-<row>
-<entry><literal>SE001</literal></entry>
-<entry>SELINUX INTERNAL ERROR</entry>
-<entry>selinux_internal_error</entry>
-</row>
-
-<row>
-<entry><literal>SE002</literal></entry>
-<entry>INVALID SECURITY CONTEXT</entry>
-<entry>invalid_security_context</entry>
-</row>
-
-<row>
-<entry><literal>SE003</literal></entry>
-<entry>SELINUX AUDIT LOG</entry>
-<entry>selinux_audit_log</entry>
-</row>
 
 <row>
 <entry spanname="span13"><emphasis role="bold">Class XX &mdash; Internal Error</></entry>
