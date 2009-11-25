@@ -168,7 +168,7 @@ sepgsql_initialize(void)
 		 */
 		if (getcon_raw(&context) < 0)
 			ereport(ERROR,
-					(errcode(ERRCODE_SELINUX_INTERNAL_ERROR),
+					(errcode(ERRCODE_SELINUX_ERROR),
 					 errmsg("SELinux: could not get server context")));
 	}
 	else
@@ -196,7 +196,7 @@ sepgsql_initialize(void)
 		 */
 		if (getpeercon_raw(MyProcPort->sock, &context) < 0)
 			ereport(ERROR,
-					(errcode(ERRCODE_SELINUX_INTERNAL_ERROR),
+					(errcode(ERRCODE_SELINUX_ERROR),
 					 errmsg("SELinux: could not get client context")));
 	}
 	sepgsql_set_client_context(context);
@@ -347,7 +347,7 @@ sepgsql_audit_log(bool denied, char *scontext, char *tcontext,
 			appendStringInfo(&buf, " name=%s", audit_name);
 
 		ereport(LOG,
-				(errcode(ERRCODE_SELINUX_AUDIT_LOG),
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("SELinux: %s %s",
 						(denied ? "denied" : "allowed"), buf.data)));
 	}
@@ -405,7 +405,7 @@ compute_perms_internal(char *scontext, char *tcontext,
 	if (security_compute_av_flags_raw(scontext, tcontext,
 									  tclass_ex, 0, &avd_ex) < 0)
 		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_INTERNAL_ERROR),
+				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux could not compute av_decision: "
 						"scontext=%s tcontext=%s tclass=%s",
 						scontext, tcontext, tclass_name)));
@@ -552,7 +552,7 @@ sepgsql_compute_create(char *scontext, char *tcontext, uint16 tclass)
 	if (security_compute_create_raw(scontext, tcontext,
 									tclass_ex, &ncontext))
 		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_INTERNAL_ERROR),
+				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux could not compute a new context: "
 						"scontext=%s tcontext=%s tclass=%s",
 						scontext, tcontext, tclass_name)));
@@ -715,7 +715,7 @@ sepgsql_default_getcon(PG_FUNCTION_ARGS)
 		}
 	}
 	ereport(ERROR,
-			(errcode(ERRCODE_SELINUX_INTERNAL_ERROR),
+			(errcode(ERRCODE_SELINUX_ERROR),
 			 errmsg("unknown object class \"%s\"", tclass_name)));
 	PG_RETURN_VOID();	/* be compiler quiet */
 }

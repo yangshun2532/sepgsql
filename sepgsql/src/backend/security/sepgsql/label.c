@@ -221,7 +221,7 @@ sepgsql_get_unlabeled_context(void)
 
 	if (security_get_initial_context_raw("unlabeled", &unlabeled_con) < 0)
 		ereport(ERROR,
-				(errcode(ERRCODE_INTERNAL_ERROR),
+				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: could not get \"unlabeled\" context")));
 	/*
 	 * libselinux returns a malloc()'ed regison, so we need to duplicate
@@ -265,7 +265,7 @@ sepgsql_mcstrans_in(char *trans_context)
 
 	if (selinux_trans_to_raw_context(trans_context, &raw_context) < 0)
 		ereport(ERROR,
-				(errcode(ERRCODE_INTERNAL_ERROR),
+				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: failed to translate \"%s\"",
 						trans_context)));
 	PG_TRY();
@@ -306,7 +306,7 @@ sepgsql_mcstrans_out(char *raw_context)
 
 	if (selinux_raw_to_trans_context(raw_context, &trans_context) < 0)
 		ereport(ERROR,
-				(errcode(ERRCODE_INTERNAL_ERROR),
+				(errcode(ERRCODE_SELINUX_ERROR),
 				 errmsg("SELinux: failed to translate \"%s\"",
 						raw_context)));
 	PG_TRY();

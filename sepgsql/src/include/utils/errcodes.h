@@ -301,6 +301,7 @@
 #define ERRCODE_INVALID_SCHEMA_DEFINITION	MAKE_SQLSTATE('4','2', 'P','1','5')
 #define ERRCODE_INVALID_TABLE_DEFINITION	MAKE_SQLSTATE('4','2', 'P','1','6')
 #define ERRCODE_INVALID_OBJECT_DEFINITION	MAKE_SQLSTATE('4','2', 'P','1','7')
+#define ERRCODE_INVALID_SECURITY_CONTEXT	MAKE_SQLSTATE('4','2', 'P','1','8')
 
 /* Class 44 - WITH CHECK OPTION Violation */
 #define ERRCODE_WITH_CHECK_OPTION_VIOLATION MAKE_SQLSTATE('4','4', '0','0','0')
@@ -336,6 +337,7 @@
 #define ERRCODE_IO_ERROR					MAKE_SQLSTATE('5','8', '0','3','0')
 #define ERRCODE_UNDEFINED_FILE				MAKE_SQLSTATE('5','8', 'P','0','1')
 #define ERRCODE_DUPLICATE_FILE				MAKE_SQLSTATE('5','8', 'P','0','2')
+#define ERRCODE_SELINUX_ERROR				MAKE_SQLSTATE('5','8', 'P','0','3')
 
 /* Class F0 - Configuration File Error (PostgreSQL-specific error class) */
 #define ERRCODE_CONFIG_FILE_ERROR			MAKE_SQLSTATE('F','0', '0','0','0')
@@ -346,11 +348,6 @@
 #define ERRCODE_RAISE_EXCEPTION				MAKE_SQLSTATE('P','0', '0','0','1')
 #define ERRCODE_NO_DATA_FOUND				MAKE_SQLSTATE('P','0', '0','0','2')
 #define ERRCODE_TOO_MANY_ROWS				MAKE_SQLSTATE('P','0', '0','0','3')
-
-/* Class SE - SELinux support Error (PostgreSQL-specific error class) */
-#define ERRCODE_SELINUX_INTERNAL_ERROR		MAKE_SQLSTATE('S','E', '0','0','1')
-#define ERRCODE_INVALID_SECURITY_CONTEXT	MAKE_SQLSTATE('S','E', '0','0','2')
-#define ERRCODE_SELINUX_AUDIT_LOG			MAKE_SQLSTATE('S','E', '0','0','3')
 
 /* Class XX - Internal Error (PostgreSQL-specific error class) */
 /* (this is for "can't-happen" conditions and software bugs) */
