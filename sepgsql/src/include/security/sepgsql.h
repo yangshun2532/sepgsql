@@ -173,14 +173,14 @@ sepgsql_schema_search(Oid nspOid, bool abort);
 /* Pg_class related hooks */
 extern bool
 sepgsql_relation_common(Oid relOid, uint32 required, bool abort);
-extern DatumPtr
+extern Value **
 sepgsql_relation_create(const char *relName,
-                        char relkind,
-                        TupleDesc tupDesc,
-                        Oid nspOid,
-                        Node *relLabel,
-                        List *colList,
-                        bool createAs);
+						char relkind,
+						TupleDesc tupDesc,
+						Oid nspOid,
+						List *seconList,
+						List *columnList,
+						bool createAs);
 extern void
 sepgsql_relation_alter(Oid relOid, const char *newName, Oid newNsp);
 extern void

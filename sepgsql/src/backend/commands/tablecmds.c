@@ -361,7 +361,7 @@ DefineRelation(CreateStmt *stmt, char relkind)
 	List	   *rawDefaults;
 	List	   *cookedDefaults;
 	Datum		reloptions;
-	Datum	   *secontexts;
+	Value	  **secontexts;
 	ListCell   *listptr;
 	AttrNumber	attnum;
 	static char *validnsps[] = HEAP_RELOPT_NAMESPACES;
@@ -456,14 +456,17 @@ DefineRelation(CreateStmt *stmt, char relkind)
 	descriptor->tdhasoid = (localHasOids || parentOidCount > 0);
 
 	/*
-	 * SE-PgSQL permission checks to create a new table and columns.
-	 * It returns an array of security context to be assigned on them.
+	 * SE-PgSQL computes a set of security contexts to be assigned
+	 * on the new table and columns, and checks permission to create
+	 * these database objects.
+	 * It returns an array of security contexts. The caller must set
+	 * them on the system catalog entries correctly.
 	 */
 	secontexts = sepgsql_relation_create(relname,
 										 relkind,
 										 descriptor,
 										 namespaceId,
-										 stmt->secontext,
+										 stmt->seconList,
 										 schema,
 										 false);
 

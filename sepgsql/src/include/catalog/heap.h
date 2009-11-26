@@ -57,7 +57,7 @@ extern Oid heap_create_with_catalog(const char *relname,
 						 int oidinhcount,
 						 OnCommitAction oncommit,
 						 Datum reloptions,
-						 Datum *secontexts,
+						 Value **secontexts,
 						 bool use_user_acl,
 						 bool allow_system_table_mods);
 

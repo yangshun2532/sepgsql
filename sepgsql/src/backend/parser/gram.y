@@ -59,7 +59,6 @@
 #include "nodes/nodeFuncs.h"
 #include "parser/gramparse.h"
 #include "parser/parser.h"
-#include "security/sepgsql.h"
 #include "storage/lmgr.h"
 #include "utils/date.h"
 #include "utils/datetime.h"
@@ -419,7 +418,9 @@ static TypeName *TableFuncTypeName(List *columns);
 %type <str>		OptTableSpace OptConsTableSpace OptTableSpaceOwner
 %type <list>	opt_check_option
 
-%type <node>	OptSchemaSecLabel OptTableSecLabel OptColumnSecLabel SecLabelToItem
+%type <node>	OptSchemaSecLabel SecLabelToItem
+%type <list>	OptTableSecLabel TableSecLabelList
+%type <defelt>	TableSecLabelItem
 
 %type <target>	xml_attribute_el
 %type <list>	xml_attribute_list xml_attributes
@@ -2188,7 +2189,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->options = $9;
 					n->oncommit = $10;
 					n->tablespacename = $11;
-					n->secontext = $12;
+					n->seconList = $12;
 					$$ = (Node *)n;
 				}
 		| CREATE OptTemp TABLE qualified_name OF qualified_name
@@ -2207,7 +2208,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->options = $10;
 					n->oncommit = $11;
 					n->tablespacename = $12;
-					n->secontext = $13;
+					n->seconList = $13;
 					$$ = (Node *)n;
 				}
 		;
@@ -2250,14 +2251,14 @@ TableElement:
 			| TableConstraint					{ $$ = $1; }
 		;
 
-columnDef:	ColId Typename ColQualList OptColumnSecLabel
+columnDef:	ColId Typename ColQualList
 				{
 					ColumnDef *n = makeNode(ColumnDef);
 					n->colname = $1;
 					n->typeName = $2;
 					n->constraints = $3;
 					n->is_local = true;
-					n->secontext = $4;
+					n->secontext = NULL;
 					$$ = (Node *)n;
 				}
 		;
@@ -2656,7 +2657,7 @@ create_as_target:
 					$$->options = $3;
 					$$->onCommit = $4;
 					$$->tableSpaceName = $5;
-					$$->secontext = $6;
+					$$->seconList = $6;
 				}
 		;
 
@@ -5944,37 +5945,29 @@ AlterSecLabelStmt:	ALTER DATABASE database_name SecLabelToItem
 				}
 		;
 
-OptSchemaSecLabel:	SECURITY CONTEXT_P Sconst
-				{
-					if (!sepgsql_is_enabled())
-						parser_yyerror("unavailable option");
-					$$ = (Node *) makeString($3);
-				}
-			| /* EMPTY */					{ $$ = NULL; }
+OptSchemaSecLabel:	SECURITY CONTEXT_P '(' Sconst ')'
+									{ $$ = (Node *) makeString($4); }
+			| /* EMPTY */			{ $$ = NULL; }
 		;
 
-OptTableSecLabel:	SECURITY CONTEXT_P Sconst
-				{
-					if (!sepgsql_is_enabled())
-						parser_yyerror("unavailable option");
-					$$ = (Node *) makeString($3);
-				}
-			| /* EMPTY */					{ $$ = NULL; }
+OptTableSecLabel:	SECURITY CONTEXT_P '(' TableSecLabelList ')'
+									{ $$ = $4; }
+			| /* EMPTY */			{ $$ = NIL; }
 		;
 
-OptColumnSecLabel:	AS SECURITY CONTEXT_P Sconst
-				{
-					if (!sepgsql_is_enabled())
-						parser_yyerror("unavailable option");
-					$$ = (Node *) makeString($4);
-				}
-			| /* EMPTY */					{ $$ = NULL; }
+TableSecLabelList:	TableSecLabelList ',' TableSecLabelItem
+									{ $$ = lappend($1,$3); }
+			| TableSecLabelItem		{ $$ = list_make1($1); }
+		;
+
+TableSecLabelItem:	Sconst
+					{ $$ = makeDefElem(NULL, (Node *)makeString($1)); }
+			| ColId '=' Sconst
+					{ $$ = makeDefElem($1, (Node *)makeString($3)); }
 		;
 
 SecLabelToItem:		SECURITY CONTEXT_P TO Sconst
 				{
-					if (!sepgsql_is_enabled())
-						parser_yyerror("unavailable option");
 					$$ = (Node *) makeString($4);
 				}
 		;
@@ -6418,10 +6411,8 @@ createdb_opt_item:
 				{
 					$$ = makeDefElem("owner", NULL);
 				}
-			| SECURITY CONTEXT_P opt_equal Sconst
+			| SECURITY CONTEXT_P '(' Sconst ')'
 				{
-					if (!sepgsql_is_enabled())
-						parser_yyerror("unavailable option");
 					$$ = makeDefElem("security_context", (Node *) makeString($4));
 				}
 		;

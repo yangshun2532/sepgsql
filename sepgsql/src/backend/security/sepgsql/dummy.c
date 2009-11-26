@@ -80,6 +80,13 @@ sepgsql_database_common(Oid datOid, uint32 required, bool abort)
 Value *
 sepgsql_database_create(const char *datName, Oid srcDatOid, Node *datLabel)
 {
+	/*
+	 * SECURITY CONTEXT option is unavailable,
+	 * when SELinux support is disabled.
+	 */
+	if (datLabel)
+		unavailable_function();
+
 	return NULL;	/* do nothing, and database shall be unlabeled */
 }
 
@@ -99,8 +106,8 @@ Value *
 sepgsql_database_relabel(Oid datOid, Node *datLabel)
 {
 	/*
-	 * ALTER DATABASE with SECURITY_CONTEXT option is available
-	 * only when SE-PostgreSQL is enabled.
+	 * SECURITY CONTEXT option is unavailable
+	 * when SELinux support is disabled
 	 */
 	unavailable_function();
 	return NULL;	/* for compiler quiet */
@@ -128,6 +135,13 @@ sepgsql_schema_common(Oid nspOid, uint32 required, bool abort)
 Value *
 sepgsql_schema_create(const char *nspName, bool isTemp, Node *nspLabel)
 {
+	/*
+	 * SECURITY CONTEXT option is unavailable
+	 * when SELinux support is disabled
+	 */
+	if (nspLabel)
+		unavailable_function();
+
 	return NULL;	/* do nothing, and the schema shall be unlabeled */
 }
 
@@ -173,16 +187,62 @@ sepgsql_relation_common(Oid relOid, uint32 required, bool abort)
 	return true;	/* always allow anything */
 }
 
-DatumPtr
+Value **
 sepgsql_relation_create(const char *relName,
                         char relkind,
                         TupleDesc tupDesc,
                         Oid nspOid,
-                        Node *relLabel,
-                        List *colList,
+						List *seconList,
+						List *columnList,
                         bool createAs)
 {
-	return NULL;	/* do nothing, and the table/columns shall be unlabeled */
+	Value	  **result = NULL;
+	ListCell   *l;
+	int			index, offset;
+
+	/*
+	 * SECURITY CONTEXT option is unavailable
+	 * when SELinux support is disabled
+	 */
+	unavailable_function();
+
+	if (seconList != NIL)
+		unavailable_function();
+
+	/*
+	 * Note that we need to copy security context of the parent
+	 * columns, even if SELinux support is disabled to keep
+	 * consistency of inherited column's security context.
+	 */
+	if (relkind == RELKIND_RELATION)
+	{
+		result = palloc0(sizeof(Value *) * (tupDesc->natts
+						 - FirstLowInvalidHeapAttributeNumber));
+
+		foreach (l, columnList)
+		{
+			ColumnDef  *cdef = lfirst(l);
+
+			Assert(IsA(cdef, ColumnDef));
+
+			/* No need to copy on the non-inherited/merged columns */
+			if (cdef->inhcount == 0)
+				continue;
+
+			for (index = 0; index < tupDesc->natts; index++)
+			{
+				attr = tupDesc->attrs[index];
+
+				if (strcmp(cdef->colname, NameStr(attr->attname)) != 0)
+					continue;
+
+				offset = index - FirstLowInvalidHeapAttributeNumber;
+				result[offset] = cdef->secontext;
+				break;
+			}
+		}
+	}
+	return result;
 }
 
 void
@@ -207,7 +267,7 @@ Value *
 sepgsql_relation_relabel(Oid relOid, Node *relLabel)
 {
 	/*
-	 * ALTER TABLE with SECURITY_CONTEXT option is available
+	 * ALTER TABLE with SECURITY CONTEXT option is available
 	 * only when SE-PostgreSQL is enabled.
 	 */
 	unavailable_function();
@@ -243,6 +303,13 @@ sepgsql_attribute_common(Oid relOid, AttrNumber attnum,
 Value *
 sepgsql_attribute_create(Oid relOid, ColumnDef *cdef)
 {
+	/*
+	 * SECURITY CONTEXT option is unavailable
+	 * when SELinux support is disabled.
+	 */
+	if (cdef->secontext)
+		unavailable_function();
+
 	return NULL;	/* do nothing, and the column shall be unlabeled */
 }
 
@@ -268,9 +335,11 @@ Value *
 sepgsql_attribute_relabel(Oid relOid, const char *attname, Node *attLabel)
 {
 	/*
-	 * ALTER TABLE with SECURITY_CONTEXT option is available
-	 * only when SE-PostgreSQL is enabled.
+	 * SECURITY CONTEXT option is unavailable
+	 * when SELinux support is disabled.
 	 */
+	unavailable_function();
+
 	return NULL;	/* for compiler quiet */
 }
 
