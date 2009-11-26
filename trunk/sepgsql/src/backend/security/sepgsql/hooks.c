@@ -105,7 +105,14 @@ sepgsql_database_create(const char *datName, Oid srcDatOid, Node *datLabel)
 	char   *context;
 
 	if (!sepgsql_is_enabled())
+	{
+		if (datLabel)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("SELinux support is now disabled")));
+
 		return NULL;
+	}
 
 	/*
 	 * If an explicit security context is given, we apply it with
@@ -352,7 +359,13 @@ sepgsql_schema_create(const char *nspName, bool isTemp, Node *nspLabel)
 	char   *context;
 
 	if (!sepgsql_is_enabled())
+	{
+		if (nspLabel)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("SELinux support is now disabled")));
 		return NULL;
+	}
 
 	if (!nspLabel)
 		context = sepgsql_default_schema_context(MyDatabaseId);
@@ -586,16 +599,143 @@ sepgsql_relation_common(Oid relOid, uint32 required, bool abort)
 }
 
 /*
+ * reorganize_explicit_contexts
+ *
+ * It is a helper function for sepgsql_relation_create() to reorganize
+ * given explicit security contexts.
+ * It returns an array of security contexts which contains explicitly
+ * given security context using SECURITY CONTEXT option in CREATE TABLE
+ * or automatically copied security context on table inheritance.
+ */
+static Value **
+reorganize_explicit_contexts(TupleDesc tupDesc,
+							 List *columnList,
+							 List *seconList)
+{
+	Form_pg_attribute	attr;
+	ListCell   *l;
+	Value	  **result;
+	int			index, offset = 0;
+	char	   *context;
+
+	/*
+	 * result[0] = An explicit context of the table
+	 * result[attnum - FirstLowInvalidHeapAttributeNumber]
+	 *     = An explicit context of the column
+	 */
+	result = palloc0(sizeof(Value *) * (tupDesc->natts
+					 - FirstLowInvalidHeapAttributeNumber));
+
+	/*
+	 * Put automatically inherited security context on the
+	 * result array with a correct index.
+	 *
+	 * Note that this block is available even if SELinux support is
+	 * disabled, to keep consistency of inherited column's security
+	 * context.
+	 */
+	foreach (l, columnList)
+	{
+		ColumnDef  *cdef = lfirst(l);
+
+		Assert(IsA(cdef, ColumnDef));
+
+		/* No need to copy on the non-inherited/merged columns */
+		if (cdef->inhcount == 0)
+			continue;
+
+		for (index = 0; index < tupDesc->natts; index++)
+		{
+			attr = tupDesc->attrs[index];
+
+			if (strcmp(cdef->colname, NameStr(attr->attname)) != 0)
+				continue;
+
+			offset = index - FirstLowInvalidHeapAttributeNumber;
+			result[offset] = (Value *)cdef->secontext;
+			break;
+		}
+	}
+
+	/*
+	 * Put explicitly given security context using SECURITY CONTEXT
+	 * option in CREATE TABLE on the result array with a correct index.
+	 *
+	 * Note that this block is unavailable when SELinux suppor is not
+	 * enabled, so we can use SELinux specific functions such as
+	 * security_check_context_raw() here.
+	 */
+	foreach (l, seconList)
+	{
+		DefElem	   *defel = lfirst(l);
+
+		Assert(IsA(defel, DefElem));
+
+		/*
+		 * The table's context is always stored in result[0].
+		 * For columns, we need to lookup an appropriate index 
+		 * by the given name.
+		 */
+		if (!defel->defname)
+			offset = 0;
+		else
+		{
+			bool	found = false;
+
+			for (index = 0; index < tupDesc->natts; index++)
+			{
+				attr = tupDesc->attrs[index];
+
+				if (strcmp(defel->defname, NameStr(attr->attname)) != 0)
+					continue;
+
+				if (attr->attinhcount > 0)
+					ereport(ERROR,
+							(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
+							 errmsg("cannot give an explicit security "
+									"context to the inherited column")));
+
+				offset = index - FirstLowInvalidHeapAttributeNumber;
+				found = true;
+
+				break;
+			}
+
+			if (!found)
+				ereport(ERROR,
+						(errcode(ERRCODE_UNDEFINED_COLUMN),
+						 errmsg("column \"%s\" does not declared",
+								defel->defname)));
+		}
+
+		if (result[offset] != NULL)
+			ereport(ERROR,
+					(errcode(ERRCODE_SYNTAX_ERROR),
+					 errmsg("conflicting or redundant options")));
+
+		context = sepgsql_mcstrans_in(strVal(defel->arg));
+		if (security_check_context_raw(context) < 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_SECURITY_CONTEXT),
+					 errmsg("invalid security context \"%s\"", context)));
+
+		result[offset] = makeString(context);
+	}
+
+	return result;
+}
+
+/*
  * sepgsql_relation_create
  *
  * It checks client's privilege to create a new table and columns owned
- * nu the table, and returns an array of security contexts to be assigned
- * on the table and columns. If violated, it raised an error.
+ * by the new table, and returns an array of security contexts to be
+ * assigned on the table and columns. If violated, it raises an error.
  *
  * This hook should be called on the routine to create a new relation,
  * but not necessary to call from the following code path.
  *  - Boot_CreateStmt handler in bootparse.y.
- *    In the BootstrapProcessing mode, SE-PgSQL is disabled.
+ *    In the BootstrapProcessing mode, SELinux support is disabled.
  *    It assigns a security context on tables later.
  *  - Creation of TOAST relation
  *    It is a quite internal process, and we don't assign a security
@@ -632,67 +772,88 @@ sepgsql_relation_common(Oid relOid, uint32 required, bool abort)
  * relkind : relkind of the new relation.
  * tupDesc : TupleDesc of the new relation.
  * nspOid : OID of the schema which shall own the new relation
- * relLabel : an explicitly given table's security context, or NULL
- * colList : List of ColumnDef; It contains explicitly given column's
- *           security context.
+ * seconList : List of explicit table's security context, or NIL
+ * colList : List of ColumnDef; It can contain an explicit security
+ *           context inherited from parent columns.
  * createAs : True, if SELECT INTO creates this new table.
  */
-DatumPtr
+Value **
 sepgsql_relation_create(const char *relName,
 						char relkind,
 						TupleDesc tupDesc,
 						Oid nspOid,
-						Node *relLabel,
-						List *colList,
+						List *seconList,
+						List *columnList,
 						bool createAs)
 {
-	ListCell   *l;
-	Datum	   *result;
+	Value	  **result;
 	char	   *tcontext;
 	char	   *ccontext;
 	uint32		permissions;
-	int			index;
+	int			index, offset;
 
 	if (!sepgsql_is_enabled())
+	{
+		if (seconList != NIL)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("SELinux support is now disabled")));
+
+		/*
+		 * Note that we have to copy security context of the parent
+		 * columns to keep consistency of inheritance tree, even if
+		 * SELinux support is now disabled.
+		 */
+		if (relkind == RELKIND_RELATION)
+			return reorganize_explicit_contexts(tupDesc,
+												columnList, seconList);
+
 		return NULL;
+	}
 
 	/*
 	 * check db_schema:{add_name} permission.
 	 * It adds a new name entry to the given schema, independent from
 	 * relkind of the relation.
 	 * Note that we don't need to check this permission on creation of
-	 * TOAST table, but no code path given RELKIND_TOASTVALUE now.
+	 * TOAST table, but no code path currently gives RELKIND_TOASTVALUE.
 	 */
 	sepgsql_schema_common(nspOid, SEPG_DB_SCHEMA__ADD_NAME, true);
 
 	/*
-	 * No need to check anymore expect for regular tables
+	 * No need to assign any security context on relations except for
+	 * regular tables, so we need to do anymore including permission
+	 * checks.
 	 */
 	if (relkind != RELKIND_RELATION)
 		return NULL;
 
 	/*
-	 * check db_table:{create (insert)} permission on the new table
+	 * Flatten 
+	 *
 	 */
-	if (!relLabel)
-		tcontext = sepgsql_default_table_context(nspOid);
+	result = reorganize_explicit_contexts(tupDesc, columnList, seconList);
+
+	/*
+	 * Permission check to create a new table, and append values on
+	 * the table, if necessary.
+	 */
+	if (result[0] && strVal(result[0]))
+	{
+		tcontext = strVal(result[0]);
+		if (!tcontext || security_check_context_raw(tcontext) < 0)
+			tcontext = sepgsql_get_unlabeled_context();
+	}
 	else
 	{
-		Assert(IsA(relLabel, String));
-
-		tcontext = sepgsql_mcstrans_in(strVal(relLabel));
-		if (security_check_context_raw(tcontext) < 0)
-			ereport(ERROR,
-					(errcode(ERRCODE_INVALID_SECURITY_CONTEXT),
-					 errmsg("invalid security context \"%s\"", tcontext)));
+		tcontext = sepgsql_default_table_context(nspOid);
+		result[0] = makeString(tcontext);
 	}
 
-	permissions = SEPG_DB_TABLE__CREATE;
 	/*
-	 * SELECT INTO also appends new entries to contents of the new table,
-	 * not only creation of the metadata, so we need to check permission
-	 * db_table:{insert} which controls to append any data into contents.
+	 * check db_table:{create (insert)} on the new table
 	 */
+	permissions = SEPG_DB_TABLE__CREATE;
 	if (createAs)
 		permissions |= SEPG_DB_TABLE__INSERT;
 
@@ -700,29 +861,19 @@ sepgsql_relation_create(const char *relName,
 						  tcontext,
 						  SEPG_CLASS_DB_TABLE, permissions,
 						  relName, true);
-	/*
-	 * The result array contains security contexts to be assigned on
-	 * the new table and columns. The result[0] stores the security
-	 * context of the table.
-	 * And, result[attnum - FirstLowInvalidHeapAttributeNumber] stores
-	 * the security context of the column with this attribute number.
-	 */
-	result = palloc0(sizeof(Datum) * (tupDesc->natts
-					 - FirstLowInvalidHeapAttributeNumber));
-
-	result[0] = PointerGetDatum(makeString(tcontext));
 
 	/*
-	 * check db_column:{create (insert)} permission on the new columns
+	 * Permission check to create for each columns, and to append
+	 * values on the columns, if necessary.
 	 */
 	for (index = FirstLowInvalidHeapAttributeNumber + 1;
 		 index < tupDesc->natts;
 		 index++)
 	{
 		Form_pg_attribute	attr;
-		char		audit_name[NAMEDATALEN * 2 + 3];
+		char		audit_name[2*NAMEDATALEN + 3];
 
-		/* skip unnecessary attribute */
+		/* skip "oid" system column, if not exist */
 		if (index == ObjectIdAttributeNumber && !tupDesc->tdhasoid)
 			continue;
 
@@ -732,41 +883,38 @@ sepgsql_relation_create(const char *relName,
 			attr = tupDesc->attrs[index];
 
 		/*
-		 * Is there any explicit given security context or copied one
-		 * on the inherited column from the parent relation?
-		 * If exist, SE-PgSQL applies it instead of the default context.
-		 * Otherwise, it computes a default security context to be assigned
-		 * on the new column.
+		 * If an explicit security context is given by user or copied
+		 * from the parent column, we applies it on the new column
+		 * instead of the default security context.
+		 * Otherwise, it computes a default security context to be
+		 * assigned on the new column.
+		 *
 		 * Note that we cannot use sepgsql_default_column_context() here,
 		 * because the table owning the column is not still constructed.
+		 *
+		 * Also note that the copied security context from the parent
+		 * should not modified on the system catalog, even if it is
+		 * still invalid on the current configuration of SELinux.
+		 * So, we need to apply validation check here, and "unlabeled"
+		 * may be applied instead of the context, if necessary.
 		 */
-		ccontext = NULL;
-
-		foreach (l, colList)
+		offset = index - FirstLowInvalidHeapAttributeNumber;
+		if (result[offset] && strVal(result[offset]))
 		{
-			ColumnDef  *cdef = lfirst(l);
-
-			if (cdef->secontext &&
-				strcmp(cdef->colname, NameStr(attr->attname)) == 0)
-			{
-				Assert(IsA(cdef->secontext, String));
-
-				ccontext = sepgsql_mcstrans_in(strVal(cdef->secontext));
-				if (security_check_context_raw(ccontext) < 0)
-					ereport(ERROR,
-							(errcode(ERRCODE_INVALID_SECURITY_CONTEXT),
-							 errmsg("invalid security context \"%s\"",
-									ccontext)));
-				break;
-			}
+			ccontext = strVal(result[offset]);
+			if (!ccontext || security_check_context_raw(ccontext) < 0)
+				ccontext = sepgsql_get_unlabeled_context();
 		}
-		if (!ccontext)
+		else
+		{
 			ccontext = sepgsql_compute_create(sepgsql_get_client_context(),
 											  tcontext,
 											  SEPG_CLASS_DB_COLUMN);
+			result[offset] = makeString(ccontext);
+		}
+
 		/*
-		 * Check permission to create a new column, and to append any
-		 * value on the column, if necessary.
+		 * check db_column:{create (insert)} on the new column
 		 */
 		permissions = SEPG_DB_COLUMN__CREATE;
 		if (createAs && index >= 0)
@@ -778,10 +926,6 @@ sepgsql_relation_create(const char *relName,
 							  ccontext,
 							  SEPG_CLASS_DB_COLUMN, permissions,
 							  audit_name, true);
-
-		/* column's security context to be assigned */
-		result[index - FirstLowInvalidHeapAttributeNumber]
-			= PointerGetDatum(makeString(ccontext));
 	}
 
 	return result;

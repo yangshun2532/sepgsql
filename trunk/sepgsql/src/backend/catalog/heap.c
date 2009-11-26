@@ -77,7 +77,7 @@ static void AddNewRelationTuple(Relation pg_class_desc,
 					char relkind,
 					Datum relacl,
 					Datum reloptions,
-					Datum *secontexts);
+					Value **secontexts);
 static Oid AddNewRelationType(const char *typeName,
 				   Oid typeNamespace,
 				   Oid new_rel_oid,
@@ -525,7 +525,7 @@ InsertPgAttributeTuple(Relation pg_attribute_rel,
 	nulls[Anum_pg_attribute_attacl - 1] = true;
 
 	/* Set a security context if given */
-	if (!attsecon)
+	if (!attsecon || !strVal(attsecon))
 		nulls[Anum_pg_attribute_attsecon - 1] = true;
 	else
 		values[Anum_pg_attribute_attsecon - 1]
@@ -557,7 +557,7 @@ AddNewAttributeTuples(Oid new_rel_oid,
 					  char relkind,
 					  bool oidislocal,
 					  int oidinhcount,
-					  Datum *secontexts)
+					  Value **secontexts)
 {
 	Form_pg_attribute attr;
 	int			i;
@@ -594,8 +594,8 @@ AddNewAttributeTuples(Oid new_rel_oid,
 		 * new column. Otherwise, pg_attribute.attsecon should be NULL.
 		 */
 		offset = i - FirstLowInvalidHeapAttributeNumber;
-		attsecon = ((secontexts && strVal(secontexts[offset])) ?
-					(Value *) secontexts[offset] : NULL);
+		attsecon = ((secontexts && secontexts[offset]) ?
+					secontexts[offset] : NULL);
 
 		InsertPgAttributeTuple(rel, attr, indstate, attsecon);
 
@@ -639,8 +639,8 @@ AddNewAttributeTuples(Oid new_rel_oid,
 
 			/* Security context of the system columns */
 			offset = SysAtt[i]->attnum - FirstLowInvalidHeapAttributeNumber;
-			attsecon = ((secontexts && strVal(secontexts[offset])) ?
-						(Value *) secontexts[offset] : NULL);
+			attsecon = ((secontexts && secontexts[offset]) ?
+						secontexts[offset] : NULL);
 
 			InsertPgAttributeTuple(rel, &attStruct, indstate, attsecon);
 		}
@@ -717,7 +717,7 @@ InsertPgClassTuple(Relation pg_class_desc,
 		nulls[Anum_pg_class_reloptions - 1] = true;
 
 	/* Set a security context, if given */
-	if (!relsecon)
+	if (!relsecon || !strVal(relsecon))
 		nulls[Anum_pg_class_relsecon - 1] = true;
 	else
 		values[Anum_pg_class_relsecon - 1]
@@ -755,7 +755,7 @@ AddNewRelationTuple(Relation pg_class_desc,
 					char relkind,
 					Datum relacl,
 					Datum reloptions,
-					Datum *secontexts)
+					Value **secontexts)
 {
 	Form_pg_class new_rel_reltup;
 	Value	   *relsecon;
@@ -820,7 +820,7 @@ AddNewRelationTuple(Relation pg_class_desc,
 	 * Otherwise, pg_class.relsecon should be NULL
 	 */
 	relsecon = ((secontexts && strVal(secontexts[0])) ?
-				(Value *)secontexts[0] : NULL);
+				secontexts[0] : NULL);
 
 	/* Now build and insert the tuple */
 	InsertPgClassTuple(pg_class_desc, new_rel_desc, new_rel_oid,
@@ -918,7 +918,7 @@ heap_create_with_catalog(const char *relname,
 						 int oidinhcount,
 						 OnCommitAction oncommit,
 						 Datum reloptions,
-						 Datum *secontexts,
+						 Value **secontexts,
 						 bool use_user_acl,
 						 bool allow_system_table_mods)
 {

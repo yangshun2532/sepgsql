@@ -2063,7 +2063,7 @@ OpenIntoRel(QueryDesc *queryDesc)
 	Oid			namespaceId;
 	Oid			tablespaceId;
 	Datum		reloptions;
-	Datum	   *secontexts;
+	Value	  **secontexts;
 	AclResult	aclresult;
 	Oid			intoRelationId;
 	TupleDesc	tupdesc;
@@ -2125,14 +2125,17 @@ OpenIntoRel(QueryDesc *queryDesc)
 	}
 
 	/*
-	 * SE-PgSQL permission checks to create a new table and columns,
-	 * and to insert new values into the table's contents.
+	 * SE-PgSQL computes a set of security contexts to be assigned
+	 * on the new table and columns, and checks permission to create
+	 * these database objects.
+	 * It returns an array of security contexts. The caller must set
+	 * them on the system catalog entries correctly.
 	 */
 	secontexts = sepgsql_relation_create(intoName,
 										 RELKIND_RELATION,
 										 queryDesc->tupDesc,
 										 namespaceId,
-										 into->secontext,
+										 into->seconList,
 										 into->colNames,
 										 true);
 

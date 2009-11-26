@@ -1357,7 +1357,7 @@ typedef struct CreateStmt
 	List	   *options;		/* options from WITH clause */
 	OnCommitAction oncommit;	/* what do we do at COMMIT? */
 	char	   *tablespacename; /* table space to use, or NULL */
-	Node	   *secontext;		/* security context of the relation */
+	List	   *seconList;		/* security context of the table/columns */
 } CreateStmt;
 
 /* ----------

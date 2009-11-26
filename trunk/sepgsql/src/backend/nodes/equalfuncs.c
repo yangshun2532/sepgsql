@@ -119,6 +119,7 @@ _equalIntoClause(IntoClause *a, IntoClause *b)
 	COMPARE_NODE_FIELD(options);
 	COMPARE_SCALAR_FIELD(onCommit);
 	COMPARE_STRING_FIELD(tableSpaceName);
+	COMPARE_NODE_FIELD(seconList);
 
 	return true;
 }
@@ -1101,7 +1102,7 @@ _equalCreateStmt(CreateStmt *a, CreateStmt *b)
 	COMPARE_NODE_FIELD(options);
 	COMPARE_SCALAR_FIELD(oncommit);
 	COMPARE_STRING_FIELD(tablespacename);
-	COMPARE_NODE_FIELD(secontext);
+	COMPARE_NODE_FIELD(seconList);
 
 	return true;
 }
