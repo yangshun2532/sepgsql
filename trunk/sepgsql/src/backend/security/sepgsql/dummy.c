@@ -8,6 +8,9 @@
  */
 #include "postgres.h"
 
+#include "access/sysattr.h"
+#include "catalog/pg_attribute.h"
+#include "catalog/pg_class.h"
 #include "security/sepgsql.h"
 
 /*
@@ -204,8 +207,6 @@ sepgsql_relation_create(const char *relName,
 	 * SECURITY CONTEXT option is unavailable
 	 * when SELinux support is disabled
 	 */
-	unavailable_function();
-
 	if (seconList != NIL)
 		unavailable_function();
 
@@ -231,13 +232,13 @@ sepgsql_relation_create(const char *relName,
 
 			for (index = 0; index < tupDesc->natts; index++)
 			{
-				attr = tupDesc->attrs[index];
+				Form_pg_attribute	attr = tupDesc->attrs[index];
 
 				if (strcmp(cdef->colname, NameStr(attr->attname)) != 0)
 					continue;
 
 				offset = index - FirstLowInvalidHeapAttributeNumber;
-				result[offset] = cdef->secontext;
+				result[offset] = (Value *)cdef->secontext;
 				break;
 			}
 		}

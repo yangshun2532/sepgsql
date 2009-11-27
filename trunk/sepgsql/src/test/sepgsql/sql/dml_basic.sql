@@ -23,24 +23,23 @@ CREATE TABLE t2		-- read-only table (from sepgsql_test_t)
 (
 	c	int,
 	d	text
-) SECURITY CONTEXT 'system_u:object_r:sepgsql_ro_table_t:s0';
+) SECURITY CONTEXT ('system_u:object_r:sepgsql_ro_table_t:s0');
 INSERT INTO t2 VALUES (1, 'XXX'), (2, 'YYY'), (3, 'ZZZ');
 
 CREATE TABLE t3		-- unaccessable table (from sepgsql_test_t)
 (
 	e	int,
 	f	text
-) SECURITY CONTEXT 'system_u:object_r:sepgsql_secret_table_t:s0';
+) SECURITY CONTEXT ('system_u:object_r:sepgsql_secret_table_t:s0');
 INSERT INTO t3 VALUES (1, 'aaa'), (2, 'bbb'), (3, 'ccc');
 
 CREATE TABLE t4
 (
 	g	int,
-	h	text
-		AS SECURITY CONTEXT 'system_u:object_r:sepgsql_ro_table_t:s0',
+	h	text,
 	i	text
-		AS SECURITY CONTEXT 'system_u:object_r:sepgsql_secret_table_t:s0'
-);
+) SECURITY CONTEXT (h='system_u:object_r:sepgsql_ro_table_t:s0',
+                    i='system_u:object_r:sepgsql_secret_table_t:s0');
 INSERT INTO t4 VALUES (1, 'AAA', 'BBB'), (2, 'CCC', 'DDD'), (3, 'EEE', 'FFF');
 
 --@SECURITY_CONTEXT=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0

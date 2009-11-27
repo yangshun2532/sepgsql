@@ -21,8 +21,8 @@ PostgreSQL documentation
 
  <refsynopsisdiv>
 <synopsis>
-CREATE SCHEMA <replaceable class="parameter">schema_name</replaceable> [ AUTHORIZATION <replaceable class="parameter">user_name</replaceable> ] [ SECURITY CONTEXT <replaceable class="parameter">security_context</replaceable> ] [ <replaceable class="parameter">schema_element</replaceable> [ ... ] ]
-CREATE SCHEMA AUTHORIZATION <replaceable class="parameter">user_name</replaceable> [ SECURITY CONTEXT <replaceable class="parameter">security_context</replaceable> ] [ <replaceable class="parameter">schema_element</replaceable> [ ... ] ]
+CREATE SCHEMA <replaceable class="parameter">schema_name</replaceable> [ AUTHORIZATION <replaceable class="parameter">user_name</replaceable> ] [ SECURITY CONTEXT ( <replaceable class="parameter">security_context</replaceable> ) ] [ <replaceable class="parameter">schema_element</replaceable> [ ... ] ]
+CREATE SCHEMA AUTHORIZATION <replaceable class="parameter">user_name</replaceable> [ SECURITY CONTEXT ( <replaceable class="parameter">security_context</replaceable> ) ] [ <replaceable class="parameter">schema_element</replaceable> [ ... ] ]
 </synopsis>
  </refsynopsisdiv>
 

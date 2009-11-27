@@ -25,12 +25,12 @@ CREATE SCHEMA scm1;
 CREATE SCHEMA scm2
        CREATE TABLE t2 (a int);
 CREATE SCHEMA scm3
-       SECURITY CONTEXT 'system_u:object_r:sepgsql_db_t:s0:c0';
+       SECURITY CONTEXT ('system_u:object_r:sepgsql_db_t:s0:c0');
 CREATE SCHEMA scm4
-       SECURITY CONTEXT 'system_u:object_r:sepgsql_db_t:s0:c1'
+       SECURITY CONTEXT ('system_u:object_r:sepgsql_db_t:s0:c1')
        CREATE TABLE t4 (x int);
 CREATE SCHEMA scm4
-       SECURITY CONTEXT 'invalid security context';			-- to be failed
+       SECURITY CONTEXT ('invalid security context');			-- to be failed
 ERROR:  invalid security context "invalid security context"
 SELECT nspname, sepgsql_schema_getcon(oid), nspsecon FROM pg_namespace
        WHERE nspname in ('scm1', 'scm2', 'scm3', 'scm4', 'scm5')

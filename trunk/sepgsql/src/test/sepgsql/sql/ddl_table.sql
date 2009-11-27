@@ -29,33 +29,32 @@ CREATE TABLE t2
 (
     c   int,
     d   int
-) SECURITY CONTEXT 'system_u:object_r:sepgsql_ro_table_t:s0:c0';
+) SECURITY CONTEXT ('system_u:object_r:sepgsql_ro_table_t:s0:c0');
 
 CREATE TABLE t3
 (
     e   int,
     f   int
-) SECURITY CONTEXT 'system_u:object_r:sepgsql_ro_table_t:s0:c20';	-- to be denied
+) SECURITY CONTEXT ('system_u:object_r:sepgsql_ro_table_t:s0:c20');	-- to be denied
 
 CREATE TABLE t4
 (
     g   int,
     h   int
-) SECURITY CONTEXT 'invalid security context';				-- to be failed
+) SECURITY CONTEXT ('invalid security context');			-- to be failed
 
 CREATE TABLE t5
 (
     i   int,
     j   int
-        AS SECURITY CONTEXT 'system_u:object_r:sepgsql_ro_table_t:s0'
-);
+) SECURITY CONTEXT (j='system_u:object_r:sepgsql_ro_table_t:s0');
 
 CREATE TABLE t6
 (
     k   int,
     l   int
-        AS SECURITY CONTEXT 'system_u:object_r:sepgsql_secret_table_t:s0'
-) SECURITY CONTEXT 'system_u:object_r:sepgsql_ro_table_t:s0';
+) SECURITY CONTEXT ('system_u:object_r:sepgsql_ro_table_t:s0',
+                    l='system_u:object_r:sepgsql_secret_table_t:s0');
 
 SELECT relname, sepgsql_relation_getcon(oid), relsecon FROM pg_class
        WHERE relname in ('t1', 't2', 't3', 't4', 't5', 't6')
@@ -98,10 +97,9 @@ SELECT relname, attname, attnum,
 -- Table inheritance and column's security context
 CREATE TABLE tx
 (
-	x	int
-		AS SECURITY CONTEXT 'system_u:object_r:sepgsql_table_t:s0:c1',
+	x	int,
 	z	text
-);
+) SECURITY CONTEXT (x='system_u:object_r:sepgsql_table_t:s0:c1');
 
 CREATE TABLE ty
 (
