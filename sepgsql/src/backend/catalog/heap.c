@@ -819,8 +819,7 @@ AddNewRelationTuple(Relation pg_class_desc,
 	 * If SE-PgSQL is available, assign a security context on the new table.
 	 * Otherwise, pg_class.relsecon should be NULL
 	 */
-	relsecon = ((secontexts && strVal(secontexts[0])) ?
-				secontexts[0] : NULL);
+	relsecon = ((secontexts && secontexts[0]) ? secontexts[0] : NULL);
 
 	/* Now build and insert the tuple */
 	InsertPgClassTuple(pg_class_desc, new_rel_desc, new_rel_oid,

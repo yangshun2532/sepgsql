@@ -22,7 +22,7 @@ PostgreSQL documentation
  <refsynopsisdiv>
 <synopsis>
 CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } ] TABLE <replaceable class="PARAMETER">table_name</replaceable> ( [
-  { <replaceable class="PARAMETER">column_name</replaceable> <replaceable class="PARAMETER">data_type</replaceable> [ DEFAULT <replaceable>default_expr</replaceable> ] [ <replaceable class="PARAMETER">column_constraint</replaceable> [ ... ] ] [ AS SECURITY CONTEXT <replaceable class="PARAMETER">security_context</replaceable>]
+  { <replaceable class="PARAMETER">column_name</replaceable> <replaceable class="PARAMETER">data_type</replaceable> [ DEFAULT <replaceable>default_expr</replaceable> ] [ <replaceable class="PARAMETER">column_constraint</replaceable> [ ... ] ]
     | <replaceable>table_constraint</replaceable>
     | LIKE <replaceable>parent_table</replaceable> [ { INCLUDING | EXCLUDING } { DEFAULTS | CONSTRAINTS | INDEXES | STORAGE | COMMENTS | ALL } ] ... }
     [, ... ]
@@ -31,7 +31,7 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } ] TABLE <replaceable class="PAR
 [ WITH ( <replaceable class="PARAMETER">storage_parameter</replaceable> [= <replaceable class="PARAMETER">value</replaceable>] [, ... ] ) | WITH OIDS | WITHOUT OIDS ]
 [ ON COMMIT { PRESERVE ROWS | DELETE ROWS | DROP } ]
 [ TABLESPACE <replaceable class="PARAMETER">tablespace</replaceable> ]
-[ SECURITY CONTEXT <replaceable class="PARAMETER">security_context</replaceable> ]
+[ SECURITY CONTEXT ( [ <replaceable class="PARAMETER">column_name</replaceable> = ] <replaceable class="PARAMETER">security_context</replaceable> [, ...] ) ]
 
 <phrase>where <replaceable class="PARAMETER">column_constraint</replaceable> is:</phrase>
 
@@ -709,8 +709,11 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } ] TABLE <replaceable class="PAR
     <term><replaceable class="parameter">security_context</replaceable></term>
     <listitem>
      <para>
-      An explicit security context to be assigned on the new table,
+      An explicit security context to be assigned on the new table or columns,
       instead of the default one.
+      If <replaceable class="PARAMETER">column_name</replaceable> is specified,
+      it means an explicit security context for the new column.
+      Otherwise, it means the table's security context.
       This options is unavailable, unless SELinux support is enabled.
       See <xref linkend="selinux-support"> for more details.
      </para>

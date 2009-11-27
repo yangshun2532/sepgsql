@@ -728,12 +728,16 @@ reorganize_explicit_contexts(TupleDesc tupDesc,
 /*
  * sepgsql_relation_create
  *
- * It checks client's privilege to create a new table and columns owned
- * by the new table, and returns an array of security contexts to be
- * assigned on the table and columns. If violated, it raises an error.
+ * This hook has two major purposes. The one is to suggest a set of security
+ * contexts to be assigned on the new table and columns to the caller.
+ * The other is to check permission to create the new table and columns,
+ * needless to say. If violated, it raises an error.
+ * Note that the caller must assign the returned security contexts on the
+ * entries of system catalogs.
  *
- * This hook should be called on the routine to create a new relation,
- * but not necessary to call from the following code path.
+ * This hook should be called from the routine to create a new relation
+ * due to the user's request.
+ * However, the following code paths are exceptions:
  *  - Boot_CreateStmt handler in bootparse.y.
  *    In the BootstrapProcessing mode, SELinux support is disabled.
  *    It assigns a security context on tables later.
@@ -744,38 +748,48 @@ reorganize_explicit_contexts(TupleDesc tupDesc,
  *    It is a quite internal process, and it shall be dropped soon.
  *    We don't need apply any checks on its creation and deletion.
  *
- * At top-half of the function, it computes a default security context
- * or applies validation checks on the given context for the new table.
- * Then, it checks permissions to create a new table with the security
- * context. If this table is in creation due to SELECT INTO, we also
- * need to check db_table:{insert}, because it can also add new data
- * into the table contents.
- * 
- * At bottom-half of the function, it also computes a default security
- * context or applies validation checks on the given context for each
- * columns owned by the table (An explicit security context shall be
- * given via ColumnDef->secontext).
- * Note that we cannot use sepgsql_attribute_create() because the table
- * is not still under construction, so it is unavailable to obtain the
- * security context of the table owning new columns.
+ * It computes security contexts of the table and columns in either of
+ * explicit or implicit way.
+ * When client uses SECURITY CONTEXT option in CREATE TABLE statement,
+ * the parsed tokens will be delivered as 'seconList' argument.
+ * In addition, when the new table inherits other tables, security contexts
+ * of the inherited columns will be delivered as 'columnList' argument.
+ * (ColumnDef->secontext means inherited context)
+ * If any explicit security context is given, SE-PgSQL applies them on
+ * the new table/columns, instead of the default one.
+ * A helper function (reorganize_explicit_contexts) flatten these explicit
+ * security contexts on the result array. Note that the security context
+ * of the inherited columns must be copied to the new columns, even if
+ * SELinux support is now disabled, to keep consistency of inheritance
+ * tree in the perspective of access control.
  *
- * It returns an array of the security contexts to be assigned on the
- * new table and columns, represented as Value objects.
- * 
- *   results[0] = Security context of the table
- *   results[attnum - FirstLowInvalidHeapAttributeNumber]
- *       = Security context of the column with this attribute number
+ * These security context will be set on an array of Value objects
+ * indexed by attribute number, except for the table.
  *
- * The caller must assign these security contexts correctly.
+ *   result[0] = security context of the table
+ *   result[attnum - FirstLowInvalidHeapAttributeNumber]
+ *             = security context of the column with the attnum
+ *
+ * These are already in raw-format to be stored in the system catalog.
+ * The caller has to assign them on the new table and columns correctly.
+ *
+ * If no explicit (or inherited) contexts are given, this hook computes
+ * a default security context for each table and columns.
+ *
+ * Next, this hook checks permissions to create a new table and columns
+ * with these security contexts. If this table is in creation due to the
+ * SELECT INTO, we also need to check db_table:{insert}, because it can
+ * also add new values into contents of the table.
+ * (Note that it controls data flow from users to data object.)
  *
  * relName : name of the new relation
- * relkind : relkind of the new relation.
- * tupDesc : TupleDesc of the new relation.
+ * relkind : relkind of the new relation
+ * tupDesc : TupleDesc of the new relation
  * nspOid : OID of the schema which shall own the new relation
- * seconList : List of explicit table's security context, or NIL
- * colList : List of ColumnDef; It can contain an explicit security
- *           context inherited from parent columns.
- * createAs : True, if SELECT INTO creates this new table.
+ * seconList : List of the explicitly given security contexts using
+ *             SECURITY CONTEXT ( ... ) option
+ * columnList : List of the columns owned by the new table
+ * createAs : True, if SELECT INTO tries to create a new table.
  */
 Value **
 sepgsql_relation_create(const char *relName,
@@ -798,7 +812,6 @@ sepgsql_relation_create(const char *relName,
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("SELinux support is now disabled")));
-
 		/*
 		 * Note that we have to copy security context of the parent
 		 * columns to keep consistency of inheritance tree, even if
@@ -829,8 +842,9 @@ sepgsql_relation_create(const char *relName,
 		return NULL;
 
 	/*
-	 * Flatten 
-	 *
+	 * Flatten explicitly given security contexts by users and inherited
+	 * column's security contexts into the result array.
+	 * Elements may be NULL, if no explicit security context is given.
 	 */
 	result = reorganize_explicit_contexts(tupDesc, columnList, seconList);
 
@@ -890,7 +904,7 @@ sepgsql_relation_create(const char *relName,
 		 * assigned on the new column.
 		 *
 		 * Note that we cannot use sepgsql_default_column_context() here,
-		 * because the table owning the column is not still constructed.
+		 * because the table owning the column is also under construction.
 		 *
 		 * Also note that the copied security context from the parent
 		 * should not modified on the system catalog, even if it is
