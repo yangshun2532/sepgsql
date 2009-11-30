@@ -1584,7 +1584,7 @@ AlterDatabaseOwner(const char *dbname, Oid newOwnerId)
 /*
  * AlterDatabaseSecLabel
  *
- * ALTER DATABASE name SECURITY_LABEL [=] new_context
+ * ALTER DATABASE name SECURITY CONTEXT ( <datLabel> )
  */
 void
 AlterDatabaseSecLabel(const char *dbname, Node *datLabel)

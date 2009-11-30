@@ -772,20 +772,20 @@ SET ENABLE_SEQSCAN TO OFF;
         policy itself.
        </para>
        <para>
-	If we set the <literal>default</literal> on the parameter,
-	SELinux support performs according to the system setting.
-	If SELinux performs in <literal>enforcing</literal> mode on the
+        If we set the <literal>default</literal> on the parameter,
+        SELinux support performs according to the system setting.
+        If SELinux performs in <literal>enforcing</literal> mode on the
         operating system, the SELinux support in PostgreSQL also performs
         in <literal>enforcing</literal> mode.
        </para>
        <para>
-	If we set the <literal>enforcing</literal> or
-	<literal>permissive</literal> on the parameter, SELinux support
-	performs with the given mode, independent from the system setting.
-	(For example, we can work SELinux support in permissive mode, even
-	if the operating system works in enforcing mode.)
-	But, note that SELinux needs to be enabled on the system to work
-	SELinux support in the three modes expect for
+        If we set the <literal>enforcing</literal> or
+        <literal>permissive</literal> on the parameter, SELinux support
+        performs with the given mode, independent from the system setting.
+        (For example, we can work SELinux support in permissive mode, even
+        if the operating system works in enforcing mode.)
+        But, note that SELinux needs to be enabled on the system to work
+        SELinux support in the three modes expect for
 	<literal>disabled</literal>.
        </para>
       </listitem>
@@ -800,7 +800,7 @@ SET ENABLE_SEQSCAN TO OFF;
        <para>
         This parameter is available only when SELinux support was enabled
         at the compile time. It enables to turn on/off mcstrans feature
-	when we import/export security context.
+        when we import/export security context.
         Every users can set this parameter in their session without any
         restriction.
        </para>

@@ -2555,7 +2555,7 @@ ExecGrant_Namespace(InternalGrant *istmt)
 									 NameStr(pg_namespace_tuple->nspname),
 									 0, NULL);
 		/*
-		 * SELinux checks permission to grant/revoke ths namespace
+		 * SELinux checks permission to grant/revoke on the namespace
 		 */
 		sepgsql_schema_grant(nspid);
 

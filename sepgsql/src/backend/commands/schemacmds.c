@@ -78,9 +78,9 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 	check_is_member_of_role(saved_uid, owner_uid);
 
 	/*
-     * SELinux permission check to create a new schema and obtain its
-     * default security context, if no explicit one was given
-     */
+	 * SELinux permission check to create a new schema and obtain its
+	 * default security context, if no explicit one was given
+	 */
 	nspsecon = sepgsql_schema_create(schemaName, false, stmt->secontext);
 
 	/* Additional check to protect reserved schema names */
@@ -443,7 +443,7 @@ AlterSchemaOwner_internal(HeapTuple tup, Relation rel, Oid newOwnerId)
 /*
  * AlterSchemaSecLabel
  *
- * ALTER SCHEMA name SECURITY_LABEL [=] newsecon
+ * ALTER SCHEMA name SECURITY CONTEXT ( <nspLabel> )
  */
 void
 AlterSchemaSecLabel(const char *name, Node *nspLabel)
