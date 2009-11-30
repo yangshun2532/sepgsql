@@ -3079,7 +3079,7 @@ InitTempTableNamespace(void)
 
 	/*
 	 * SELinux permission check to create a new schema and obtain its
-     * default security context.
+	 * default security context.
 	 */
 	nspsecon = sepgsql_schema_create(namespaceName, true, NULL);
 

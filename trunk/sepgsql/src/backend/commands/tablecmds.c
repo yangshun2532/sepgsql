@@ -1382,31 +1382,31 @@ MergeAttributes(List *schema, List *supers, bool istemp,
 										 storage_name(def->storage),
 										 storage_name(attribute->attstorage))));
 				/*
-				 * Copy security context
+				 * SE-PgSQL requires any inherited columns must have
+				 * an identical security context to the origin.
+				 * It copoes a security context to be assigned on the
+				 * new inherited columns from the parent columns, instead
+				 * of the default security context based on the security
+				 * policy.
 				 *
-				 * SE-PgSQL requires any inherited columns must have identical
-				 * security context with its parent's one.
-				 * If no explicit security context is given, we copy its
-				 * security context to be assigned on from the parent column,
-				 * instead of the default security context.
-				 * Otherwise, if user gives an explicit security context on
-				 * the merged column, or if the new table has multiple parents,
-				 * these security contexts must be matched.
+				 * Note that SE-PgSQL check permission to create a new
+				 * column labeled as the inherited security context,
+				 * as if a case when explicit security context is given.
 				 *
-				 * Note that it performs as if user gives an explicit security
-				 * context on the new column. In other word, SE-PgSQL checks
-				 * permission to create a new column with the copied security
-				 * context, instead of the default one.
-				 *
-				 * This check should be applied even if SE-PgSQL is disabled,
-				 * because it is just a simple string comparison without any
-				 * dependencies to SE-PgSQL code. In addition, we have no
-				 * reasonable way to restore security context's of columns
-				 * once created with inconsistent state.
+				 * If a new column is inherited from multiple parents
+				 * and merged, they have to be labeled as same security
+				 * context to keep consistency in access controls.
+				 * This check is also applied even if SE-PgSQL is disabled,
+				 * because we have no reasonable way to restore security
+				 * contexts of columns later, if we allow to create them
+				 * once when it is disabled. In addition, it is just a
+				 * simple text comparison without any dependency to the
+				 * SELinux code.
 				 *
 				 * Note that all the columns are unlabeled, if SE-PgSQL is
-				 * disabled, so it never prevent anything except for a case
-				 * when user disabled SE-PgSQL temporary.
+				 * disabled from the beginning. So, it never prevents
+				 * anything except for a case when SE-PgSQL is temporary
+				 * disabled due to the 'selinux_support' guc option.
 				 */
 				defsecon = get_attsecontext(RelationGetRelid(relation),
 											attribute->attnum);
@@ -3014,8 +3014,9 @@ ATRewriteTables(List **wqueue)
 			 * The new relation is local to our transaction and we know
 			 * nothing depends on it, so DROP_RESTRICT should be OK.
 			 *
-			 * In the fact, it create a new table and drops it. But it
-			 * is a purely internal steps, so no need any permission checks.
+			 * In the fact, it create a new table and drops it.
+			 * But it is a quite internal steps, so no need any permission
+			 * checks including mac model.
 			 */
 			performDeletionNoPerms(&object, DROP_RESTRICT);
 			/* performDeletion does CommandCounterIncrement at end */

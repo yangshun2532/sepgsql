@@ -825,21 +825,19 @@ sepgsql_relation_create(const char *relName,
 	}
 
 	/*
-	 * check db_schema:{add_name} permission.
-	 * It adds a new name entry to the given schema, independent from
-	 * relkind of the relation.
-	 * Note that we don't need to check this permission on creation of
-	 * TOAST table, but no code path currently gives RELKIND_TOASTVALUE.
-	 */
-	sepgsql_schema_common(nspOid, SEPG_DB_SCHEMA__ADD_NAME, true);
-
-	/*
 	 * No need to assign any security context on relations except for
 	 * regular tables, so we need to do anymore including permission
 	 * checks.
 	 */
 	if (relkind != RELKIND_RELATION)
 		return NULL;
+
+	/*
+	 * check db_schema:{add_name} permission.
+	 * It adds a new name entry of the table to the given schema.
+	 */
+	sepgsql_schema_common(nspOid, SEPG_DB_SCHEMA__ADD_NAME, true);
+
 
 	/*
 	 * Flatten explicitly given security contexts by users and inherited
@@ -1012,15 +1010,27 @@ sepgsql_relation_alter(Oid relOid, const char *newName, Oid newNsp)
 void
 sepgsql_relation_drop(Oid relOid)
 {
+	char	relkind;
+
 	if (!sepgsql_is_enabled())
 		return;
+
+	relkind = get_rel_relkind(relOid);
+
+	/*
+	 * check db_schema:{remove_name} permission.
+	 * It removes an name entry of the table from the given schema.
+	 */
+	if (relkind == RELKIND_RELATION)
+		sepgsql_schema_common(get_rel_namespace(relOid),
+							  SEPG_DB_SCHEMA__REMOVE_NAME, true);
 
 	/*
 	 * If the relation is a regular table, we scan pg_attribute to
 	 * pick up corresponding columns, and check db_column:{ drop }
 	 * permission.
 	 */
-	if (get_rel_relkind(relOid) == RELKIND_RELATION)
+	if (relkind == RELKIND_RELATION)
 	{
 		Relation	rel;
 		SysScanDesc	scan;

@@ -666,19 +666,25 @@ the namespace objects in the default PG model. If it is checked on
 constructing the schema search path and violated, the unallowed schema shall
 be dropped from the path. Otherwise, it raises an error.
 
-o add_name
+o add_name (partially implemented now)
 
 It is checked when the client adds a new name into a certain schema.
 
 Typically, it is checked on creation of a new object, renaming an object and
 moving an object to other schema.
 
-o remove_name
+In the current version, this check is only available when a managed object
+is added to the schame.
+
+o remove_name (partially implemented now)
 
 It is checked when the client removes an existing name from a certain schema.
 
 Typically, it is checked on deletion of a new object, renaming an object and
 moving an object to other schema.
+
+In the current version, this check is only available when a managed object
+is removed from the schame.
 
 Note that "ALTER xxx RENAME TO" is considered as a pair of operations.
 So, it requires add_name and remove_name permissions on the same schame.
