@@ -84,6 +84,9 @@ fi
 %{_datadir}/selinux/*/%{name}.pp
 
 %changelog
+* Fri Dec  4 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.2453-1
+- rebuild for the base security policy in F-12
+
 * Thu Jun 11 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.2015-1
 - update: add support to use translated format in MLS-range
 
