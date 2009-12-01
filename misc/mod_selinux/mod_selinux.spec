@@ -9,7 +9,7 @@ License: ASL 2.0
 URL: http://code.google.com/p/sepgsql/
 Source0: http://sepgsql.googlecode.com/files/%{name}-%{version}.tgz
 Source1: %{name}.conf
-BuildRequires: httpd-devel >= 2.2.0 libselinux-devel checkpolicy >= 2.0.19 selinux-policy
+BuildRequires: httpd-devel >= 2.2.0 libselinux-devel checkpolicy >= 2.0.19 policycoreutils selinux-policy
 Requires: kernel >= 2.6.28 httpd >= 2.2.0 policycoreutils selinux-policy
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
 
@@ -84,8 +84,11 @@ fi
 %{_datadir}/selinux/*/%{name}.pp
 
 %changelog
-* Fri Dec  4 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.2453-1
-- rebuild for the base security policy in F-12
+* Fri Dec  4 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.2454-1
+- rebuild for the base policy of F-13
+
+* Sat Jul 25 2009 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 2.2.2015-2
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_12_Mass_Rebuild
 
 * Thu Jun 11 2009 KaiGai Kohei <kaigai@ak.jp.nec.com> - 2.2.2015-1
 - update: add support to use translated format in MLS-range
