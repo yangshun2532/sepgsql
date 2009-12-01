@@ -1,4 +1,4 @@
-policy_module(sepostgresql-devel, 3.28)
+policy_module(sepostgresql-devel, 3.29)
 
 gen_require(`
 	class db_database all_db_database_perms;
@@ -21,10 +21,9 @@ gen_require(`
 	# for regression test
 	type bin_t;
 	type user_home_t;
-	type sepgsql_trusted_proc_t;
+	type sepgsql_trusted_proc_exec_t;
 
 	attribute tmpfile;
-	attribute ptynode;
 ')
 
 #################################
@@ -39,7 +38,10 @@ postgresql_role(sepgsql_test_r, sepgsql_test_t)
 
 allow sepgsql_test_t tmpfile : dir search_dir_perms;
 allow sepgsql_test_t tmpfile : file rw_file_perms;
-allow sepgsql_test_t ptynode : chr_file rw_file_perms;
+
+optional_policy(`
+	term_write_all_terms(sepgsql_test_t)
+')
 
 optional_policy(`
 	gen_require(`
@@ -50,7 +52,7 @@ optional_policy(`
 	tunable_policy(`sepgsql_regression_test_mode',`
 		allow unconfined_t sepgsql_test_t : process transition;
 	')
-	allow sepgsql_test_t unconfined_t : fifo_file read_file_perms;
+	unconfined_rw_pipes(sepgsql_test_t)
 	role unconfined_r types sepgsql_test_t;
 	role unconfined_r types sepgsql_trusted_proc_t;
 ')

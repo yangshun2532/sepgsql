@@ -82,6 +82,7 @@ static _stringlist *schedulelist = NULL;
 static _stringlist *extra_tests = NULL;
 static char *temp_install = NULL;
 static char *temp_config = NULL;
+static bool enable_selinux = false;
 static char *top_builddir = NULL;
 static bool nolocale = false;
 static char *hostname = NULL;
@@ -1863,6 +1864,7 @@ help(void)
 	printf(_("  --top-builddir=DIR        (relative) path to top level build directory\n"));
 	printf(_("  --port=PORT               start postmaster on PORT\n"));
 	printf(_("  --temp-config=PATH        append contents of PATH to temporary config\n"));
+	printf(_("  --enable-selinux          enables SELinux support, if available\n"));
 	printf(_("\n"));
 	printf(_("Options for using an existing installation:\n"));
 	printf(_("  --host=HOST               use postmaster running on HOST\n"));
@@ -1907,6 +1909,7 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 		{"dlpath", required_argument, NULL, 17},
 		{"create-role", required_argument, NULL, 18},
 		{"temp-config", required_argument, NULL, 19},
+		{"enable-selinux", optional_argument, NULL, 20},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -1997,6 +2000,9 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 			case 19:
 				temp_config = strdup(optarg);
 				break;
+			case 20:
+				enable_selinux = true;
+				break;
 			default:
 				/* getopt_long already emitted a complaint */
 				fprintf(stderr, _("\nTry \"%s -h\" for more information.\n"),
@@ -2086,10 +2092,11 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 		/* initdb */
 		header(_("initializing database system"));
 		snprintf(buf, sizeof(buf),
-				 SYSTEMQUOTE "\"%s/initdb\" -D \"%s/data\" -L \"%s\" --noclean%s%s > \"%s/log/initdb.log\" 2>&1" SYSTEMQUOTE,
+				 SYSTEMQUOTE "\"%s/initdb\" -D \"%s/data\" -L \"%s\" --noclean%s%s%s > \"%s/log/initdb.log\" 2>&1" SYSTEMQUOTE,
 				 bindir, temp_install, datadir,
 				 debug ? " --debug" : "",
 				 nolocale ? " --no-locale" : "",
+				 enable_selinux ? " --enable-selinux" : "",
 				 outputdir);
 		if (system(buf))
 		{
