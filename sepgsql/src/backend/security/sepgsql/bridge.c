@@ -1578,6 +1578,9 @@ sepgsql_fdw_create(const char *fdwName, Oid fdwValidator)
 void
 sepgsql_fdw_alter(Oid fdwOid, Oid newValidator)
 {
+	if (!sepgsqlIsEnabled())
+		return;
+
 	sepgsql_fdw_common(fdwOid, SEPG_DB_TUPLE__UPDATE, true);
 
 	/* db_procedure:{install} */
@@ -1710,6 +1713,9 @@ sepgsql_language_create(const char *langName, Oid handlerOid, Oid validatorOid)
 {
 	sepgsql_sid_t	sid;
 
+	if (!sepgsqlIsEnabled())
+		return InvalidOid;
+
 	sid = sepgsqlGetDefaultTupleSecid(LanguageRelationId);
 	sepgsqlClientHasPerms(sid, SEPG_CLASS_DB_TUPLE,
 						  SEPG_DB_TUPLE__INSERT, langName, true);
@@ -1756,33 +1762,33 @@ sepgsql_language_grant(Oid langOid)
  * (need to backport v8.5 feature)
  * ------------------------------------------------------------ */
 Oid
-ac_largeobject_create(Oid loid, DefElem *newLabel)
+sepgsql_largeobject_create(Oid loid, DefElem *newLabel)
 {
 	return InvalidOid;
 }
 
 void
-ac_largeobject_alter(Oid loid, Oid newOwner)
+sepgsql_largeobject_alter(Oid loid, Oid newOwner)
 {}
 
 void
-ac_largeobject_drop(Oid loid, bool dacSkip)
+sepgsql_largeobject_drop(Oid loid, bool dacSkip)
 {}
 
 void
-ac_largeobject_read(Oid loid)
+sepgsql_largeobject_read(Oid loid)
 {}
 
 void
-ac_largeobject_write(Oid loid)
+sepgsql_largeobject_write(Oid loid)
 {}
 
 void
-ac_largeobject_export(Oid loid, const char *filename)
+sepgsql_largeobject_export(Oid loid, const char *filename)
 {}
 
 Oid
-ac_largeobject_import(Oid loid, const char *filename, DefElem *newLabel)
+sepgsql_largeobject_import(Oid loid, const char *filename, DefElem *newLabel)
 {}
 
 /* ------------------------------------------------------------ *
