@@ -3136,7 +3136,8 @@ pg_aclmask(AclObjectKind objkind, Oid table_oid, AttrNumber attnum, Oid roleid,
 		case ACL_KIND_LANGUAGE:
 			return pg_language_aclmask(table_oid, roleid, mask, how);
 		case ACL_KIND_LARGEOBJECT:
-			return pg_largeobject_aclmask(table_oid, roleid, mask, how);
+			return pg_largeobject_aclmask_snapshot(table_oid, roleid,
+												   mask, how, SnapshotNow);
 		case ACL_KIND_NAMESPACE:
 			return pg_namespace_aclmask(table_oid, roleid, mask, how);
 		case ACL_KIND_TABLESPACE:
@@ -3535,7 +3536,8 @@ pg_language_aclmask(Oid lang_oid, Oid roleid,
  */
 AclMode
 pg_largeobject_aclmask_snapshot(Oid lobj_oid, Oid roleid,
-								AclMode mask, AclMaskHow how, Snapshot snapshot)
+								AclMode mask, AclMaskHow how,
+								Snapshot snapshot)
 {
 	AclMode		result;
 	Relation	pg_lo_meta;
@@ -3600,19 +3602,6 @@ pg_largeobject_aclmask_snapshot(Oid lobj_oid, Oid roleid,
 	heap_close(pg_lo_meta, AccessShareLock);
 
 	return result;
-}
-
-/*
- * See the comment in pg_largeobject_aclmask_snapshot().
- * It is a different version of the routine which implicitly assumes
- * SnapshotNow to reference the metadata.
- */
-AclMode
-pg_largeobject_aclmask(Oid lobj_oid, Oid roleid,
-					   AclMode mask, AclMaskHow how)
-{
-	return pg_largeobject_aclmask_snapshot(lobj_oid, roleid,
-										   mask, how, SnapshotNow);
 }
 
 /*
@@ -4079,13 +4068,6 @@ pg_largeobject_aclcheck_snapshot(Oid lobj_oid, Oid roleid, AclMode mode,
 		return ACLCHECK_NO_PRIV;
 }
 
-AclResult
-pg_largeobject_aclcheck(Oid lobj_oid, Oid roleid, AclMode mode)
-{
-	return pg_largeobject_aclcheck_snapshot(lobj_oid, roleid, mode,
-											SnapshotNow);
-}
-
 /*
  * Exported routine for checking a user's access privileges to a namespace
  */
@@ -4312,7 +4294,7 @@ pg_largeobject_ownercheck(Oid lobj_oid, Oid roleid)
 	tuple = systable_getnext(scan);
 	if (!HeapTupleIsValid(tuple))
 		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_FUNCTION),
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("large object %u does not exist", lobj_oid)));
 
 	ownerId = ((Form_pg_largeobject_metadata) GETSTRUCT(tuple))->lomowner;

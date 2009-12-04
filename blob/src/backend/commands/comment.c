@@ -1438,7 +1438,7 @@ CommentLargeObject(List *qualname, char *comment)
 				 errmsg("large object %u does not exist", loid)));
 
 	/* Permission checks */
-	if (large_object_privilege_checks &&
+	if (!lo_compat_privileges &&
 		!pg_largeobject_ownercheck(loid, GetUserId()))
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
