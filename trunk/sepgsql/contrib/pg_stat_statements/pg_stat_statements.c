@@ -14,7 +14,7 @@
  * Copyright (c) 2008-2009, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/contrib/pg_stat_statements/pg_stat_statements.c,v 1.5 2009/07/27 04:09:55 tgl Exp $
+ *	  $PostgreSQL: pgsql/contrib/pg_stat_statements/pg_stat_statements.c,v 1.7 2009/12/01 02:31:11 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
