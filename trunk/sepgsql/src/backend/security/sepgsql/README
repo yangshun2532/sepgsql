@@ -227,9 +227,9 @@ also checks the security policy but does not prevent anything in permissive
 mode, except for access violation logs.
 The purpose of permissive mode is to debug the security policy itself.
 
-A GUC option: sepostgresql controls this behavior.
+A GUC option: selinux_support controls this behavior.
 
-  sepostgresql = [default | enforcing | permissive | disabled ]
+  seliux_support = [default | enforcing | permissive | disabled ]
 
     default    : It follows system setting.
     enforcing  : Always enforcing, if SELinux is enabled on the system
@@ -270,7 +270,7 @@ readable form as follows:
 SELinux provides an API to translate them. All the security contexts are
 stored in raw-format, and it is translated on exporting/importing time.
 
-A GUC option: sepostgresql_mcstrans = [on | off] controls this behavior.
+A GUC option: selinux_mcstrans = [on | off] controls this behavior.
 If it is turned off, it print out security context in raw-format.
 
 
@@ -847,7 +847,7 @@ The sepgsql_relation_alter() is implemented as follows:
   }
 
 On the (1), it checks whether SE-PgSQL is enabled, or not. Even if we build
-the binary with SE-PgSQL, it can be turned of by the 'sepostgresql' GUC
+the binary with SE-PgSQL, it can be turned of by the 'selinux_support' GUC
 option or system state. If SE-PgSQL is disabled, it returns soon without any
 side-effect.
 
