@@ -55,7 +55,7 @@
 /*
  * compatibility flag for permission checks
  */
-bool large_object_privilege_checks;
+bool lo_compat_privileges;
 
 /*#define FSDB 1*/
 #define BUFSIZE			8192
@@ -163,7 +163,7 @@ lo_read(int fd, char *buf, int len)
 				 errmsg("invalid large-object descriptor: %d", fd)));
 
 	/* Permission checks */
-	if (large_object_privilege_checks &&
+	if (!lo_compat_privileges &&
 		pg_largeobject_aclcheck_snapshot(cookies[fd]->id,
 										 GetUserId(),
 										 ACL_SELECT,
@@ -195,7 +195,7 @@ lo_write(int fd, const char *buf, int len)
 					 fd)));
 
 	/* Permission checks */
-	if (large_object_privilege_checks &&
+	if (!lo_compat_privileges &&
 		pg_largeobject_aclcheck_snapshot(cookies[fd]->id,
 										 GetUserId(),
 										 ACL_UPDATE,
@@ -280,7 +280,7 @@ lo_unlink(PG_FUNCTION_ARGS)
 	Oid			lobjId = PG_GETARG_OID(0);
 
 	/* Must be owner of the largeobject */
-	if (large_object_privilege_checks &&
+	if (!lo_compat_privileges &&
 		!pg_largeobject_ownercheck(lobjId, GetUserId()))
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
@@ -518,7 +518,7 @@ lo_truncate(PG_FUNCTION_ARGS)
 				 errmsg("invalid large-object descriptor: %d", fd)));
 
 	/* Permission checks */
-	if (large_object_privilege_checks &&
+	if (!lo_compat_privileges &&
 		pg_largeobject_aclcheck_snapshot(cookies[fd]->id,
 										 GetUserId(),
 										 ACL_UPDATE,

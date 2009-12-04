@@ -26,9 +26,9 @@
  *		typedef struct FormData_pg_largeobject_metadata
  * ----------------
  */
-#define LargeObjectMetadataRelationId  2336
+#define LargeObjectMetadataRelationId  2995
 
-CATALOG(pg_largeobject_metadata,2336)
+CATALOG(pg_largeobject_metadata,2995)
 {
 	Oid			lomowner;		/* OID of the largeobject owner */
 	aclitem		lomacl[1];		/* access permissions */

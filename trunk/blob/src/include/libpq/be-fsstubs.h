@@ -40,7 +40,7 @@ extern Datum lo_truncate(PG_FUNCTION_ARGS);
 /*
  * compatibility option for access control
  */
-extern bool	large_object_privilege_checks;
+extern bool	lo_compat_privileges;
 
 /*
  * These are not fmgr-callable, but are available to C code.

@@ -1228,12 +1228,12 @@ static struct config_bool ConfigureNamesBool[] =
 	},
 
 	{
-		{"large_object_privilege_checks", PGC_SUSET, COMPAT_OPTIONS,
+		{"lo_compat_privileges", PGC_SUSET, COMPAT_OPTIONS,
 			gettext_noop("Turn on/off privilege checks on large objects."),
 			NULL,
 		},
-		&large_object_privilege_checks,
-		true, NULL, NULL
+		&lo_compat_privileges,
+		false, NULL, NULL
 	},
 
 	/* End-of-list marker */

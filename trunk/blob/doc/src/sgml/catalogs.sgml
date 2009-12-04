@@ -3156,10 +3156,9 @@
   </indexterm>
 
   <para>
-   The catalog <structname>pg_largeobject_metadata</structname> holds
-   the metadata of <quote>large objects</quote>.
-   In this version, a large object has OID of its owner, access permissions
-   and OID of the largeobject itself.
+   The purpose of <structname>pg_largeobject_metadata</structname> is to
+   hold metadata of <quote>large objects</quote>, such as OID of its owner,
+   access permissions and OID of the large object itself.
   </para>
 
   <table>
