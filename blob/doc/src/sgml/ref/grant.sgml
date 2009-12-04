@@ -174,7 +174,7 @@ GRANT <replaceable class="PARAMETER">role_name</replaceable> [, ...] TO <replace
        <xref linkend="sql-delete" endterm="sql-delete-title">.
        For sequences, this privilege also allows the use of the
        <function>currval</function> function.
-       For largeo bjects, this privilege also allows to read from
+       For large objects, this privilege also allows to read from
        the target large object.
       </para>
      </listitem>
