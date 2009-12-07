@@ -191,9 +191,10 @@ LargeObjectAlterOwner(Oid loid, Oid newOwnerId)
 		if (!superuser())
 		{
 			/*
-			 * large_object_privilege_checks is not refered here,
-			 * because it is a compatibility option, but we don't
-			 * have ALTER LARGE OBJECT prior to the v8.5.0.
+			 * The 'lo_compat_privileges' is not checked here, because we
+			 * don't have any access control features in the 8.4.x series
+			 * or earlier release.
+			 * So, it is not a place we can define a compatible behavior.
 			 */
 
 			/* Otherwise, must be owner of the existing object */
