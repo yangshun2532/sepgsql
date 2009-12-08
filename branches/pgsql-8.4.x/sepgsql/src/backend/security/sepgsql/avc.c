@@ -876,5 +876,5 @@ sepgsqlReceiverMain(void)
 
 	avc_netlink_loop();
 
-	return 0;
+	exit(0);
 }
