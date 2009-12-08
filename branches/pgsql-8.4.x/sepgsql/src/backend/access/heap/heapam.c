@@ -898,7 +898,6 @@ relation_open(Oid relationId, LOCKMODE lockmode)
 	/* The relcache does all the real work... */
 	r = RelationIdGetRelation(relationId);
 
-	Assert(RelationIsValid(r));
 	if (!RelationIsValid(r))
 		elog(ERROR, "could not open relation with OID %u", relationId);
 
