@@ -33,6 +33,7 @@
 #include "nodes/makefuncs.h"
 #include "postmaster/bgwriter.h"
 #include "postmaster/walwriter.h"
+#include "security/sepgsql.h"
 #include "storage/bufmgr.h"
 #include "storage/ipc.h"
 #include "storage/proc.h"
@@ -339,6 +340,11 @@ AuxiliaryProcessMain(int argc, char *argv[])
 			case WalWriterProcess:
 				statmsg = "wal writer process";
 				break;
+#ifdef HAVE_SELINUX
+			case SelinuxReceiverProcess:
+				statmsg = "selinux netlink receiver";
+				break;
+#endif
 			default:
 				statmsg = "??? process";
 				break;
@@ -430,6 +436,12 @@ AuxiliaryProcessMain(int argc, char *argv[])
 			InitXLOGAccess();
 			WalWriterMain();
 			proc_exit(1);		/* should never return */
+
+#ifdef HAVE_SELINUX
+		case SelinuxReceiverProcess:
+			sepgsqlReceiverMain();
+			proc_exit(1);		/* should nener return */
+#endif
 
 		default:
 			elog(PANIC, "unrecognized process type: %d", auxType);

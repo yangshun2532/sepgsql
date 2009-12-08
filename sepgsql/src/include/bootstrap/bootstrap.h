@@ -70,7 +70,8 @@ typedef enum
 	BootstrapProcess,
 	StartupProcess,
 	BgWriterProcess,
-	WalWriterProcess
+	WalWriterProcess,
+	SelinuxReceiverProcess,
 } AuxProcType;
 
 #endif   /* BOOTSTRAP_H */

@@ -143,8 +143,10 @@ typedef struct PROC_HDR
  * normal operation. Startup process also consumes one slot, but WAL
  * writer and autovacuum launcher are launched only after it has
  * exited.
+ * In addition, a netlink receiver process may be launched, if SELinux
+ * support is enabled.
  */
-#define NUM_AUXILIARY_PROCS		3
+#define NUM_AUXILIARY_PROCS		4
 
 
 /* configurable options */

@@ -211,7 +211,7 @@ static pid_t StartupPID = 0,
 			PgArchPID = 0,
 			PgStatPID = 0,
 			SysLoggerPID = 0,
-			sepgsqlWorkerPID = 0;
+			sepgsqlReceiverPID = 0;
 
 /* Startup/shutdown state */
 #define			NoShutdown		0
@@ -447,6 +447,7 @@ static void ShmemBackendArrayRemove(Backend *bn);
 #define StartupDataBase()		StartChildProcess(StartupProcess)
 #define StartBackgroundWriter() StartChildProcess(BgWriterProcess)
 #define StartWalWriter()		StartChildProcess(WalWriterProcess)
+#define StartSELinuxReceiver()	StartChildProcess(SelinuxReceiverProcess)
 
 /* Macros to check exit status of a child process */
 #define EXIT_STATUS_0(st)  ((st) == 0)
@@ -1438,9 +1439,10 @@ ServerLoop(void)
 		if (PgStatPID == 0 && pmState == PM_RUN)
 			PgStatPID = pgstat_start();
 
-		/* If we have lost the sepgsql worker (if needed), try to start a new one */
-		if (sepgsqlWorkerPID == 0 && pmState == PM_RUN)
-			sepgsqlWorkerPID = sepgsqlStartupWorkerProcess();
+		/* if we have lost the selinux netlink receiver, try to start */
+		if (sepgsqlIsEnabled() &&
+			sepgsqlReceiverPID == 0 && pmState == PM_RUN)
+			sepgsqlReceiverPID = StartSELinuxReceiver();
 
 		/* If we need to signal the autovacuum launcher, do so now */
 		if (avlauncher_needs_signal)
@@ -2059,8 +2061,8 @@ SIGHUP_handler(SIGNAL_ARGS)
 			signal_child(SysLoggerPID, SIGHUP);
 		if (PgStatPID != 0)
 			signal_child(PgStatPID, SIGHUP);
-		if (sepgsqlWorkerPID != 0)
-			signal_child(sepgsqlWorkerPID, SIGHUP);
+		if (sepgsqlReceiverPID != 0)
+			signal_child(sepgsqlReceiverPID, SIGHUP);
 
 		/* Reload authentication config files too */
 		if (!load_hba())
@@ -2121,9 +2123,9 @@ pmdie(SIGNAL_ARGS)
 				/* and the walwriter too */
 				if (WalWriterPID != 0)
 					signal_child(WalWriterPID, SIGTERM);
-				/* and the sepgsql worker too */
-				if (sepgsqlWorkerPID != 0)
-					signal_child(sepgsqlWorkerPID, SIGTERM);
+				/* and the selinux netlink receiver too */
+				if (sepgsqlReceiverPID != 0)
+					signal_child(sepgsqlReceiverPID, SIGTERM);
 				pmState = PM_WAIT_BACKUP;
 			}
 
@@ -2171,9 +2173,9 @@ pmdie(SIGNAL_ARGS)
 				/* and the walwriter too */
 				if (WalWriterPID != 0)
 					signal_child(WalWriterPID, SIGTERM);
-				/* and the sepgsqlWorker too */
-				if (sepgsqlWorkerPID != 0)
-					signal_child(sepgsqlWorkerPID, SIGTERM);
+				/* and the selinux netlink receiver too */
+				if (sepgsqlReceiverPID != 0)
+					signal_child(sepgsqlReceiverPID, SIGTERM);
 				pmState = PM_WAIT_BACKENDS;
 			}
 
@@ -2207,8 +2209,8 @@ pmdie(SIGNAL_ARGS)
 				signal_child(PgArchPID, SIGQUIT);
 			if (PgStatPID != 0)
 				signal_child(PgStatPID, SIGQUIT);
-			if (sepgsqlWorkerPID != 0)
-				signal_child(sepgsqlWorkerPID, SIGQUIT);
+			if (sepgsqlReceiverPID != 0)
+				signal_child(sepgsqlReceiverPID, SIGQUIT);
 			ExitPostmaster(0);
 			break;
 	}
@@ -2471,12 +2473,12 @@ reaper(SIGNAL_ARGS)
 			continue;
 		}
 
-		/* Was it the sepgsql worker process? */
-		if (pid == sepgsqlWorkerPID)
+		/* Was it the selinux netlink receiver process? */
+		if (pid == sepgsqlReceiverPID)
 		{
-			sepgsqlWorkerPID = 0;
+			sepgsqlReceiverPID = 0;
 			if (!EXIT_STATUS_0(exitstatus))
-				LogChildExit(LOG, _("SE-PostgreSQL worker process"),
+				LogChildExit(LOG, _("SELinux netlink receiver process"),
 							 pid, exitstatus);
 			continue;
 		}
@@ -2672,16 +2674,16 @@ HandleChildCrash(int pid, int exitstatus, const char *procname)
 		signal_child(AutoVacPID, (SendStop ? SIGSTOP : SIGQUIT));
 	}
 
-	/* Take care of the sepgsql worker too */
-	if (pid == sepgsqlWorkerPID)
-		sepgsqlWorkerPID = 0;
-	else if (sepgsqlWorkerPID != 0 && !FatalError)
+	/* Take care of the selinux netlink receiver too */
+	if (pid == sepgsqlReceiverPID)
+		sepgsqlReceiverPID = 0;
+	else if (sepgsqlReceiverPID != 0 && !FatalError)
 	{
 		ereport(DEBUG2,
 				(errmsg_internal("sending %s to process %d",
 								 (SendStop ? "SIGSTOP" : "SIGQUIT"),
-								 (int) sepgsqlWorkerPID)));
-		signal_child(sepgsqlWorkerPID, (SendStop ? SIGSTOP : SIGQUIT));
+								 (int) sepgsqlReceiverPID)));
+		signal_child(sepgsqlReceiverPID, (SendStop ? SIGSTOP : SIGQUIT));
 	}
 
 	/*
@@ -2817,7 +2819,7 @@ PostmasterStateMachine(void)
 			(BgWriterPID == 0 || !FatalError) &&
 			WalWriterPID == 0 &&
 			AutoVacPID == 0 &&
-			sepgsqlWorkerPID == 0)
+			sepgsqlReceiverPID == 0)
 		{
 			if (FatalError)
 			{
@@ -4360,6 +4362,12 @@ StartChildProcess(AuxProcType type)
 				ereport(LOG,
 						(errmsg("could not fork WAL writer process: %m")));
 				break;
+#ifdef HAVE_SELINUX
+			case SelinuxReceiverProcess:
+				ereport(LOG,
+						(errmsg("could not fork selinux receiver process: %m")));
+				break;
+#endif
 			default:
 				ereport(LOG,
 						(errmsg("could not fork process: %m")));
