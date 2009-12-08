@@ -224,7 +224,7 @@ sepgsqlComputeCreate(security_context_t scontext,
 					 security_context_t tcontext,
 					 uint16 tclass);
 
-extern pid_t sepgsqlStartupWorkerProcess(void);
+extern void sepgsqlReceiverMain(void);
 
 /*
  * bridge.c : new style security hooks
@@ -347,19 +347,19 @@ sepgsql_language_grant(Oid langOid);
 
 /* pg_largeobject */
 extern Oid
-ac_largeobject_create(Oid loid, DefElem *newLabel);
+sepgsql_largeobject_create(Oid loid, DefElem *newLabel);
 extern void
-ac_largeobject_alter(Oid loid, Oid newOwner);
+sepgsql_largeobject_alter(Oid loid, Oid newOwner);
 extern void
-ac_largeobject_drop(Oid loid, bool dacSkip);
+sepgsql_largeobject_drop(Oid loid, bool dacSkip);
 extern void
-ac_largeobject_read(Oid loid);
+sepgsql_largeobject_read(Oid loid);
 extern void
-ac_largeobject_write(Oid loid);
+sepgsql_largeobject_write(Oid loid);
 extern void
-ac_largeobject_export(Oid loid, const char *filename);
+sepgsql_largeobject_export(Oid loid, const char *filename);
 extern Oid
-ac_largeobject_import(Oid loid, const char *filename, DefElem *newLabel);
+sepgsql_largeobject_import(Oid loid, const char *filename, DefElem *newLabel);
 
 /* pg_namespace */
 extern Oid
@@ -609,7 +609,6 @@ extern const char *sepgsqlGetPermString(uint16 tclass, uint32 permission);
 
 /* avc.c */
 #define sepgsqlShmemSize()						(0)
-#define sepgsqlStartupWorkerProcess()			(0)
 
 /* checker.c */
 #define sepgsqlCheckRTEPerms(a)					do {} while(0)

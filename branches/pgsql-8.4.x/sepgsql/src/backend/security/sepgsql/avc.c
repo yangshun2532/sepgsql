@@ -796,7 +796,7 @@ sepgsql_cb_log(int type, const char *fmt, ...)
 	if (c)
 		*c = '\0';
 
-	ereport(LOG, 
+	ereport(LOG,
 			(errcode(ERRCODE_SELINUX_INFO),
 			 errmsg("%s", buffer)));
 
@@ -808,8 +808,8 @@ sepgsql_cb_setenforce(int enforce)
 {
 	/* switch enforcing/permissive */
 	LWLockAcquire(SepgsqlAvcLock, LW_EXCLUSIVE);
-	selinux_state->version = selinux_state->version + 1;
 	selinux_state->enforcing = (enforce ? true : false);
+	selinux_state->version++;
 	LWLockRelease(SepgsqlAvcLock);
 
 	return 0;
@@ -820,25 +820,23 @@ sepgsql_cb_policyload(int seqno)
 {
 	/* invalidate local avc */
 	LWLockAcquire(SepgsqlAvcLock, LW_EXCLUSIVE);
-	selinux_state->version = selinux_state->version + 1;
+	selinux_state->version++;
 	LWLockRelease(SepgsqlAvcLock);
 
 	return 0;
 }
 
-static int
-sepgsqlWorkerMain(void)
+void
+sepgsqlReceiverMain(void)
 {
 	union selinux_callback cb;
 
-	ClosePostmasterPorts(false);
+	Assert(sepgsqlIsEnabled());
 
-	on_exit_reset();
-
-	/*
-	 * map shared memory segment
-	 */
-	sepgsqlShmemInit();
+#ifdef HAVE_SETSID
+	if (setsid() < 0)
+		elog(FATAL, "setsid() failed: %m");
+#endif
 
 	/*
 	 * setup the signal handler
@@ -852,6 +850,11 @@ sepgsqlWorkerMain(void)
 	pqsignal(SIGUSR2, SIG_IGN);
 	pqsignal(SIGCHLD, SIG_DFL);
 	PG_SETMASK(&UnBlockSig);
+
+	/*
+	 * map shared memory segment
+	 */
+	sepgsqlShmemInit();
 
 	ereport(LOG,
 			(errcode(ERRCODE_SELINUX_INFO),
@@ -874,21 +877,4 @@ sepgsqlWorkerMain(void)
 	avc_netlink_loop();
 
 	return 0;
-}
-
-pid_t
-sepgsqlStartupWorkerProcess(void)
-{
-	pid_t		chld;
-
-	if (!sepgsqlIsEnabled())
-		return (pid_t) 0;
-
-	chld = fork();
-	if (chld == 0)
-		exit(sepgsqlWorkerMain());
-	else if (chld > 0)
-		return chld;
-
-	return (pid_t) 0;
 }
