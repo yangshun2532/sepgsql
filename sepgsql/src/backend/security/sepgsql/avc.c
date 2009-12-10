@@ -40,7 +40,7 @@
  * postmaster can receives the notification messages from the kernel
  * space, and invalidate the current version of avc.
  */
-static MemoryContext AvcMemCtx;
+static MemoryContext AvcMemCtx = NULL;
 
 #define AVC_HASH_NUM_SLOTS		256
 #define AVC_HASH_NUM_NODES		180
@@ -140,11 +140,12 @@ sepgsqlShmemInit(void)
  * It invalidate access vector cache. It has to be called on errors,
  * because avc entries for newly created context is uncertain whether
  * it is still valid, or not.
+ * If error happens before avc initialization, we simply skip it.
  */
 void
 sepgsqlAvcReset(void)
 {
-	if (!sepgsqlIsEnabled())
+	if (!sepgsqlIsEnabled() || !AvcMemCtx)
 		return;
 
 	MemoryContextReset(AvcMemCtx);
