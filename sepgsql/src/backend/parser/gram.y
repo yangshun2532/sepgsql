@@ -11,7 +11,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/parser/gram.y,v 2.694 2009/11/20 20:38:10 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/parser/gram.y,v 2.696 2009/12/11 03:34:55 itagaki Exp $
  *
  * HISTORY
  *	  AUTHOR			DATE			MAJOR EVENT
@@ -353,6 +353,8 @@ static TypeName *TableFuncTypeName(List *columns);
 %type <node>	def_arg columnElem where_clause where_or_current_clause
 				a_expr b_expr c_expr func_expr AexprConst indirection_el
 				columnref in_expr having_clause func_table array_expr
+				ExclusionWhereClause
+%type <list>	ExclusionConstraintList ExclusionConstraintElem
 %type <list>	func_arg_list
 %type <node>	func_arg_expr
 %type <list>	row type_list array_expr_list
@@ -396,6 +398,7 @@ static TypeName *TableFuncTypeName(List *columns);
 %type <boolean> opt_varying opt_timezone
 
 %type <ival>	Iconst SignedIconst
+%type <list>	Iconst_list
 %type <str>		Sconst comment_text
 %type <str>		RoleId opt_granted_by opt_boolean ColId_or_Sconst
 %type <list>	var_list
@@ -480,7 +483,7 @@ static TypeName *TableFuncTypeName(List *columns);
 	DICTIONARY DISABLE_P DISCARD DISTINCT DO DOCUMENT_P DOMAIN_P DOUBLE_P DROP
 
 	EACH ELSE ENABLE_P ENCODING ENCRYPTED END_P ENUM_P ESCAPE EXCEPT
-	EXCLUDING EXCLUSIVE EXECUTE EXISTS EXPLAIN EXTERNAL EXTRACT
+	EXCLUDE EXCLUDING EXCLUSIVE EXECUTE EXISTS EXPLAIN EXTERNAL EXTRACT
 
 	FALSE_P FAMILY FETCH FIRST_P FLOAT_P FOLLOWING FOR FORCE FOREIGN FORWARD
 	FREEZE FROM FULL FUNCTION FUNCTIONS
@@ -1600,8 +1603,16 @@ alter_table_cmds:
 		;
 
 alter_table_cmd:
-			/* ALTER TABLE <name> ADD [COLUMN] <coldef> */
-			ADD_P opt_column columnDef
+			/* ALTER TABLE <name> ADD <coldef> */
+			ADD_P columnDef
+				{
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					n->subtype = AT_AddColumn;
+					n->def = $2;
+					$$ = (Node *)n;
+				}
+			/* ALTER TABLE <name> ADD COLUMN <coldef> */
+			| ADD_P COLUMN columnDef
 				{
 					AlterTableCmd *n = makeNode(AlterTableCmd);
 					n->subtype = AT_AddColumn;
@@ -2500,6 +2511,22 @@ ConstraintElem:
 					n->initdeferred = ($8 & 2) != 0;
 					$$ = (Node *)n;
 				}
+			| EXCLUDE access_method_clause '(' ExclusionConstraintList ')'
+				opt_definition OptConsTableSpace ExclusionWhereClause
+				ConstraintAttributeSpec
+				{
+					Constraint *n = makeNode(Constraint);
+					n->contype = CONSTR_EXCLUSION;
+					n->location = @1;
+					n->access_method	= $2;
+					n->exclusions		= $4;
+					n->options			= $6;
+					n->indexspace		= $7;
+					n->where_clause		= $8;
+					n->deferrable		= ($9 & 1) != 0;
+					n->initdeferred		= ($9 & 2) != 0;
+					$$ = (Node *)n;
+				}
 			| FOREIGN KEY '(' columnList ')' REFERENCES qualified_name
 				opt_column_list key_match key_actions ConstraintAttributeSpec
 				{
@@ -2555,6 +2582,28 @@ key_match:  MATCH FULL
 			{
 				$$ = FKCONSTR_MATCH_UNSPECIFIED;
 			}
+		;
+
+ExclusionConstraintList:
+			ExclusionConstraintElem					{ $$ = list_make1($1); }
+			| ExclusionConstraintList ',' ExclusionConstraintElem
+													{ $$ = lappend($1, $3); }
+		;
+
+ExclusionConstraintElem: index_elem WITH any_operator
+			{
+				$$ = list_make2($1, $3);
+			}
+			/* allow OPERATOR() decoration for the benefit of ruleutils.c */
+			| index_elem WITH OPERATOR '(' any_operator ')'
+			{
+				$$ = list_make2($1, $5);
+			}
+		;
+
+ExclusionWhereClause:
+			WHERE '(' a_expr ')'					{ $$ = $3; }
+			| /*EMPTY*/								{ $$ = NULL; }
 		;
 
 /*
@@ -4544,6 +4593,14 @@ privilege_target:
 					n->objs = $2;
 					$$ = n;
 				}
+			| LARGE_P OBJECT_P Iconst_list
+				{
+					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
+					n->targtype = ACL_TARGET_OBJECT;
+					n->objtype = ACL_OBJECT_LARGEOBJECT;
+					n->objs = $3;
+					$$ = n;
+				}
 			| SCHEMA name_list
 				{
 					PrivTarget *n = (PrivTarget *) palloc(sizeof(PrivTarget));
@@ -5816,6 +5873,14 @@ AlterOwnerStmt: ALTER AGGREGATE func_name aggr_args OWNER TO RoleId
 					AlterOwnerStmt *n = makeNode(AlterOwnerStmt);
 					n->objectType = OBJECT_LANGUAGE;
 					n->object = list_make1(makeString($4));
+					n->newowner = $7;
+					$$ = (Node *)n;
+				}
+			| ALTER LARGE_P OBJECT_P Iconst OWNER TO RoleId
+				{
+					AlterOwnerStmt *n = makeNode(AlterOwnerStmt);
+					n->objectType = OBJECT_LARGEOBJECT;
+					n->object = list_make1(makeInteger($4));
 					n->newowner = $7;
 					$$ = (Node *)n;
 				}
@@ -10581,6 +10646,10 @@ SignedIconst: Iconst								{ $$ = $1; }
 			| '-' Iconst							{ $$ = - $2; }
 		;
 
+Iconst_list:	Iconst						{ $$ = list_make1(makeInteger($1)); }
+				| Iconst_list ',' Iconst	{ $$ = lappend($1, makeInteger($3)); }
+		;
+
 /*
  * Name classification hierarchy.
  *
@@ -10707,6 +10776,7 @@ unreserved_keyword:
 			| ENCRYPTED
 			| ENUM_P
 			| ESCAPE
+			| EXCLUDE
 			| EXCLUDING
 			| EXCLUSIVE
 			| EXECUTE

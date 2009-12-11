@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/catalogs.sgml,v 2.211 2009/11/20 20:38:09 tgl Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/catalogs.sgml,v 2.213 2009/12/11 03:34:54 itagaki Exp $ -->
 <!--
  Documentation of the system catalogs, directed toward PostgreSQL developers
  -->
@@ -160,7 +160,12 @@
 
      <row>
       <entry><link linkend="catalog-pg-largeobject"><structname>pg_largeobject</structname></link></entry>
-      <entry>large objects</entry>
+      <entry>data pages for large objects</entry>
+     </row>
+
+     <row>
+      <entry><link linkend="catalog-pg-largeobject-metadata"><structname>pg_largeobject_metadata</structname></link></entry>
+      <entry>metadata for large objects</entry>
      </row>
 
      <row>
@@ -1545,11 +1550,7 @@
       <entry><type>bool</type></entry>
       <entry></entry>
       <entry>
-       True if this is a table and it has (or recently had) any
-       indexes. This is set by <command>CREATE INDEX</command>, but
-       not cleared immediately by <command>DROP INDEX</command>.
-       <command>VACUUM</command> clears <structfield>relhasindex</> if it finds the
-       table has no indexes
+       True if this is a table and it has (or recently had) any indexes
       </entry>
      </row>
 
@@ -1627,6 +1628,17 @@
      </row>
 
      <row>
+      <entry><structfield>relhasexclusion</structfield></entry>
+      <entry><type>bool</type></entry>
+      <entry></entry>
+      <entry>
+       For a table, true if the table has (or once had) any exclusion
+       constraints; for an index, true if the index supports an exclusion
+       constraint
+      </entry>
+     </row>
+
+     <row>
       <entry><structfield>relhasrules</structfield></entry>
       <entry><type>bool</type></entry>
       <entry></entry>
@@ -1699,6 +1711,17 @@
     </tbody>
    </tgroup>
   </table>
+
+  <para>
+   Several of the boolean flags in <structname>pg_class</> are maintained
+   lazily: they are guaranteed to be true if that's the correct state, but
+   may not be reset to false immediately when the condition is no longer
+   true.  For example, <structfield>relhasindex</> is set by
+   <command>CREATE INDEX</command>, but it is never cleared by
+   <command>DROP INDEX</command>.  Instead, <command>VACUUM</command> clears
+   <structfield>relhasindex</> if it finds the table has no indexes.  This
+   arrangement avoids race conditions and improves concurrency.
+  </para>
  </sect1>
 
  <sect1 id="catalog-pg-constraint">
@@ -1709,11 +1732,12 @@
   </indexterm>
 
   <para>
-   The catalog <structname>pg_constraint</structname> stores check, primary key, unique, and foreign
-   key constraints on tables.  (Column constraints are not treated
-   specially.  Every column constraint is equivalent to some table
-   constraint.)  Not-null constraints are represented in the
-   <structname>pg_attribute</> catalog.
+   The catalog <structname>pg_constraint</structname> stores check, primary
+   key, unique, foreign key, and exclusion constraints on tables.
+   (Column constraints are not treated specially.  Every column constraint is
+   equivalent to some table constraint.)
+   Not-null constraints are represented in the <structname>pg_attribute</>
+   catalog, not here.
   </para>
 
   <para>
@@ -1758,7 +1782,8 @@
         <literal>c</> = check constraint,
         <literal>f</> = foreign key constraint,
         <literal>p</> = primary key constraint,
-        <literal>u</> = unique constraint
+        <literal>u</> = unique constraint,
+        <literal>x</> = exclusion constraint
       </entry>
      </row>
 
@@ -1795,7 +1820,7 @@
       <entry><type>oid</type></entry>
       <entry><literal><link linkend="catalog-pg-class"><structname>pg_class</structname></link>.oid</literal></entry>
       <entry>The index supporting this constraint, if it's a unique, primary
-       key, or foreign key constraint; else 0</entry>
+       key, foreign key, or exclusion constraint; else 0</entry>
      </row>
 
      <row>
@@ -1847,7 +1872,7 @@
       <entry><type>bool</type></entry>
       <entry></entry>
       <entry>
-       This constraint is defined locally in the relation.  Note that a
+       This constraint is defined locally for the relation.  Note that a
        constraint can be locally defined and inherited simultaneously
       </entry>
      </row>
@@ -1857,7 +1882,8 @@
       <entry><type>int4</type></entry>
       <entry></entry>
       <entry>
-       The number of direct ancestors this constraint has.  A constraint with
+       The number of direct inheritance ancestors this constraint has.
+       A constraint with
        a nonzero number of ancestors cannot be dropped nor renamed
       </entry>
      </row>
@@ -1898,6 +1924,13 @@
      </row>
 
      <row>
+      <entry><structfield>conexclop</structfield></entry>
+      <entry><type>oid[]</type></entry>
+      <entry><literal><link linkend="catalog-pg-operator"><structname>pg_operator</structname></link>.oid</></entry>
+      <entry>If an exclusion constraint, list of the per-column exclusion operators</entry>
+     </row>
+
+     <row>
       <entry><structfield>conbin</structfield></entry>
       <entry><type>text</type></entry>
       <entry></entry>
@@ -1914,6 +1947,16 @@
    </tgroup>
   </table>
 
+  <para>
+   In the case of an exclusion constraint, <structfield>conkey</structfield>
+   is only useful for constraint elements that are simple column references.
+   For other cases, a zero appears in <structfield>conkey</structfield>
+   and the associated index must be consulted to discover the expression
+   that is constrained.  (<structfield>conkey</structfield> thus has the
+   same contents as <structname>pg_index</>.<structfield>indkey</> for the
+   index.)
+  </para>
+
   <note>
    <para>
     <structfield>consrc</structfield> is not updated when referenced objects
@@ -1927,7 +1970,8 @@
    <para>
     <literal>pg_class.relchecks</literal> needs to agree with the
     number of check-constraint entries found in this table for each
-    relation.
+    relation.  Also, <literal>pg_class.relhasexclusion</literal> must
+    be true if there are any exclusion-constraint entries for the relation.
    </para>
   </note>
 
@@ -3110,22 +3154,31 @@
 
   <para>
    The catalog <structname>pg_largeobject</structname> holds the data making up
-   <quote>large objects</quote>.  A large object is identified by an
-   OID assigned when it is created.  Each large object is broken into
+   <quote>large objects</quote>.  A large object is identified by an OID of
+   <link linkend="catalog-pg-largeobject-metadata"><structname>pg_largeobject_metadata</></link>
+   catalog, assigned when it is created.  Each large object is broken into
    segments or <quote>pages</> small enough to be conveniently stored as rows
    in <structname>pg_largeobject</structname>.
    The amount of data per page is defined to be <symbol>LOBLKSIZE</> (which is currently
    <literal>BLCKSZ/4</>, or typically 2 kB).
   </para>
 
+  <para>
+   <structname>pg_largeobject</structname> should not be readable by the
+   public, since the catalog contains data in large objects of all users.
+   <structname>pg_largeobject_metadata</> is a publicly readable catalog
+   that only contains identifiers of large objects.
+  </para>
+
   <table>
    <title><structname>pg_largeobject</> Columns</title>
 
-   <tgroup cols="3">
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
       <entry>Type</entry>
+      <entry>References</entry>
       <entry>Description</entry>
      </row>
     </thead>
@@ -3134,12 +3187,14 @@
      <row>
       <entry><structfield>loid</structfield></entry>
       <entry><type>oid</type></entry>
+      <entry><literal><link linkend="catalog-pg-largeobject-metadata"><structname>pg_largeobject_metadata</structname></link>.oid</literal></entry>
       <entry>Identifier of the large object that includes this page</entry>
      </row>
 
      <row>
       <entry><structfield>pageno</structfield></entry>
       <entry><type>int4</type></entry>
+      <entry></entry>
       <entry>Page number of this page within its large object
       (counting from zero)</entry>
      </row>
@@ -3147,6 +3202,7 @@
      <row>
       <entry><structfield>data</structfield></entry>
       <entry><type>bytea</type></entry>
+      <entry></entry>
       <entry>
        Actual data stored in the large object.
        This will never be more than <symbol>LOBLKSIZE</> bytes and might be less
@@ -3167,6 +3223,55 @@
 
  </sect1>
 
+ <sect1 id="catalog-pg-largeobject-metadata">
+  <title><structname>pg_largeobject_metadata</structname></title>
+
+  <indexterm zone="catalog-pg-largeobject-metadata">
+   <primary>pg_largeobject_metadata</primary>
+  </indexterm>
+
+  <para>
+   The purpose of <structname>pg_largeobject_metadata</structname> is to
+   hold metadata of <quote>large objects</quote>, such as OID of its owner,
+   access permissions and OID of the large object itself.
+  </para>
+
+  <table>
+   <title><structname>pg_largeobject_metadata</> Columns</title>
+
+   <tgroup cols="4">
+    <thead>
+     <row>
+      <entry>Name</entry>
+      <entry>Type</entry>
+      <entry>References</entry>
+      <entry>Description</entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry><structfield>lomowner</structfield></entry>
+      <entry><type>oid</type></entry>
+      <entry><literal><link linkend="catalog-pg-authid"><structname>pg_authid</structname></link>.oid</literal></entry>
+      <entry>Owner of the largeobejct</entry>
+     </row>
+
+     <row>
+      <entry><structfield>lomacl</structfield></entry>
+      <entry><type>aclitem[]</type></entry>
+      <entry>
+       Access privileges; see
+       <xref linkend="sql-grant" endterm="sql-grant-title"> and
+       <xref linkend="sql-revoke" endterm="sql-revoke-title">
+       for details
+      </entry>
+     </row>
+
+    </tbody>
+   </tgroup>
+  </table>
+ </sect1>
 
  <sect1 id="catalog-pg-listener">
   <title><structname>pg_listener</structname></title>

@@ -1,4 +1,4 @@
-<!-- $PostgreSQL: pgsql/doc/src/sgml/config.sgml,v 1.235 2009/11/28 23:38:06 tgl Exp $ -->
+<!-- $PostgreSQL: pgsql/doc/src/sgml/config.sgml,v 1.237 2009/12/11 03:34:55 itagaki Exp $ -->
 
 <chapter Id="runtime-config">
   <title>Server Configuration</title>
@@ -54,9 +54,9 @@
    <para>
     One way to set these parameters is to edit the file
     <filename>postgresql.conf</><indexterm><primary>postgresql.conf</></>,
-    which is normally kept in the data directory. (<application>initdb</>
-    installs a default copy there.) An example of what this file might look
-    like is:
+    which is normally kept in the data directory.  (A default copy is
+    installed there when the database cluster directory is
+    initialized.)  An example of what this file might look like is:
 <programlisting>
 # This is a comment
 log_connections = yes
@@ -4924,6 +4924,35 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
         because the default behavior of ordinary strings will change
         in a future release for SQL compatibility.  This variable can
         be enabled to help detect applications that will break.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-lo-compat-privileges" xreflabel="lo_compat_privileges">
+      <term><varname>lo_compat_privileges</varname> (<type>boolean</type>)</term>
+      <indexterm>
+       <primary>
+        <varname>lo_compat_privileges</varname> configuration parameter
+       </primary>
+      </indexterm>
+      <listitem>
+       <para>
+        This allows us to tuen on/off database privilege checks on large
+        objects. In the 8.4.x series and earlier release do not have
+        privilege checks on large object in most cases.
+
+        So, turning the <varname>lo_compat_privileges</varname> off means
+        the large object feature performs in compatible mode.
+       </para>
+       <para>
+        Please note that it is not equivalent to disable all the security
+        checks corresponding to large objects.
+        For example, the <literal>lo_import()</literal> and
+        <literal>lo_export()</literal> need superuser privileges independent
+        from this setting as prior versions were doing.
+       </para>
+       <para>
+        It is <literal>off</literal> by default.
        </para>
       </listitem>
      </varlistentry>
