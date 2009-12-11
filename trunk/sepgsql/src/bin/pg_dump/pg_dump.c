@@ -12,7 +12,7 @@
  *	by PostgreSQL
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/bin/pg_dump/pg_dump.c,v 1.553 2009/11/20 20:38:11 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/bin/pg_dump/pg_dump.c,v 1.555 2009/12/11 03:34:56 itagaki Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -2081,7 +2081,9 @@ dumpBlobs(Archive *AH, void *arg)
 
 /*
  * dumpBlobComments
- *	dump all blob comments
+ *	dump all blob properties.
+ *  It has "BLOB COMMENTS" tag due to the historical reason, but note
+ *  that it is the routine to dump all the properties of blobs.
  *
  * Since we don't provide any way to be selective about dumping blobs,
  * there's no need to be selective about their comments either.  We put
@@ -2092,30 +2094,35 @@ dumpBlobComments(Archive *AH, void *arg)
 {
 	const char *blobQry;
 	const char *blobFetchQry;
-	PQExpBuffer commentcmd = createPQExpBuffer();
+	PQExpBuffer cmdQry = createPQExpBuffer();
 	PGresult   *res;
 	int			i;
 
 	if (g_verbose)
-		write_msg(NULL, "saving large object comments\n");
+		write_msg(NULL, "saving large object properties\n");
 
 	/* Make sure we are in proper schema */
 	selectSourceSchema("pg_catalog");
 
 	/* Cursor to get all BLOB comments */
-	if (AH->remoteVersion >= 70300)
+	if (AH->remoteVersion >= 80500)
+		blobQry = "DECLARE blobcmt CURSOR FOR SELECT oid, "
+			"obj_description(oid, 'pg_largeobject'), "
+			"pg_get_userbyid(lomowner), lomacl "
+			"FROM pg_largeobject_metadata";
+	else if (AH->remoteVersion >= 70300)
 		blobQry = "DECLARE blobcmt CURSOR FOR SELECT loid, "
-			"obj_description(loid, 'pg_largeobject') "
+			"obj_description(loid, 'pg_largeobject'), NULL, NULL "
 			"FROM (SELECT DISTINCT loid FROM "
 			"pg_description d JOIN pg_largeobject l ON (objoid = loid) "
 			"WHERE classoid = 'pg_largeobject'::regclass) ss";
 	else if (AH->remoteVersion >= 70200)
 		blobQry = "DECLARE blobcmt CURSOR FOR SELECT loid, "
-			"obj_description(loid, 'pg_largeobject') "
+			"obj_description(loid, 'pg_largeobject'), NULL, NULL "
 			"FROM (SELECT DISTINCT loid FROM pg_largeobject) ss";
 	else if (AH->remoteVersion >= 70100)
 		blobQry = "DECLARE blobcmt CURSOR FOR SELECT loid, "
-			"obj_description(loid) "
+			"obj_description(loid), NULL, NULL "
 			"FROM (SELECT DISTINCT loid FROM pg_largeobject) ss";
 	else
 		blobQry = "DECLARE blobcmt CURSOR FOR SELECT oid, "
@@ -2123,7 +2130,7 @@ dumpBlobComments(Archive *AH, void *arg)
 			"		SELECT description "
 			"		FROM pg_description pd "
 			"		WHERE pd.objoid=pc.oid "
-			"	) "
+			"	), NULL, NULL "
 			"FROM pg_class pc WHERE relkind = 'l'";
 
 	res = PQexec(g_conn, blobQry);
@@ -2143,22 +2150,51 @@ dumpBlobComments(Archive *AH, void *arg)
 		/* Process the tuples, if any */
 		for (i = 0; i < PQntuples(res); i++)
 		{
-			Oid			blobOid;
-			char	   *comment;
+			Oid			blobOid = atooid(PQgetvalue(res, i, 0));
+			char	   *lo_comment = PQgetvalue(res, i, 1);
+			char	   *lo_owner = PQgetvalue(res, i, 2);
+			char	   *lo_acl = PQgetvalue(res, i, 3);
+			char		lo_name[32];
 
-			/* ignore blobs without comments */
-			if (PQgetisnull(res, i, 1))
-				continue;
+			resetPQExpBuffer(cmdQry);
 
-			blobOid = atooid(PQgetvalue(res, i, 0));
-			comment = PQgetvalue(res, i, 1);
+			/* comment on the blob */
+			if (!PQgetisnull(res, i, 1))
+			{
+				appendPQExpBuffer(cmdQry,
+								  "COMMENT ON LARGE OBJECT %u IS ", blobOid);
+				appendStringLiteralAH(cmdQry, lo_comment, AH);
+				appendPQExpBuffer(cmdQry, ";\n");
+			}
 
-			printfPQExpBuffer(commentcmd, "COMMENT ON LARGE OBJECT %u IS ",
-							  blobOid);
-			appendStringLiteralAH(commentcmd, comment, AH);
-			appendPQExpBuffer(commentcmd, ";\n");
+			/* dump blob ownership, if necessary */
+			if (!PQgetisnull(res, i, 2))
+			{
+				appendPQExpBuffer(cmdQry,
+								  "ALTER LARGE OBJECT %u OWNER TO %s;\n",
+								  blobOid, lo_owner);
+			}
 
-			archputs(commentcmd->data, AH);
+			/* dump blob privileges, if necessary */
+			if (!PQgetisnull(res, i, 3) &&
+				!dataOnly && !aclsSkip)
+			{
+				snprintf(lo_name, sizeof(lo_name), "%u", blobOid);
+				if (!buildACLCommands(lo_name, NULL, "LARGE OBJECT",
+									  lo_acl, lo_owner, "",
+									  AH->remoteVersion, cmdQry))
+				{
+					write_msg(NULL, "could not parse ACL (%s) for "
+							  "large object %u", lo_acl, blobOid);
+					exit_nicely();
+				}
+			}
+
+			if (cmdQry->len > 0)
+			{
+				appendPQExpBuffer(cmdQry, "\n");
+				archputs(cmdQry->data, AH);
+			}
 		}
 	} while (PQntuples(res) > 0);
 
@@ -2166,7 +2202,7 @@ dumpBlobComments(Archive *AH, void *arg)
 
 	archputs("\n", AH);
 
-	destroyPQExpBuffer(commentcmd);
+	destroyPQExpBuffer(cmdQry);
 
 	return 1;
 }
@@ -3736,6 +3772,7 @@ getIndexes(TableInfo tblinfo[], int numTables)
 				i_condeferred,
 				i_contableoid,
 				i_conoid,
+				i_condef,
 				i_tablespace,
 				i_options;
 	int			ntups;
@@ -3766,7 +3803,7 @@ getIndexes(TableInfo tblinfo[], int numTables)
 		 * assume an index won't have more than one internal dependency.
 		 */
 		resetPQExpBuffer(query);
-		if (g_fout->remoteVersion >= 80200)
+		if (g_fout->remoteVersion >= 80500)
 		{
 			appendPQExpBuffer(query,
 							  "SELECT t.tableoid, t.oid, "
@@ -3778,6 +3815,35 @@ getIndexes(TableInfo tblinfo[], int numTables)
 							  "c.condeferrable, c.condeferred, "
 							  "c.tableoid AS contableoid, "
 							  "c.oid AS conoid, "
+							  "pg_catalog.pg_get_constraintdef(c.oid, false) AS condef, "
+							  "(SELECT spcname FROM pg_catalog.pg_tablespace s WHERE s.oid = t.reltablespace) AS tablespace, "
+							"array_to_string(t.reloptions, ', ') AS options "
+							  "FROM pg_catalog.pg_index i "
+					  "JOIN pg_catalog.pg_class t ON (t.oid = i.indexrelid) "
+							  "LEFT JOIN pg_catalog.pg_depend d "
+							  "ON (d.classid = t.tableoid "
+							  "AND d.objid = t.oid "
+							  "AND d.deptype = 'i') "
+							  "LEFT JOIN pg_catalog.pg_constraint c "
+							  "ON (d.refclassid = c.tableoid "
+							  "AND d.refobjid = c.oid) "
+							  "WHERE i.indrelid = '%u'::pg_catalog.oid "
+							  "ORDER BY indexname",
+							  tbinfo->dobj.catId.oid);
+		}
+		else if (g_fout->remoteVersion >= 80200)
+		{
+			appendPQExpBuffer(query,
+							  "SELECT t.tableoid, t.oid, "
+							  "t.relname AS indexname, "
+					 "pg_catalog.pg_get_indexdef(i.indexrelid) AS indexdef, "
+							  "t.relnatts AS indnkeys, "
+							  "i.indkey, i.indisclustered, "
+							  "c.contype, c.conname, "
+							  "c.condeferrable, c.condeferred, "
+							  "c.tableoid AS contableoid, "
+							  "c.oid AS conoid, "
+							  "null AS condef, "
 							  "(SELECT spcname FROM pg_catalog.pg_tablespace s WHERE s.oid = t.reltablespace) AS tablespace, "
 							"array_to_string(t.reloptions, ', ') AS options "
 							  "FROM pg_catalog.pg_index i "
@@ -3805,6 +3871,7 @@ getIndexes(TableInfo tblinfo[], int numTables)
 							  "c.condeferrable, c.condeferred, "
 							  "c.tableoid AS contableoid, "
 							  "c.oid AS conoid, "
+							  "null AS condef, "
 							  "(SELECT spcname FROM pg_catalog.pg_tablespace s WHERE s.oid = t.reltablespace) AS tablespace, "
 							  "null AS options "
 							  "FROM pg_catalog.pg_index i "
@@ -3832,6 +3899,7 @@ getIndexes(TableInfo tblinfo[], int numTables)
 							  "c.condeferrable, c.condeferred, "
 							  "c.tableoid AS contableoid, "
 							  "c.oid AS conoid, "
+							  "null AS condef, "
 							  "NULL AS tablespace, "
 							  "null AS options "
 							  "FROM pg_catalog.pg_index i "
@@ -3862,6 +3930,7 @@ getIndexes(TableInfo tblinfo[], int numTables)
 							  "false AS condeferred, "
 							  "0::oid AS contableoid, "
 							  "t.oid AS conoid, "
+							  "null AS condef, "
 							  "NULL AS tablespace, "
 							  "null AS options "
 							  "FROM pg_index i, pg_class t "
@@ -3887,6 +3956,7 @@ getIndexes(TableInfo tblinfo[], int numTables)
 							  "false AS condeferred, "
 							  "0::oid AS contableoid, "
 							  "t.oid AS conoid, "
+							  "null AS condef, "
 							  "NULL AS tablespace, "
 							  "null AS options "
 							  "FROM pg_index i, pg_class t "
@@ -3914,6 +3984,7 @@ getIndexes(TableInfo tblinfo[], int numTables)
 		i_condeferred = PQfnumber(res, "condeferred");
 		i_contableoid = PQfnumber(res, "contableoid");
 		i_conoid = PQfnumber(res, "conoid");
+		i_condef = PQfnumber(res, "condef");
 		i_tablespace = PQfnumber(res, "tablespace");
 		i_options = PQfnumber(res, "options");
 
@@ -3951,7 +4022,7 @@ getIndexes(TableInfo tblinfo[], int numTables)
 			indxinfo[j].indisclustered = (PQgetvalue(res, j, i_indisclustered)[0] == 't');
 			contype = *(PQgetvalue(res, j, i_contype));
 
-			if (contype == 'p' || contype == 'u')
+			if (contype == 'p' || contype == 'u' || contype == 'x')
 			{
 				/*
 				 * If we found a constraint matching the index, create an
@@ -3969,7 +4040,10 @@ getIndexes(TableInfo tblinfo[], int numTables)
 				constrinfo[j].contable = tbinfo;
 				constrinfo[j].condomain = NULL;
 				constrinfo[j].contype = contype;
-				constrinfo[j].condef = NULL;
+				if (contype == 'x')
+					constrinfo[j].condef = strdup(PQgetvalue(res, j, i_condef));
+				else
+					constrinfo[j].condef = NULL;
 				constrinfo[j].confrelid = InvalidOid;
 				constrinfo[j].conindex = indxinfo[j].dobj.dumpId;
 				constrinfo[j].condeferrable = *(PQgetvalue(res, j, i_condeferrable)) == 't';
@@ -10815,7 +10889,9 @@ dumpConstraint(Archive *fout, ConstraintInfo *coninfo)
 	q = createPQExpBuffer();
 	delq = createPQExpBuffer();
 
-	if (coninfo->contype == 'p' || coninfo->contype == 'u')
+	if (coninfo->contype == 'p' ||
+		coninfo->contype == 'u' ||
+		coninfo->contype == 'x')
 	{
 		/* Index-related constraint */
 		IndxInfo   *indxinfo;
@@ -10832,37 +10908,46 @@ dumpConstraint(Archive *fout, ConstraintInfo *coninfo)
 
 		appendPQExpBuffer(q, "ALTER TABLE ONLY %s\n",
 						  fmtId(tbinfo->dobj.name));
-		appendPQExpBuffer(q, "    ADD CONSTRAINT %s %s (",
-						  fmtId(coninfo->dobj.name),
-						  coninfo->contype == 'p' ? "PRIMARY KEY" : "UNIQUE");
+		appendPQExpBuffer(q, "    ADD CONSTRAINT %s ",
+						  fmtId(coninfo->dobj.name));
 
-		for (k = 0; k < indxinfo->indnkeys; k++)
+		if (coninfo->condef)
 		{
-			int			indkey = (int) indxinfo->indkeys[k];
-			const char *attname;
-
-			if (indkey == InvalidAttrNumber)
-				break;
-			attname = getAttrName(indkey, tbinfo);
-
-			appendPQExpBuffer(q, "%s%s",
-							  (k == 0) ? "" : ", ",
-							  fmtId(attname));
+			/* pg_get_constraintdef should have provided everything */
+			appendPQExpBuffer(q, "%s;\n", coninfo->condef);
 		}
-
-		appendPQExpBuffer(q, ")");
-
-		if (indxinfo->options && strlen(indxinfo->options) > 0)
-			appendPQExpBuffer(q, " WITH (%s)", indxinfo->options);
-
-		if (coninfo->condeferrable)
+		else
 		{
-			appendPQExpBuffer(q, " DEFERRABLE");
-			if (coninfo->condeferred)
-				appendPQExpBuffer(q, " INITIALLY DEFERRED");
-		}
+			appendPQExpBuffer(q, "%s (",
+							  coninfo->contype == 'p' ? "PRIMARY KEY" : "UNIQUE");
+			for (k = 0; k < indxinfo->indnkeys; k++)
+			{
+				int			indkey = (int) indxinfo->indkeys[k];
+				const char *attname;
 
-		appendPQExpBuffer(q, ";\n");
+				if (indkey == InvalidAttrNumber)
+					break;
+				attname = getAttrName(indkey, tbinfo);
+
+				appendPQExpBuffer(q, "%s%s",
+								  (k == 0) ? "" : ", ",
+								  fmtId(attname));
+			}
+
+			appendPQExpBuffer(q, ")");
+
+			if (indxinfo->options && strlen(indxinfo->options) > 0)
+				appendPQExpBuffer(q, " WITH (%s)", indxinfo->options);
+
+			if (coninfo->condeferrable)
+			{
+				appendPQExpBuffer(q, " DEFERRABLE");
+				if (coninfo->condeferred)
+					appendPQExpBuffer(q, " INITIALLY DEFERRED");
+			}
+
+			appendPQExpBuffer(q, ";\n");
+		}
 
 		/* If the index is clustered, we need to record that. */
 		if (indxinfo->indisclustered)
