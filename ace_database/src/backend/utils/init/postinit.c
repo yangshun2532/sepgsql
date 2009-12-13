@@ -36,6 +36,7 @@
 #include "pgstat.h"
 #include "postmaster/autovacuum.h"
 #include "postmaster/postmaster.h"
+#include "security/ace.h"
 #include "storage/bufmgr.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
@@ -276,17 +277,9 @@ CheckMyDatabase(const char *name, bool am_superuser)
 					name)));
 
 		/*
-		 * Check privilege to connect to the database.	(The am_superuser test
-		 * is redundant, but since we have the flag, might as well check it
-		 * and save a few cycles.)
+		 * Check privilege to connect to the database.
 		 */
-		if (!am_superuser &&
-			pg_database_aclcheck(MyDatabaseId, GetUserId(),
-								 ACL_CONNECT) != ACLCHECK_OK)
-			ereport(FATAL,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("permission denied for database \"%s\"", name),
-					 errdetail("User does not have CONNECT privilege.")));
+		ace_database_connect(MyDatabaseId);
 
 		/*
 		 * Check connection limit for this database.
@@ -715,8 +708,8 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 		am_superuser = superuser();
 	}
 
-	/* set up ACL framework (so CheckMyDatabase can check permissions) */
-	initialize_acl();
+	/* Set up ACE security providers */
+	ace_provider_initialize();
 
 	/* Process pg_db_role_setting options */
 	process_settings(MyDatabaseId, GetSessionUserId());
