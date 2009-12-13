@@ -2752,15 +2752,20 @@ ExecGrant_Namespace(InternalGrant *istmt)
 							&grantorId, &avail_goptions);
 
 		/*
+		 * If we found no grant options, consider whether to issue a hard
+		 * error. Per spec, having any privilege at all on the object will
+		 * get you by here.
+		 */
+		ace_schema_grant(nspid, grantorId, avail_goptions);
+
+		/*
 		 * Restrict the privileges to what we can actually grant, and emit the
 		 * standards-mandated warning and error messages.
 		 */
 		this_privileges =
-			restrict_and_check_grant(istmt->is_grant, avail_goptions,
-									 istmt->all_privs, istmt->privileges,
-									 nspid, grantorId, ACL_KIND_NAMESPACE,
-									 NameStr(pg_namespace_tuple->nspname),
-									 0, NULL);
+			restrict_grant(istmt->is_grant, avail_goptions,
+						   istmt->all_privs, istmt->privileges,
+						   NameStr(pg_namespace_tuple->nspname));
 
 		/*
 		 * Generate new ACL.
