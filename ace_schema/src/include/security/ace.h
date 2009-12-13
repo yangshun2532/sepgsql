@@ -36,4 +36,18 @@ ace_database_reindex(Oid datOid);
 extern void
 ace_database_calculate_size(Oid datOid);
 
+/* ace_schema.c */
+extern void
+ace_schema_create(const char *nspName, Oid nspOwner, bool isTemp);
+extern void
+ace_schema_alter(Oid nspOid, const char *newName, Oid newOwner);
+extern void
+ace_schema_drop(Oid nspOid, bool cascade);
+extern void
+ace_schema_grant(Oid nspOid, Oid grantor, AclMode goptions);
+extern bool
+ace_schema_search(Oid nspOid, bool abort);
+extern void
+ace_schema_comment(Oid nspOid);
+
 #endif	/* SECURITY_ACE_H */
