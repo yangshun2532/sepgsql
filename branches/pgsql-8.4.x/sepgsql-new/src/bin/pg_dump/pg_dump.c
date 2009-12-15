@@ -1923,7 +1923,9 @@ hasBlobs(Archive *AH)
 	selectSourceSchema("pg_catalog");
 
 	/* Check for BLOB OIDs */
-	if (AH->remoteVersion >= 70100)
+	if (AH->remoteVersion >= 80402)
+		blobQry = "SELECT oid FROM pg_largeobject_metadata LIMIT 1";
+	else if (AH->remoteVersion >= 70100)
 		blobQry = "SELECT loid FROM pg_largeobject LIMIT 1";
 	else
 		blobQry = "SELECT oid FROM pg_class WHERE relkind = 'l' LIMIT 1";
@@ -1959,7 +1961,9 @@ dumpBlobs(Archive *AH, void *arg)
 	selectSourceSchema("pg_catalog");
 
 	/* Cursor to get all BLOB OIDs */
-	if (AH->remoteVersion >= 70100)
+	if (AH->remoteVersion >= 80402)
+		blobQry = "DECLARE bloboid CURSOR FOR SELECT oid FROM pg_largeobject_metadata";
+	else if (AH->remoteVersion >= 70100)
 		blobQry = "DECLARE bloboid CURSOR FOR SELECT DISTINCT loid FROM pg_largeobject";
 	else
 		blobQry = "DECLARE bloboid CURSOR FOR SELECT oid FROM pg_class WHERE relkind = 'l'";
@@ -2023,7 +2027,9 @@ dumpBlobs(Archive *AH, void *arg)
 
 /*
  * dumpBlobComments
- *	dump all blob comments
+ *	dump all blob properties.
+ *  It has "BLOB COMMENTS" tag due to the historical reason, but note
+ *  that it is the routine to dump all the properties of blobs.
  *
  * Since we don't provide any way to be selective about dumping blobs,
  * there's no need to be selective about their comments either.  We put
@@ -2034,30 +2040,35 @@ dumpBlobComments(Archive *AH, void *arg)
 {
 	const char *blobQry;
 	const char *blobFetchQry;
-	PQExpBuffer commentcmd = createPQExpBuffer();
+	PQExpBuffer cmdQry = createPQExpBuffer();
 	PGresult   *res;
 	int			i;
 
 	if (g_verbose)
-		write_msg(NULL, "saving large object comments\n");
+		write_msg(NULL, "saving large object properties\n");
 
 	/* Make sure we are in proper schema */
 	selectSourceSchema("pg_catalog");
 
 	/* Cursor to get all BLOB comments */
-	if (AH->remoteVersion >= 70300)
+	if (AH->remoteVersion >= 80402)
+		blobQry = "DECLARE blobcmt CURSOR FOR SELECT oid, "
+			"obj_description(oid, 'pg_largeobject'), "
+			"pg_get_userbyid(lomowner), lomacl "
+			"FROM pg_largeobject_metadata";
+	else if (AH->remoteVersion >= 70300)
 		blobQry = "DECLARE blobcmt CURSOR FOR SELECT loid, "
-			"obj_description(loid, 'pg_largeobject') "
+			"obj_description(loid, 'pg_largeobject'), NULL, NULL "
 			"FROM (SELECT DISTINCT loid FROM "
 			"pg_description d JOIN pg_largeobject l ON (objoid = loid) "
 			"WHERE classoid = 'pg_largeobject'::regclass) ss";
 	else if (AH->remoteVersion >= 70200)
 		blobQry = "DECLARE blobcmt CURSOR FOR SELECT loid, "
-			"obj_description(loid, 'pg_largeobject') "
+			"obj_description(loid, 'pg_largeobject'), NULL, NULL "
 			"FROM (SELECT DISTINCT loid FROM pg_largeobject) ss";
 	else if (AH->remoteVersion >= 70100)
 		blobQry = "DECLARE blobcmt CURSOR FOR SELECT loid, "
-			"obj_description(loid) "
+			"obj_description(loid), NULL, NULL "
 			"FROM (SELECT DISTINCT loid FROM pg_largeobject) ss";
 	else
 		blobQry = "DECLARE blobcmt CURSOR FOR SELECT oid, "
@@ -2065,7 +2076,7 @@ dumpBlobComments(Archive *AH, void *arg)
 			"		SELECT description "
 			"		FROM pg_description pd "
 			"		WHERE pd.objoid=pc.oid "
-			"	) "
+			"	), NULL, NULL "
 			"FROM pg_class pc WHERE relkind = 'l'";
 
 	res = PQexec(g_conn, blobQry);
@@ -2085,22 +2096,51 @@ dumpBlobComments(Archive *AH, void *arg)
 		/* Process the tuples, if any */
 		for (i = 0; i < PQntuples(res); i++)
 		{
-			Oid			blobOid;
-			char	   *comment;
+			Oid			blobOid = atooid(PQgetvalue(res, i, 0));
+			char	   *lo_comment = PQgetvalue(res, i, 1);
+			char	   *lo_owner = PQgetvalue(res, i, 2);
+			char	   *lo_acl = PQgetvalue(res, i, 3);
+			char		lo_name[32];
 
-			/* ignore blobs without comments */
-			if (PQgetisnull(res, i, 1))
-				continue;
+			resetPQExpBuffer(cmdQry);
 
-			blobOid = atooid(PQgetvalue(res, i, 0));
-			comment = PQgetvalue(res, i, 1);
+			/* comment on the blob */
+			if (!PQgetisnull(res, i, 1))
+			{
+				appendPQExpBuffer(cmdQry,
+								  "COMMENT ON LARGE OBJECT %u IS ", blobOid);
+				appendStringLiteralAH(cmdQry, lo_comment, AH);
+				appendPQExpBuffer(cmdQry, ";\n");
+			}
 
-			printfPQExpBuffer(commentcmd, "COMMENT ON LARGE OBJECT %u IS ",
-							  blobOid);
-			appendStringLiteralAH(commentcmd, comment, AH);
-			appendPQExpBuffer(commentcmd, ";\n");
+			/* dump blob ownership, if necessary */
+			if (!PQgetisnull(res, i, 2))
+			{
+				appendPQExpBuffer(cmdQry,
+								  "ALTER LARGE OBJECT %u OWNER TO %s;\n",
+								  blobOid, lo_owner);
+			}
 
-			archputs(commentcmd->data, AH);
+			/* dump blob privileges, if necessary */
+			if (!PQgetisnull(res, i, 3) &&
+				!dataOnly && !aclsSkip)
+			{
+				snprintf(lo_name, sizeof(lo_name), "%u", blobOid);
+				if (!buildACLCommands(lo_name, NULL, "LARGE OBJECT",
+									  lo_acl, lo_owner,
+									  AH->remoteVersion, cmdQry))
+				{
+					write_msg(NULL, "could not parse ACL (%s) for "
+							  "large object %u", lo_acl, blobOid);
+					exit_nicely();
+				}
+			}
+
+			if (cmdQry->len > 0)
+			{
+				appendPQExpBuffer(cmdQry, "\n");
+				archputs(cmdQry->data, AH);
+			}
 		}
 	} while (PQntuples(res) > 0);
 
@@ -2108,7 +2148,7 @@ dumpBlobComments(Archive *AH, void *arg)
 
 	archputs("\n", AH);
 
-	destroyPQExpBuffer(commentcmd);
+	destroyPQExpBuffer(cmdQry);
 
 	return 1;
 }
