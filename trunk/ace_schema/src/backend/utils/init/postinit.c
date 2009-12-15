@@ -279,7 +279,7 @@ CheckMyDatabase(const char *name, bool am_superuser)
 		/*
 		 * Check privilege to connect to the database.
 		 */
-		ace_database_connect(MyDatabaseId);
+		check_database_connect(MyDatabaseId);
 
 		/*
 		 * Check connection limit for this database.
@@ -709,7 +709,7 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	}
 
 	/* Set up ACE security providers */
-	ace_provider_initialize();
+	init_ace_providers();
 
 	/* Process pg_db_role_setting options */
 	process_settings(MyDatabaseId, GetSessionUserId());

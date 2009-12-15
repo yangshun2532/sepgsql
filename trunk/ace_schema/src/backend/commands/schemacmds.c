@@ -63,7 +63,7 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 		owner_uid = saved_uid;
 
 	/* Permission check to create a new schema */
-	ace_schema_create(schemaName, owner_uid, false);
+	check_schema_create(schemaName, owner_uid, false);
 
 	/* Additional check to protect reserved schema names */
 	if (!allowSystemTableMods && IsReservedName(schemaName))
@@ -191,7 +191,7 @@ RemoveSchemas(DropStmt *drop)
 		}
 
 		/* Permission check */
-		ace_schema_drop(namespaceId, false);
+		check_schema_drop(namespaceId, false);
 
 		object.classId = NamespaceRelationId;
 		object.objectId = namespaceId;
@@ -265,7 +265,7 @@ RenameSchema(const char *oldname, const char *newname)
 				 errmsg("schema \"%s\" already exists", newname)));
 
 	/* permission check to rename the schema */
-	ace_schema_alter(HeapTupleGetOid(tup), newname, InvalidOid);
+	check_schema_alter_rename(HeapTupleGetOid(tup), newname);
 
 	if (!allowSystemTableMods && IsReservedName(newname))
 		ereport(ERROR,
@@ -355,7 +355,7 @@ AlterSchemaOwner_internal(HeapTuple tup, Relation rel, Oid newOwnerId)
 		HeapTuple	newtuple;
 
 		/* Permission check to alter owner of the schema */
-		ace_schema_alter(HeapTupleGetOid(tup), NULL, newOwnerId);
+		check_schema_alter_owner(HeapTupleGetOid(tup), newOwnerId);
 
 		memset(repl_null, false, sizeof(repl_null));
 		memset(repl_repl, false, sizeof(repl_repl));
