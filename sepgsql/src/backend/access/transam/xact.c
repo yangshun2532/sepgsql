@@ -10,7 +10,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/access/transam/xact.c,v 1.274 2009/06/11 14:48:54 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/access/transam/xact.c,v 1.274.2.2 2009/12/09 21:58:04 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -140,7 +140,7 @@ typedef struct TransactionStateData
 	int			nChildXids;		/* # of subcommitted child XIDs */
 	int			maxChildXids;	/* allocated size of childXids[] */
 	Oid			prevUser;		/* previous CurrentUserId setting */
-	bool		prevSecDefCxt;	/* previous SecurityDefinerContext setting */
+	int			prevSecContext;	/* previous SecurityRestrictionContext */
 	bool		prevXactReadOnly;		/* entry-time xact r/o state */
 	int			prevRowlv;		/* previous Row-level control behavior */
 	struct TransactionStateData *parent;		/* back link to parent */
@@ -169,7 +169,7 @@ static TransactionStateData TopTransactionStateData = {
 	0,							/* # of subcommitted child Xids */
 	0,							/* allocated size of childXids[] */
 	InvalidOid,					/* previous CurrentUserId setting */
-	false,						/* previous SecurityDefinerContext setting */
+	0,							/* previous SecurityRestrictionContext */
 	false,						/* entry-time xact r/o state */
 	ROWLV_FILTER_MODE,			/* previous Row-level control behavior */
 	NULL						/* link to parent state block */
@@ -1527,10 +1527,10 @@ StartTransaction(void)
 	s->childXids = NULL;
 	s->nChildXids = 0;
 	s->maxChildXids = 0;
-	GetUserIdAndContext(&s->prevUser, &s->prevSecDefCxt);
+	GetUserIdAndSecContext(&s->prevUser, &s->prevSecContext);
 	s->prevRowlv = rowlvGetPerformingMode();
-	/* SecurityDefinerContext should never be set outside a transaction */
-	Assert(!s->prevSecDefCxt);
+	/* SecurityRestrictionContext should never be set outside a transaction */
+	Assert(s->prevSecContext == 0);
 
 	/*
 	 * initialize other subsystems for new transaction
@@ -1869,6 +1869,7 @@ PrepareTransaction(void)
 	AtPrepare_Inval();
 	AtPrepare_Locks();
 	AtPrepare_PgStat();
+	AtPrepare_MultiXact();
 
 	/*
 	 * Here is where we really truly prepare.
@@ -1922,7 +1923,7 @@ PrepareTransaction(void)
 
 	PostPrepare_smgr();
 
-	AtEOXact_MultiXact();
+	PostPrepare_MultiXact(xid);
 
 	PostPrepare_Locks(xid);
 
@@ -2026,13 +2027,13 @@ AbortTransaction(void)
 	 * Reset user ID which might have been changed transiently.  We need this
 	 * to clean up in case control escaped out of a SECURITY DEFINER function
 	 * or other local change of CurrentUserId; therefore, the prior value of
-	 * SecurityDefinerContext also needs to be restored.
+	 * SecurityRestrictionContext also needs to be restored.
 	 *
 	 * (Note: it is not necessary to restore session authorization or role
 	 * settings here because those can only be changed via GUC, and GUC will
 	 * take care of rolling them back if need be.)
 	 */
-	SetUserIdAndContext(s->prevUser, s->prevSecDefCxt);
+	SetUserIdAndSecContext(s->prevUser, s->prevSecContext);
 
 	/*
 	 * Reset behavior of row-level access controls
@@ -3885,7 +3886,7 @@ AbortSubTransaction(void)
 	 * Reset user ID which might have been changed transiently.  (See notes in
 	 * AbortTransaction.)
 	 */
-	SetUserIdAndContext(s->prevUser, s->prevSecDefCxt);
+	SetUserIdAndSecContext(s->prevUser, s->prevSecContext);
 
 	/*
 	 * Reset behavior of row-level access controls
@@ -4037,7 +4038,7 @@ PushTransaction(void)
 	s->savepointLevel = p->savepointLevel;
 	s->state = TRANS_DEFAULT;
 	s->blockState = TBLOCK_SUBBEGIN;
-	GetUserIdAndContext(&s->prevUser, &s->prevSecDefCxt);
+	GetUserIdAndSecContext(&s->prevUser, &s->prevSecContext);
 	s->prevXactReadOnly = XactReadOnly;
 	s->prevRowlv = rowlvGetPerformingMode();
 

@@ -5,7 +5,7 @@
 # Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
 # Portions Copyright (c) 1994, Regents of the University of California
 #
-# $PostgreSQL: pgsql/src/backend/Makefile,v 1.132 2009/01/01 17:23:34 momjian Exp $
+# $PostgreSQL: pgsql/src/backend/Makefile,v 1.132.2.2 2009/09/05 21:14:13 tgl Exp $
 #
 #-------------------------------------------------------------------------
 
@@ -20,6 +20,12 @@ SUBDIRS = access bootstrap catalog parser commands executor foreign lib libpq \
 
 include $(srcdir)/common.mk
 
+# As of 9/2009:
+# * The probes.o file is necessary for dtrace support on Solaris.
+# * OS X's dtrace doesn't use it and doesn't even recognize the -G option.
+# * Systemtap's dtrace will take -G, but it produces a useless empty file.
+# So, build probes.o only on Solaris.
+# This will likely need adjustment as other platforms add dtrace support.
 ifeq ($(PORTNAME), solaris)
 ifeq ($(enable_dtrace), yes)
 LOCALOBJS += utils/probes.o
@@ -150,10 +156,8 @@ $(top_builddir)/src/include/utils/probes.h: utils/probes.h
 	    $(LN_S) ../../../$(subdir)/utils/probes.h .
 
 
-ifeq ($(PORTNAME), solaris)
 utils/probes.o: utils/probes.d $(SUBDIROBJS)
 	$(DTRACE) $(DTRACEFLAGS) -C -G -s $(call expand_subsys,$^) -o $@
-endif
 
 
 ##########################################################################
