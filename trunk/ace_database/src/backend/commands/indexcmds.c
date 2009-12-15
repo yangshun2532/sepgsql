@@ -1536,7 +1536,7 @@ ReindexDatabase(const char *databaseName, bool do_system, bool do_user)
 				 errmsg("can only reindex the currently open database")));
 
 	/* Permission checks */
-	ace_database_reindex(MyDatabaseId);
+	check_database_reindex(MyDatabaseId);
 
 	/*
 	 * Create a memory context that will survive forced transaction commits we
