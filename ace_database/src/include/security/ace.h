@@ -11,29 +11,37 @@
 
 #include "utils/acl.h"
 
-/* ace_misc.c */
+/*
+ * ace_misc.c - hooks related to misc ace framework features
+ */
 extern void
-ace_provider_initialize(void);
+init_ace_providers(void);
 
-/* ace_database.c */
+/*
+ * ace_database.c - hooks related to databases
+ */
 extern void
-ace_database_create(const char *datName,
-					Oid srcDatOid, bool srcIsTemplate,
-                    Oid datOwner, Oid datTblspc);
+check_database_create(const char *datName, Oid srcDatOid,
+					  Oid datOwner, Oid datTblspc);
 extern void
-ace_database_alter(Oid datOid, const char *newName,
-                   Oid newTblspc, Oid newOwner);
+check_database_alter(Oid datOid);
 extern void
-ace_database_drop(Oid datOid, bool cascade);
+check_database_alter_rename(Oid datOid, const char *newName);
 extern void
-ace_database_grant(Oid datOid, Oid grantor, AclMode goptions);
+check_database_alter_owner(Oid datOid, Oid newOwner);
 extern void
-ace_database_comment(Oid datOid);
+check_database_alter_tablespace(Oid datOid, Oid newTblspc);
 extern void
-ace_database_connect(Oid datOid);
+check_database_drop(Oid datOid, bool cascade);
 extern void
-ace_database_reindex(Oid datOid);
+check_database_getattr(Oid datOid);
 extern void
-ace_database_calculate_size(Oid datOid);
+check_database_grant(Oid datOid);
+extern void
+check_database_comment(Oid datOid);
+extern void
+check_database_connect(Oid datOid);
+extern void
+check_database_reindex(Oid datOid);
 
 #endif	/* SECURITY_ACE_H */

@@ -82,7 +82,7 @@ calculate_database_size(Oid dbOid)
 	char		pathname[MAXPGPATH];
 
 	/* Permission checks */
-	ace_database_calculate_size(dbOid);
+	check_database_getattr(dbOid);
 
 	/* Shared storage in pg_global is not counted */
 

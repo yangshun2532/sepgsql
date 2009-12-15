@@ -686,7 +686,7 @@ CommentDatabase(List *qualname, char *comment)
 	}
 
 	/* Check object security */
-	ace_database_comment(oid);
+	check_database_comment(oid);
 
 	/* Call CreateSharedComments() to create/drop the comments */
 	CreateSharedComments(oid, DatabaseRelationId, comment);

@@ -292,8 +292,7 @@ createdb(const CreatedbStmt *stmt)
 						dbtemplate)));
 
 	/* Permission check to create a new database */
-	ace_database_create(dbname, src_dboid, src_istemplate,
-						datdba, dst_deftablespace);
+	check_database_create(dbname, src_dboid, datdba, dst_deftablespace);
 
 	/* If encoding or locales are defaulted, use source's setting */
 	if (encoding < 0)
@@ -743,7 +742,7 @@ dropdb(const char *dbname, bool missing_ok)
 	/*
 	 * Permission checks
 	 */
-	ace_database_drop(db_id, false);
+	check_database_drop(db_id, false);
 
 	/*
 	 * Disallow dropping a DB that is marked istemplate.  This is just to
@@ -875,7 +874,7 @@ RenameDatabase(const char *oldname, const char *newname)
 				 errmsg("database \"%s\" does not exist", oldname)));
 
 	/* Permission check to rename the database */
-	ace_database_alter(db_id, newname, InvalidOid, InvalidOid);
+	check_database_alter_rename(db_id, newname);
 
 	/*
 	 * Make sure the new name doesn't exist.  See notes for same error in
@@ -995,7 +994,7 @@ movedb(const char *dbname, const char *tblspcname)
 	/*
 	 * Permission checks
 	 */
-	ace_database_alter(db_id, NULL, dst_tblspcoid, InvalidOid);
+	check_database_alter_tablespace(db_id, dst_tblspcoid);
 
 	/*
 	 * pg_global must never be the default tablespace
@@ -1320,7 +1319,7 @@ AlterDatabase(AlterDatabaseStmt *stmt, bool isTopLevel)
 	/*
 	 * Permission checks
 	 */
-	ace_database_alter(HeapTupleGetOid(tuple), NULL, InvalidOid, InvalidOid);
+	check_database_alter(HeapTupleGetOid(tuple));
 
 	/*
 	 * Build an updated tuple, perusing the information just obtained
@@ -1369,7 +1368,7 @@ AlterDatabaseSet(AlterDatabaseSetStmt *stmt)
 	shdepLockAndCheckObject(DatabaseRelationId, datid);
 
 	/* Permission checks */
-	ace_database_alter(datid, NULL, InvalidOid, InvalidOid);
+	check_database_alter(datid);
 
 	AlterSetting(datid, InvalidOid, stmt->setstmt);
   
@@ -1425,8 +1424,7 @@ AlterDatabaseOwner(const char *dbname, Oid newOwnerId)
 		HeapTuple	newtuple;
 
 		/* Permission checks */
-		ace_database_alter(HeapTupleGetOid(tuple),
-						   NULL, InvalidOid, newOwnerId);
+		check_database_alter_owner(HeapTupleGetOid(tuple), newOwnerId);
 
 		memset(repl_null, false, sizeof(repl_null));
 		memset(repl_repl, false, sizeof(repl_repl));
