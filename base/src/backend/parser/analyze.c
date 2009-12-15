@@ -17,7 +17,7 @@
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- *	$PostgreSQL: pgsql/src/backend/parser/analyze.c,v 1.389.2.1 2009/08/27 20:08:12 tgl Exp $
+ *	$PostgreSQL: pgsql/src/backend/parser/analyze.c,v 1.389.2.3 2009/10/27 17:11:30 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -50,7 +50,9 @@ static Query *transformSelectStmt(ParseState *pstate, SelectStmt *stmt);
 static Query *transformValuesClause(ParseState *pstate, SelectStmt *stmt);
 static Query *transformSetOperationStmt(ParseState *pstate, SelectStmt *stmt);
 static Node *transformSetOperationTree(ParseState *pstate, SelectStmt *stmt,
-						  List **colInfo);
+						  bool isTopLevel, List **colInfo);
+static void determineRecursiveColTypes(ParseState *pstate,
+									   Node *larg, List *lcolinfo);
 static void applyColumnNames(List *dst, List *src);
 static Query *transformUpdateStmt(ParseState *pstate, UpdateStmt *stmt);
 static List *transformReturningList(ParseState *pstate, List *returningList);
@@ -135,10 +137,15 @@ parse_analyze_varparams(Node *parseTree, const char *sourceText,
  *		Entry point for recursively analyzing a sub-statement.
  */
 Query *
-parse_sub_analyze(Node *parseTree, ParseState *parentParseState)
+parse_sub_analyze(Node *parseTree, ParseState *parentParseState,
+				  CommonTableExpr *parentCTE,
+				  bool locked_from_parent)
 {
 	ParseState *pstate = make_parsestate(parentParseState);
 	Query	   *query;
+
+	pstate->p_parent_cte = parentCTE;
+	pstate->p_locked_from_parent = locked_from_parent;
 
 	query = transformStmt(pstate, parseTree);
 
@@ -1199,6 +1206,7 @@ transformSetOperationStmt(ParseState *pstate, SelectStmt *stmt)
 	 * Recursively transform the components of the tree.
 	 */
 	sostmt = (SetOperationStmt *) transformSetOperationTree(pstate, stmt,
+															true,
 															&socolinfo);
 	Assert(sostmt && IsA(sostmt, SetOperationStmt));
 	qry->setOperations = (Node *) sostmt;
@@ -1359,7 +1367,7 @@ transformSetOperationStmt(ParseState *pstate, SelectStmt *stmt)
  */
 static Node *
 transformSetOperationTree(ParseState *pstate, SelectStmt *stmt,
-						  List **colInfo)
+						  bool isTopLevel, List **colInfo)
 {
 	bool		isLeaf;
 
@@ -1418,7 +1426,7 @@ transformSetOperationTree(ParseState *pstate, SelectStmt *stmt,
 		 * of this sub-query, because they are not in the toplevel pstate's
 		 * namespace list.
 		 */
-		selectQuery = parse_sub_analyze((Node *) stmt, pstate);
+		selectQuery = parse_sub_analyze((Node *) stmt, pstate, NULL, false);
 
 		/*
 		 * Check for bogus references to Vars on the current query level (but
@@ -1485,11 +1493,28 @@ transformSetOperationTree(ParseState *pstate, SelectStmt *stmt,
 		op->all = stmt->all;
 
 		/*
-		 * Recursively transform the child nodes.
+		 * Recursively transform the left child node.
 		 */
 		op->larg = transformSetOperationTree(pstate, stmt->larg,
+											 false,
 											 &lcolinfo);
+
+		/*
+		 * If we are processing a recursive union query, now is the time
+		 * to examine the non-recursive term's output columns and mark the
+		 * containing CTE as having those result columns.  We should do this
+		 * only at the topmost setop of the CTE, of course.
+		 */
+		if (isTopLevel &&
+			pstate->p_parent_cte &&
+			pstate->p_parent_cte->cterecursive)
+			determineRecursiveColTypes(pstate, op->larg, lcolinfo);
+
+		/*
+		 * Recursively transform the right child node.
+		 */
 		op->rarg = transformSetOperationTree(pstate, stmt->rarg,
+											 false,
 											 &rcolinfo);
 
 		/*
@@ -1582,6 +1607,61 @@ transformSetOperationTree(ParseState *pstate, SelectStmt *stmt,
 
 		return (Node *) op;
 	}
+}
+
+/*
+ * Process the outputs of the non-recursive term of a recursive union
+ * to set up the parent CTE's columns
+ */
+static void
+determineRecursiveColTypes(ParseState *pstate, Node *larg, List *lcolinfo)
+{
+	Node	   *node;
+	int			leftmostRTI;
+	Query	   *leftmostQuery;
+	List	   *targetList;
+	ListCell   *left_tlist;
+	ListCell   *lci;
+	int			next_resno;
+
+	/*
+	 * Find leftmost leaf SELECT
+	 */
+	node = larg;
+	while (node && IsA(node, SetOperationStmt))
+		node = ((SetOperationStmt *) node)->larg;
+	Assert(node && IsA(node, RangeTblRef));
+	leftmostRTI = ((RangeTblRef *) node)->rtindex;
+	leftmostQuery = rt_fetch(leftmostRTI, pstate->p_rtable)->subquery;
+	Assert(leftmostQuery != NULL);
+
+	/*
+	 * Generate dummy targetlist using column names of leftmost select
+	 * and dummy result expressions of the non-recursive term.
+	 */
+	targetList = NIL;
+	left_tlist = list_head(leftmostQuery->targetList);
+	next_resno = 1;
+
+	foreach(lci, lcolinfo)
+	{
+		Expr	   *lcolexpr = (Expr *) lfirst(lci);
+		TargetEntry *lefttle = (TargetEntry *) lfirst(left_tlist);
+		char	   *colName;
+		TargetEntry *tle;
+
+		Assert(!lefttle->resjunk);
+		colName = pstrdup(lefttle->resname);
+		tle = makeTargetEntry(lcolexpr,
+							  next_resno++,
+							  colName,
+							  false);
+		targetList = lappend(targetList, tle);
+		left_tlist = lnext(left_tlist);
+	}
+
+	/* Now build CTE's output column info using dummy targetlist */
+	analyzeCTETargetList(pstate, pstate->p_parent_cte, targetList);
 }
 
 /*
@@ -1965,7 +2045,7 @@ CheckSelectLocking(Query *qry)
  * This basically involves replacing names by integer relids.
  *
  * NB: if you need to change this, see also markQueryForLocking()
- * in rewriteHandler.c, and isLockedRel() in parse_relation.c.
+ * in rewriteHandler.c, and isLockedRefname() in parse_relation.c.
  */
 static void
 transformLockingClause(ParseState *pstate, Query *qry, LockingClause *lc)
@@ -2007,32 +2087,8 @@ transformLockingClause(ParseState *pstate, Query *qry, LockingClause *lc)
 					 */
 					transformLockingClause(pstate, rte->subquery, allrels);
 					break;
-				case RTE_CTE:
-					{
-						/*
-						 * We allow FOR UPDATE/SHARE of a WITH query to be
-						 * propagated into the WITH, but it doesn't seem very
-						 * sane to allow this for a reference to an
-						 * outer-level WITH.  And it definitely wouldn't work
-						 * for a self-reference, since we're not done
-						 * analyzing the CTE anyway.
-						 */
-						CommonTableExpr *cte;
-
-						if (rte->ctelevelsup > 0 || rte->self_reference)
-							ereport(ERROR,
-									(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-									 errmsg("SELECT FOR UPDATE/SHARE cannot be applied to an outer-level WITH query")));
-						cte = GetCTEForRTE(pstate, rte, -1);
-						/* should be analyzed by now */
-						Assert(IsA(cte->ctequery, Query));
-						transformLockingClause(pstate,
-											   (Query *) cte->ctequery,
-											   allrels);
-					}
-					break;
 				default:
-					/* ignore JOIN, SPECIAL, FUNCTION RTEs */
+					/* ignore JOIN, SPECIAL, FUNCTION, VALUES, CTE RTEs */
 					break;
 			}
 		}
@@ -2099,30 +2155,10 @@ transformLockingClause(ParseState *pstate, Query *qry, LockingClause *lc)
 							 parser_errposition(pstate, thisrel->location)));
 							break;
 						case RTE_CTE:
-							{
-								/*
-								 * We allow FOR UPDATE/SHARE of a WITH query
-								 * to be propagated into the WITH, but it
-								 * doesn't seem very sane to allow this for a
-								 * reference to an outer-level WITH.  And it
-								 * definitely wouldn't work for a
-								 * self-reference, since we're not done
-								 * analyzing the CTE anyway.
-								 */
-								CommonTableExpr *cte;
-
-								if (rte->ctelevelsup > 0 || rte->self_reference)
-									ereport(ERROR,
-									 (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-									  errmsg("SELECT FOR UPDATE/SHARE cannot be applied to an outer-level WITH query"),
-									  parser_errposition(pstate, thisrel->location)));
-								cte = GetCTEForRTE(pstate, rte, -1);
-								/* should be analyzed by now */
-								Assert(IsA(cte->ctequery, Query));
-								transformLockingClause(pstate,
-													 (Query *) cte->ctequery,
-													   allrels);
-							}
+							ereport(ERROR,
+									(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+									 errmsg("SELECT FOR UPDATE/SHARE cannot be applied to a WITH query"),
+							 parser_errposition(pstate, thisrel->location)));
 							break;
 						default:
 							elog(ERROR, "unrecognized RTE type: %d",
