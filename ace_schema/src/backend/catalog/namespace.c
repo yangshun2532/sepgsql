@@ -2356,7 +2356,7 @@ LookupExplicitNamespace(const char *nspname)
 				 errmsg("schema \"%s\" does not exist", nspname)));
 
 	/* Permission checks */
-	ace_schema_search(namespaceId, true);
+	check_schema_search(namespaceId, true);
 
 	return namespaceId;
 }
@@ -2958,7 +2958,7 @@ recomputeNamespacePath(void)
 				ReleaseSysCache(tuple);
 				if (OidIsValid(namespaceId) &&
 					!list_member_oid(oidlist, namespaceId) &&
-					ace_schema_search(namespaceId, false))
+					check_schema_search(namespaceId, false))
 					oidlist = lappend_oid(oidlist, namespaceId);
 			}
 		}
@@ -2985,7 +2985,7 @@ recomputeNamespacePath(void)
 										 0, 0, 0);
 			if (OidIsValid(namespaceId) &&
 				!list_member_oid(oidlist, namespaceId) &&
-				ace_schema_search(namespaceId, false))
+				check_schema_search(namespaceId, false))
 				oidlist = lappend_oid(oidlist, namespaceId);
 		}
 	}
@@ -3057,7 +3057,7 @@ InitTempTableNamespace(void)
 	snprintf(namespaceName, sizeof(namespaceName), "pg_temp_%d", MyBackendId);
 
 	/* Permission check to create a temporary schema */
-	ace_schema_create(namespaceName, BOOTSTRAP_SUPERUSERID, true);
+	check_schema_create(namespaceName, BOOTSTRAP_SUPERUSERID, true);
 
 	namespaceId = GetSysCacheOid(NAMESPACENAME,
 								 CStringGetDatum(namespaceName),

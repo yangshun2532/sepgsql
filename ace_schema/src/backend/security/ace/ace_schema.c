@@ -14,9 +14,9 @@
 #include "utils/syscache.h"
 
 /*
- * ace_schema_create
+ * check_schema_create
  *
- * It enables security providers to apply permission checks to create
+ * It enables security providers to check permission to create
  * a new schema object.
  *
  * nspName : Name of the new schema object
@@ -24,7 +24,7 @@
  * isTemp : True, if it is a temporary schema.
  */
 void
-ace_schema_create(const char *nspName, Oid nspOwner, bool isTemp)
+check_schema_create(const char *nspName, Oid nspOwner, bool isTemp)
 {
 	AclResult	aclresult;
 
@@ -47,17 +47,16 @@ ace_schema_create(const char *nspName, Oid nspOwner, bool isTemp)
 }
 
 /*
- * ace_schema_alter
+ * check_schema_alter_rename
  *
- * It enables security providers to apply permission checks to alter
- * properties of a certain schema object.
+ * It enables security providers to check permission to alter
+ * name of a certain schema object.
  *
- * nspOid : OID of the schema to be altered
- * newName : New name of the schema, if given. Or, NULL.
- * newOwner : OID of the new owner, if given, Or, InvalidOid.
+ * nspOid : OID of the schema to be renamed
+ * newName : New name of the schema
  */
 void
-ace_schema_alter(Oid nspOid, const char *newName, Oid newOwner)
+check_schema_alter_rename(Oid nspOid, const char *newName)
 {
 	AclResult	aclresult;
 
@@ -66,51 +65,64 @@ ace_schema_alter(Oid nspOid, const char *newName, Oid newOwner)
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_NAMESPACE,
 					   get_namespace_name(nspOid));
 
-	/* ALTER SCHEMA ... RENAME TO */
-	if (newName)
-	{
-		/* must have CREATE privilege on database to rename */
-		aclresult = pg_database_aclcheck(MyDatabaseId, GetUserId(),
-										 ACL_CREATE);
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, ACL_KIND_DATABASE,
-						   get_database_name(MyDatabaseId));
-	}
+	/* must have CREATE privilege on database to rename */
+	aclresult = pg_database_aclcheck(MyDatabaseId, GetUserId(),
+									 ACL_CREATE);
+	if (aclresult != ACLCHECK_OK)
+		aclcheck_error(aclresult, ACL_KIND_DATABASE,
+					   get_database_name(MyDatabaseId));
 
-	/* ALTER SCHEMA ... OWNER TO */
-	if (OidIsValid(newOwner))
-	{
-		/* Must be able to become new owner */
-		check_is_member_of_role(GetUserId(), newOwner);
-
-		/*
-		 * must have create-schema rights
-		 *
-		 * NOTE: This is different from other alter-owner checks in that the
-		 * current user is checked for create privileges instead of the
-		 * destination owner.  This is consistent with the CREATE case for
-		 * schemas.  Because superusers will always have this right, we need
-		 * no special case for them.
-		 */
-		aclresult = pg_database_aclcheck(MyDatabaseId, GetUserId(),
-										 ACL_CREATE);
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, ACL_KIND_DATABASE,
-						   get_database_name(MyDatabaseId));
-	}
 }
 
 /*
- * ace_schema_drop
+ * check_schema_alter_owner
  *
- * It enables security providers to apply permission checks to drop
- * a certain schema obejct.
+ * It enables security providers to check permission to alter
+ * ownership of a certain schema object.
+ *
+ * nspOid : OID of the schema to be altered
+ * newOwner : New owner of the schema
+ */
+void
+check_schema_alter_owner(Oid nspOid, Oid newOwner)
+{
+	AclResult	aclresult;
+
+	/* Must be owner for all the ALTER SCHEMA options */
+	if (!pg_namespace_ownercheck(nspOid, GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_NAMESPACE,
+					   get_namespace_name(nspOid));
+
+	/* Must be able to become new owner */
+	check_is_member_of_role(GetUserId(), newOwner);
+
+	/*
+	 * must have create-schema rights
+	 *
+	 * NOTE: This is different from other alter-owner checks in that the
+	 * current user is checked for create privileges instead of the
+	 * destination owner.  This is consistent with the CREATE case for
+	 * schemas.  Because superusers will always have this right, we need
+	 * no special case for them.
+	 */
+	aclresult = pg_database_aclcheck(MyDatabaseId, GetUserId(),
+									 ACL_CREATE);
+	if (aclresult != ACLCHECK_OK)
+		aclcheck_error(aclresult, ACL_KIND_DATABASE,
+					   get_database_name(MyDatabaseId));
+}
+
+/*
+ * check_schema_drop
+ *
+ * It enables security providers to check permission to drop a certain
+ * schema obejct.
  *
  * nspOid : OID of the schema to be dropped
  * cascade : True, if cascaded deletion.
  */
 void
-ace_schema_drop(Oid nspOid, bool cascade)
+check_schema_drop(Oid nspOid, bool cascade)
 {
 	if (!cascade &&
 		!pg_namespace_ownercheck(nspOid, GetUserId()))
@@ -119,37 +131,23 @@ ace_schema_drop(Oid nspOid, bool cascade)
 }
 
 /*
- * ace_schema_grant
+ * check_schema_grant
  *
- * It enables security provides to check permission to grant/revoke
- * privileges in the default PG model.
+ * It enables security providers to check permission to grant/revoke
+ * the default PG permissions on a certain schema.
+ * The caller (aclchk.c) handles the default PG privileges well,
+ * so rest of enhanced security providers can apply its checks here.
  *
  * nspOid : OID of the schema to be granted/revoked
- * grantor : OID of the grantor role
- * goptions : Available AclMask available to grant others
  */
 void
-ace_schema_grant(Oid nspOid, Oid grantor, AclMode goptions)
+check_schema_grant(Oid nspOid)
 {
-	if (goptions == ACL_NO_RIGHTS)
-	{
-		/*
-		 * If we found no grant options, consider whether to issue a hard
-		 * error. Per spec, having any privilege at all on the object will
-		 * get you by here.
-		 */
-		AclMode		whole_mask = ACL_ALL_RIGHTS_NAMESPACE;
-
-		if (pg_namespace_aclmask(nspOid, grantor,
-								 whole_mask | ACL_GRANT_OPTION_FOR(whole_mask),
-								 ACLMASK_ANY) == ACL_NO_RIGHTS)
-			aclcheck_error(ACLCHECK_NO_PRIV, ACL_KIND_DATABASE,
-						   get_namespace_name(nspOid));
-	}
+	/* do nothing here */
 }
 
 /*
- * ace_schema_search
+ * check_schema_search
  *
  * It enables security provides to check permission to search database
  * objects under a certain schema.
@@ -160,13 +158,13 @@ ace_schema_grant(Oid nspOid, Oid grantor, AclMode goptions)
  * Any security providers launched from this hook shall always return
  * 'true' on the temporary schema. Even if it tries to apply access
  * controls on temporary schema, this hook is not called when the schema
- * is obviously temporary one.
+ * is obviously temporary.
  *
  * nspOid : OID of the schema to be searched 
  * abort : True, if the caller want to raise an error on violation.
  */
 bool
-ace_schema_search(Oid nspOid, bool abort)
+check_schema_search(Oid nspOid, bool abort)
 {
 	AclResult	aclresult;
 
@@ -184,7 +182,7 @@ ace_schema_search(Oid nspOid, bool abort)
 }
 
 /*
- * ace_schema_comment
+ * check_schema_comment
  *
  * It enables security provides to check permission to comment on
  * a certain schema object.
@@ -192,7 +190,7 @@ ace_schema_search(Oid nspOid, bool abort)
  * nspOid : OID of the schema to be commented
  */
 void
-ace_schema_comment(Oid nspOid)
+check_schema_comment(Oid nspOid)
 {
 	if (!pg_namespace_ownercheck(nspOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_NAMESPACE,

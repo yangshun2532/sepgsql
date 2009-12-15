@@ -16,9 +16,11 @@
 #include "security/ace.h"
 #include "utils/syscache.h"
 
-/* Check if current user has createdb privileges */
+/*
+ * Check pg_authid.rolcreatedb bit for the current database user
+ */
 static bool
-have_createdb_privilege(void)
+role_has_createdb(void)
 {
 	bool        result = false;
 	HeapTuple   utup;
@@ -39,23 +41,23 @@ have_createdb_privilege(void)
 }
 
 /*
- * ace_database_create
+ * check_database_create
  *
- * It enables security providers to apply permission checks to create
- * a new database.
+ * It enables security providers to check permission to create a new database.
  *
  * datName : Name of the new database
- * srcDatOid : OID of the source database
- * srcIsTemplate : True, if the source database is marked as template
+ * srcDatOid : OID of the source database (may be template)
  * datOwner : OID of the new database owner
- * datTblspc : OID of the default tablespace of the new database,
- *             if explicitly given. Otherwise, InvalidOid.
+ * datTblspc : OID of the default tablespace, if explicitly given.
+ *             Otherwise, InvalidOid
  */
 void
-ace_database_create(const char *datName, Oid srcDatOid, bool srcIsTemplate,
-					Oid datOwner, Oid datTblspc)
+check_database_create(const char *datName,
+					  Oid srcDatOid, Oid datOwner, Oid datTblspc)
 {
 	AclResult	aclresult;
+	HeapTuple	tuple;
+	bool		datistemplate;
 
 	/*
 	 * To create a database, must have createdb privilege and must be able to
@@ -64,7 +66,7 @@ ace_database_create(const char *datName, Oid srcDatOid, bool srcIsTemplate,
 	 * "giveaway" attacks.	Note that a superuser will always have both of
 	 * these privileges a fortiori.
 	 */
-	if (!have_createdb_privilege())
+	if (!role_has_createdb())
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("permission denied to create database")));
@@ -75,7 +77,16 @@ ace_database_create(const char *datName, Oid srcDatOid, bool srcIsTemplate,
 	 * Permission check: to copy a DB that's not marked datistemplate, you
 	 * must be superuser or the owner thereof.
 	 */
-	if (!srcIsTemplate)
+	tuple = SearchSysCache(DATABASEOID,
+						   ObjectIdGetDatum(srcDatOid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for database %u", srcDatOid);
+
+	datistemplate = ((Form_pg_database) GETSTRUCT(tuple))->datistemplate;
+	ReleaseSysCache(tuple);
+
+	if (!datistemplate)
 	{
 		if (!pg_database_ownercheck(srcDatOid, GetUserId()))
 			ereport(ERROR,
@@ -99,19 +110,94 @@ ace_database_create(const char *datName, Oid srcDatOid, bool srcIsTemplate,
 }
 
 /*
- * ace_database_alter
+ * check_database_alter
  *
- * It enables security provides to check permission to alter properties
- * of a certain database.
+ * It enables security providers to check permission to alter properties
+ * of a certain database, except for its name, ownership and default
+ * tablespace.
  *
- * datOid : OID of the database to be altered.
- * newName : New name of the database, if given. Or, NULL.
- * newTblspc : OID of the new defatult tablespace, if given. Or, InvalidOid.
- * newOwner : OID of the new database owner, if given. Or, InvalidOid.
+ * datOid : OID of the database to be altered
  */
 void
-ace_database_alter(Oid datOid, const char *newName,
-				   Oid newTblspc, Oid newOwner)
+check_database_alter(Oid datOid)
+{
+	/* Must be owner for all the ALTER DATABASE options */
+	if (!pg_database_ownercheck(datOid, GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
+					   get_database_name(datOid));
+
+}
+
+/*
+ * check_database_alter_rename
+ *
+ * It enables security providers to check permission to alter
+ * name of a certain database
+ *
+ * datOid : OID of the database to be altered
+ * newName : The new database name 
+ */
+void
+check_database_alter_rename(Oid datOid, const char *newName)
+{
+	/* Must be owner for all the ALTER DATABASE options */
+	if (!pg_database_ownercheck(datOid, GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
+					   get_database_name(datOid));
+
+	/* Must have createdb right for renaming */
+	if (!role_has_createdb())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("permission denied to rename database")));
+}
+
+/*
+ * check_database_alter_owner
+ *
+ * It enables security providers to check permission to alter
+ * ownership of a certain database.
+ *
+ * datOid : OID of the database to be altered
+ * newOwner : OID of the new database owner
+ */
+void
+check_database_alter_owner(Oid datOid, Oid newOwner)
+{
+	/* Must be owner for all the ALTER DATABASE options */
+	if (!pg_database_ownercheck(datOid, GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
+					   get_database_name(datOid));
+
+	/* Must be able to become new owner */
+	check_is_member_of_role(GetUserId(), newOwner);
+
+	/*
+	 * role must have createdb rights
+	 *
+	 * NOTE: This is different from other alter-owner checks in that the
+	 * current user is checked for createdb privileges instead of the
+	 * destination owner.  This is consistent with the CREATE case for
+	 * databases.  Because superusers will always have this right, we need
+	 * no special case for them.
+	 */
+	if (!role_has_createdb())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("permission denied to change owner of database")));
+}
+
+/*
+ * check_database_alter_tablespace
+ *
+ * It enables security providers to check permission to alter
+ * default tablespace of a certain database
+ *
+ * datOid : OID of the database to be altered
+ * newTblspc : OID of the new default tablespace
+ */
+void
+check_database_alter_tablespace(Oid datOid, Oid newTblspc)
 {
 	AclResult	aclresult;
 
@@ -120,51 +206,16 @@ ace_database_alter(Oid datOid, const char *newName,
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
 					   get_database_name(datOid));
 
-	/* ALTER DATABASE ... RENAME TO */
-	if (newName)
-	{
-		/* Must have createdb right for renaming */
-		if (!have_createdb_privilege())
-			ereport(ERROR,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("permission denied to rename database")));
-	}
-
-	/* ALTER DATABASE ... SET TABLESPACE */
-	if (OidIsValid(newTblspc))
-	{
-		/* Must have ACL_CREATE for the new default tablespace */
-		aclresult = pg_tablespace_aclcheck(newTblspc, GetUserId(),
-										   ACL_CREATE);
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, ACL_KIND_TABLESPACE,
-						   get_tablespace_name(newTblspc));
-	}
-
-	/* ALTER DATABASE ... OWNER TO */
-	if (OidIsValid(newOwner))
-	{
-		/* Must be able to become new owner */
-		check_is_member_of_role(GetUserId(), newOwner);
-
-		/*
-		 * must have createdb rights
-		 *
-		 * NOTE: This is different from other alter-owner checks in that the
-		 * current user is checked for createdb privileges instead of the
-		 * destination owner.  This is consistent with the CREATE case for
-		 * databases.  Because superusers will always have this right, we need
-		 * no special case for them.
-		 */
-		if (!have_createdb_privilege())
-			ereport(ERROR,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("permission denied to change owner of database")));
-	}
+	/* Must have ACL_CREATE for the new default tablespace */
+	aclresult = pg_tablespace_aclcheck(newTblspc, GetUserId(),
+									   ACL_CREATE);
+	if (aclresult != ACLCHECK_OK)
+		aclcheck_error(aclresult, ACL_KIND_TABLESPACE,
+					   get_tablespace_name(newTblspc));
 }
 
 /*
- * ace_database_drop
+ * check_database_drop 
  *
  * It enables security providers to check permission to drop a certain
  * database.
@@ -173,7 +224,7 @@ ace_database_alter(Oid datOid, const char *newName,
  * cascade : True, if cascaded deletion. Currently, it should never happen.
  */
 void
-ace_database_drop(Oid datOid, bool cascade)
+check_database_drop(Oid datOid, bool cascade)
 {
 	if (!cascade &&
 		!pg_database_ownercheck(datOid, GetUserId()))
@@ -182,45 +233,51 @@ ace_database_drop(Oid datOid, bool cascade)
 }
 
 /*
- * ace_database_grant
+ * check_database_getattr
  *
- * It enables security provides to check permission to grant/revoke
- * privileges in the default PG model.
+ * It enables security providers to check permission to get attribute
+ * of a certain database.
  *
- * datOid : OID of the database to be granted/revoked
- * grantor : OID of the grantor role
- * goptions : Available AclMask available to grant others
+ * datOid : OID of the database to be referenced
  */
 void
-ace_database_grant(Oid datOid, Oid grantor, AclMode goptions)
+check_database_getattr(Oid datOid)
 {
-	/*
-	 * If we found no grant options, consider whether to issue a hard
-	 * error. Per spec, having any privilege at all on the object will
-	 * get you by here.
-	 */
-	if (goptions == ACL_NO_RIGHTS)
-	{
-		AclMode		whole_mask = ACL_ALL_RIGHTS_DATABASE;
+	AclResult	aclresult;
 
-		if (pg_database_aclmask(datOid, grantor,
-								whole_mask | ACL_GRANT_OPTION_FOR(whole_mask),
-								ACLMASK_ANY) == ACL_NO_RIGHTS)
-			aclcheck_error(ACLCHECK_NO_PRIV, ACL_KIND_DATABASE,
-						   get_database_name(datOid));
-	}
+	/* Must have connect privilege for target database */
+	aclresult = pg_database_aclcheck(datOid, GetUserId(), ACL_CONNECT);
+	if (aclresult != ACLCHECK_OK)
+		aclcheck_error(aclresult, ACL_KIND_DATABASE,
+					   get_database_name(datOid));
 }
 
 /*
- * ace_database_comment
+ * check_database_grant
  *
- * It enables security provides to check permission to comment on
- * the given database.
+ * It enables security providers to check permission to grant/revoke
+ * the default PG permissions on a certain database.
+ * The caller (aclchk.c) handles the default PG privileges well,
+ * so rest of enhanced security providers can apply its checks here.
+ *
+ * datOid : OID of the database to be granted/revoked
+ */
+void
+check_database_grant(Oid datOid)
+{
+	/* do nothing */
+}
+
+/*
+ * check_database_comment
+ *
+ * It enables security providers to check permission to comment
+ * on a certain database.
  *
  * datOid : OID of the database to be commented
  */
 void
-ace_database_comment(Oid datOid)
+check_database_comment(Oid datOid)
 {
 	if (!pg_database_ownercheck(datOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
@@ -228,15 +285,17 @@ ace_database_comment(Oid datOid)
 }
 
 /*
- * ace_database_connect
+ * check_database_connect
  *
- * It enables security providers to check permission to connect to
- * the given database on CheckMyDatabase()
+ * It enables to security providers to check permissions to connect
+ * to a certain database during initialization of server instance.
+ * In this hook, security providers has to raise an FATAL, not ERROR,
+ * when access control violations.
  *
  * datOid : OID of the database to be connected
  */
 void
-ace_database_connect(Oid datOid)
+check_database_connect(Oid datOid)
 {
 	if (pg_database_aclcheck(datOid, GetUserId(),
 							 ACL_CONNECT) != ACLCHECK_OK)
@@ -248,38 +307,18 @@ ace_database_connect(Oid datOid)
 }
 
 /*
- * ace_database_reindex
+ * check_database_reindex
  *
  * It enables security providers to check permissions to reindex
- * all the tables withing the database
+ * all the tables within a certain database.
  *
  * datOid : OID of the database to be reindexed
  */
 void
-ace_database_reindex(Oid datOid)
+check_database_reindex(Oid datOid)
 {
 	/* Must have ownership of the database */
 	if (!pg_database_ownercheck(datOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
-					   get_database_name(datOid));
-}
-
-/*
- * ace_database_calculate_size
- *
- * It enables security providers to check permission to calculate
- * a certain database size.
- *
- * datOid : OID of the database to be referenced
- */
-void
-ace_database_calculate_size(Oid datOid)
-{
-	AclResult	aclresult;
-
-	/* User must have connect privilege for target database */
-	aclresult = pg_database_aclcheck(datOid, GetUserId(), ACL_CONNECT);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_DATABASE,
 					   get_database_name(datOid));
 }

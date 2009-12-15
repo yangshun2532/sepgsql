@@ -46,7 +46,6 @@
 #include "foreign/foreign.h"
 #include "miscadmin.h"
 #include "parser/parse_func.h"
-#include "security/ace.h"
 #include "utils/acl.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
@@ -126,9 +125,6 @@ static void expand_all_col_privileges(Oid table_oid, Form_pg_class classForm,
 						  int num_col_privileges);
 static AclMode string_to_privilege(const char *privname);
 static const char *privilege_to_string(AclMode privilege);
-static AclMode restrict_grant(bool is_grant, AclMode avail_goptions,
-							  bool all_privs, AclMode privileges,
-							  const char *objname);
 static AclMode restrict_and_check_grant(bool is_grant, AclMode avail_goptions,
 						 bool all_privs, AclMode privileges,
 						 Oid objectId, Oid grantorId,
@@ -225,56 +221,9 @@ merge_acl_with_grant(Acl *old_acl, bool is_grant,
 	return new_acl;
 }
 
-
 /*
  * Restrict the privileges to what we can actually grant, and emit
  * the standards-mandated warning and error messages.
- */
-static AclMode restrict_grant(bool is_grant, AclMode avail_goptions,
-							  bool all_privs, AclMode privileges,
-							  const char *objname)
-{
-	AclMode		this_privileges;
-
-	/*
-	 * Restrict the operation to what we can actually grant or revoke, and
-	 * issue a warning if appropriate.	(For REVOKE this isn't quite what the
-	 * spec says to do: the spec seems to want a warning only if no privilege
-	 * bits actually change in the ACL. In practice that behavior seems much
-	 * too noisy, as well as inconsistent with the GRANT case.)
-	 */
-	this_privileges = privileges & ACL_OPTION_TO_PRIVS(avail_goptions);
-	if (is_grant)
-	{
-		if (this_privileges == 0)
-			ereport(WARNING,
-					(errcode(ERRCODE_WARNING_PRIVILEGE_NOT_GRANTED),
-				  errmsg("no privileges were granted for \"%s\"", objname)));
-		else if (!all_privs && this_privileges != privileges)
-			ereport(WARNING,
-					(errcode(ERRCODE_WARNING_PRIVILEGE_NOT_GRANTED),
-			 errmsg("not all privileges were granted for \"%s\"", objname)));
-	}
-	else
-	{
-		if (this_privileges == 0)
-			ereport(WARNING,
-					(errcode(ERRCODE_WARNING_PRIVILEGE_NOT_REVOKED),
-			  errmsg("no privileges could be revoked for \"%s\"", objname)));
-		else if (!all_privs && this_privileges != privileges)
-			ereport(WARNING,
-					(errcode(ERRCODE_WARNING_PRIVILEGE_NOT_REVOKED),
-					 errmsg("not all privileges could be revoked for \"%s\"", objname)));
-	}
-
-	return this_privileges;
-}
-
-/*
- * Restrict the privileges to what we can actually grant, and emit
- * the standards-mandated warning and error messages.
- * (when ace_xxx_grant() is given for all the object classes, this
- * function shall be removed.)
  */
 static AclMode
 restrict_and_check_grant(bool is_grant, AclMode avail_goptions, bool all_privs,
@@ -2016,22 +1965,20 @@ ExecGrant_Database(InternalGrant *istmt)
 							&grantorId, &avail_goptions);
 
 		/*
-		 * Permission check to grant/revoke permissions.
-		 *
-		 * If we found no grant options, consider whether to issue a hard
-		 * error. Per spec, having any privilege at all on the object will
-		 * get you by here.
-		 */
-		ace_database_grant(datId, grantorId, avail_goptions);
-
-		/*
 		 * Restrict the privileges to what we can actually grant, and emit the
 		 * standards-mandated warning and error messages.
 		 */
 		this_privileges =
-			restrict_grant(istmt->is_grant, avail_goptions,
-						   istmt->all_privs, istmt->privileges,
-						   NameStr(pg_database_tuple->datname));
+			restrict_and_check_grant(istmt->is_grant, avail_goptions,
+									 istmt->all_privs, istmt->privileges,
+									 datId, grantorId, ACL_KIND_DATABASE,
+									 NameStr(pg_database_tuple->datname),
+									 0, NULL);
+
+		/*
+		 * Permission checks by enhanced security providers
+		 */
+		check_database_grant(datId);
 
 		/*
 		 * Generate new ACL.
@@ -2752,20 +2699,20 @@ ExecGrant_Namespace(InternalGrant *istmt)
 							&grantorId, &avail_goptions);
 
 		/*
-		 * If we found no grant options, consider whether to issue a hard
-		 * error. Per spec, having any privilege at all on the object will
-		 * get you by here.
-		 */
-		ace_schema_grant(nspid, grantorId, avail_goptions);
-
-		/*
 		 * Restrict the privileges to what we can actually grant, and emit the
 		 * standards-mandated warning and error messages.
 		 */
 		this_privileges =
-			restrict_grant(istmt->is_grant, avail_goptions,
-						   istmt->all_privs, istmt->privileges,
-						   NameStr(pg_namespace_tuple->nspname));
+			restrict_and_check_grant(istmt->is_grant, avail_goptions,
+									 istmt->all_privs, istmt->privileges,
+									 nspid, grantorId, ACL_KIND_NAMESPACE,
+									 NameStr(pg_namespace_tuple->nspname),
+									 0, NULL);
+
+		/*
+		 * Permission checks by enhanced security providers
+		 */
+		check_schema_grant(nspid);
 
 		/*
 		 * Generate new ACL.

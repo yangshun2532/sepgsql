@@ -11,12 +11,12 @@
 #include "security/ace.h"
 
 /*
- * ace_provider_initialize
+ * init_ace_providers
  *
  * This hook allows security providers to initialize itself.
  */
 void
-ace_provider_initialize(void)
+init_ace_providers(void)
 {
 	/* initialize the default PG privs */
 	initialize_acl();

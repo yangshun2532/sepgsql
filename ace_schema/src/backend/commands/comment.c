@@ -686,7 +686,7 @@ CommentDatabase(List *qualname, char *comment)
 	}
 
 	/* Check object security */
-	ace_database_comment(oid);
+	check_database_comment(oid);
 
 	/* Call CreateSharedComments() to create/drop the comments */
 	CreateSharedComments(oid, DatabaseRelationId, comment);
@@ -792,7 +792,7 @@ CommentNamespace(List *qualname, char *comment)
 				 errmsg("schema \"%s\" does not exist", namespace)));
 
 	/* Check object security */
-	ace_schema_comment(oid);
+	check_schema_comment(oid);
 
 	/* Call CreateComments() to create/drop the comments */
 	CreateComments(oid, NamespaceRelationId, 0, comment);
