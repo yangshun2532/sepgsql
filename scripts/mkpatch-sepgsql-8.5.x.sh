@@ -36,7 +36,7 @@ echo "  repository: ${SEPGSQL_REPOSITORY}${SEPGSQL_BRANCH}"
 echo
 
 # -- exporting branches
-TREES="base sepgsql blob"
+TREES="base ace_database ace_schema"
 for name in ${TREES}
 do
   echo "Exporting ${SEPGSQL_BRANCH}/${name} ..."
@@ -44,17 +44,17 @@ do
 done
 
 # -- generating patches
-echo "GEN: sepgsql-01-lite-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch"
-diff -Nrpc base sepgsql | gzip -c			\
-    > ${RPMSOURCE}/sepgsql-01-lite-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch.gz
+echo "GEN: pgsql-ace-01-database-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch"
+diff -Nrpc base ace_database			\
+    > ${RPMSOURCE}/pgsql-ace-01-database-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch
 
-echo "GEN: sepgsql-02-blob-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch"
-diff -Nrpc base blob  | gzip -c			\
-    > ${RPMSOURCE}/sepgsql-02-blob-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch.gz
+echo "GEN: pgsql-ace-02-schema-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch"
+diff -Nrpc ace_database ace_schema		\
+    > ${RPMSOURCE}/pgsql-ace-02-schema-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch
 
 echo "---- LIST OF GENERATED PATCHES ----"
-echo "01) ${RPMSOURCE}/sepgsql-01-lite-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch.gz"
-echo "02) ${RPMSOURCE}/sepgsql-02-blob-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch.gz"
+echo "01) ${RPMSOURCE}/pgsql-ace-01-database-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch"
+echo "02) ${RPMSOURCE}/pgsql-ace-02-schema-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch"
 
 # ---- clean up
 rm -rf ${WORKDIR}

@@ -62,11 +62,11 @@ echo "svn diff ./base"
 echo "svn commit -m 'CVS pull -r ${CVSTAG} at `env LANG=C date`' ./base && \\"
 echo "svn update"
 echo
-echo "svn merge -c `expr ${SVNREV} + 1` ./base ./sepgsql && \\"
-echo "svn commit -m 'merge updates of ${SVNBRANCH}/base into ${SVNBRANCH}/sepgsql at r`expr ${SVNREV} + 1`' ./sepgsql && \\"
+echo "svn merge -c `expr ${SVNREV} + 1` ./base ./ace_database && \\"
+echo "svn commit -m 'merge updates of ${SVNBRANCH}/base into ${SVNBRANCH}/ace_database at r`expr ${SVNREV} + 1`' ./ace_database && \\"
 echo "svn update"
 echo
-echo "svn merge -c `expr ${SVNREV} + 1` ./base ./blob  && \\"
-echo "svn commit -m 'merge updates of ${SVNBRANCH}/base into ${SVNBRANCH}/blob at r`expr ${SVNREV} + 1`' ./blob && \\"
+echo "svn merge -c `expr ${SVNREV} + 2` ./ace_database ./ace_schema  && \\"
+echo "svn commit -m 'merge updates of ${SVNBRANCH}/ace_database into ${SVNBRANCH}/ace_schema at r`expr ${SVNREV} + 2`' ./ace_schema && \\"
 echo "svn update"
 echo
