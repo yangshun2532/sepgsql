@@ -1,7 +1,7 @@
 /**********************************************************************
  * plperl.c - perl as a procedural language for PostgreSQL
  *
- *	  $PostgreSQL: pgsql/src/pl/plperl/plperl.c,v 1.136.2.2 2009/06/05 20:32:15 adunstan Exp $
+ *	  $PostgreSQL: pgsql/src/pl/plperl/plperl.c,v 1.136.2.5 2009/11/29 21:02:28 tgl Exp $
  *
  **********************************************************************/
 
@@ -140,8 +140,8 @@ void		_PG_init(void);
 static void plperl_init_interp(void);
 
 static Datum plperl_func_handler(PG_FUNCTION_ARGS);
-
 static Datum plperl_trigger_handler(PG_FUNCTION_ARGS);
+
 static plperl_proc_desc *compile_plperl_function(Oid fn_oid, bool is_trigger);
 
 static SV  *plperl_hash_from_tuple(HeapTuple tuple, TupleDesc tupdesc);
@@ -365,11 +365,13 @@ check_interp(bool trusted)
 	}
 }
 
-
+/*
+ * Restore previous interpreter selection, if two are active
+ */
 static void
 restore_context(bool old_context)
 {
-	if (trusted_context != old_context)
+	if (interp_state == INTERP_BOTH && trusted_context != old_context)
 	{
 		if (old_context)
 			PERL_SET_CONTEXT(plperl_trusted_interp);
@@ -853,9 +855,9 @@ Datum
 plperl_call_handler(PG_FUNCTION_ARGS)
 {
 	Datum		retval;
-	plperl_call_data *save_call_data;
+	plperl_call_data *save_call_data = current_call_data;
+	bool		oldcontext = trusted_context;
 
-	save_call_data = current_call_data;
 	PG_TRY();
 	{
 		if (CALLED_AS_TRIGGER(fcinfo))
@@ -866,11 +868,13 @@ plperl_call_handler(PG_FUNCTION_ARGS)
 	PG_CATCH();
 	{
 		current_call_data = save_call_data;
+		restore_context(oldcontext);
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
 
 	current_call_data = save_call_data;
+	restore_context(oldcontext);
 	return retval;
 }
 
@@ -1215,7 +1219,6 @@ plperl_func_handler(PG_FUNCTION_ARGS)
 	Datum		retval;
 	ReturnSetInfo *rsi;
 	SV		   *array_ret = NULL;
-	bool		oldcontext = trusted_context;
 
 	/*
 	 * Create the call_data beforing connecting to SPI, so that it is not
@@ -1355,9 +1358,6 @@ plperl_func_handler(PG_FUNCTION_ARGS)
 	if (array_ret == NULL)
 		SvREFCNT_dec(perlret);
 
-	current_call_data = NULL;
-	restore_context(oldcontext);
-
 	return retval;
 }
 
@@ -1370,7 +1370,6 @@ plperl_trigger_handler(PG_FUNCTION_ARGS)
 	Datum		retval;
 	SV		   *svTD;
 	HV		   *hvTD;
-	bool		oldcontext = trusted_context;
 
 	/*
 	 * Create the call_data beforing connecting to SPI, so that it is not
@@ -1458,8 +1457,6 @@ plperl_trigger_handler(PG_FUNCTION_ARGS)
 	if (perlret)
 		SvREFCNT_dec(perlret);
 
-	current_call_data = NULL;
-	restore_context(oldcontext);
 	return retval;
 }
 
@@ -1514,11 +1511,13 @@ compile_plperl_function(Oid fn_oid, bool is_trigger)
 
 		if (!uptodate)
 		{
+			hash_search(plperl_proc_hash, internal_proname,
+						HASH_REMOVE, NULL);
+			if (prodesc->reference)
+				SvREFCNT_dec(prodesc->reference);
 			free(prodesc->proname);
 			free(prodesc);
 			prodesc = NULL;
-			hash_search(plperl_proc_hash, internal_proname,
-						HASH_REMOVE, NULL);
 		}
 	}
 
@@ -1972,7 +1971,15 @@ plperl_return_next(SV *sv)
 
 		if (SvOK(sv))
 		{
-			char	   *val = SvPV(sv, PL_na);
+			char	   *val;
+
+			if (prodesc->fn_retisarray && SvROK(sv) &&
+				SvTYPE(SvRV(sv)) == SVt_PVAV)
+			{
+				sv = plperl_convert_to_pg_array(sv);
+			}
+
+			val = SvPV(sv, PL_na);
 
 			ret = InputFunctionCall(&prodesc->result_in_func, val,
 									prodesc->result_typioparam, -1);
