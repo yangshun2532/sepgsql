@@ -43,6 +43,7 @@
    &alterGroup;
    &alterIndex;
    &alterLanguage;
+   &alterLargeObject;
    &alterOperator;
    &alterOperatorClass;
    &alterOperatorFamily;
