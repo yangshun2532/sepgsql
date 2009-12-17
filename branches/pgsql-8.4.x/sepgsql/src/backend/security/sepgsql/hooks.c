@@ -34,6 +34,7 @@
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 
+#if 0
 /* ------------------------------------------------------------ *
  *   Hooks corresponding to db_blob object class
  * ------------------------------------------------------------ */
@@ -237,3 +238,4 @@ sepgsqlCheckBlobRelabel(HeapTuple oldtup, HeapTuple newtup)
 						  SEPG_DB_BLOB__RELABELTO,
 						  NULL, true);
 }
+#endif

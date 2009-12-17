@@ -44,7 +44,6 @@ typedef struct LargeObjectDesc
 #define IFS_RDLOCK		(1 << 0)
 #define IFS_WRLOCK		(1 << 1)
 
-	Oid			secid;			/* security identifier of largeobject */
 } LargeObjectDesc;
 
 
