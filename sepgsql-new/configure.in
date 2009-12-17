@@ -764,6 +764,24 @@ PGAC_ARG_BOOL(with, zlib, yes,
 AC_SUBST(with_zlib)
 
 #
+# SELinux support
+#
+PGAC_ARG_BOOL(enable, selinux, no,
+              [enable to build with SELinux support])
+if test "$enable_selinux" = yes; then
+    SELINUX_LIBS="-lselinux"
+    AC_CHECK_LIB(selinux, avc_netlink_loop,
+                 AC_DEFINE_UNQUOTED(HAVE_SELINUX, 1,
+                                    [SE-PostgreSQL feature is enabled]),
+                 AC_MSG_ERROR("--enable-selinux requires libselinux."))
+    AC_CHECK_LIB(audit, audit_open,
+                 AC_DEFINE_UNQUOTED(HAVE_LIBAUDIT, 1,
+                                    [System audit feature is enabled])
+                 SELINUX_LIBS="$SELINUX_LIBS -laudit")
+    AC_SUBST(SELINUX_LIBS)
+fi
+
+#
 # Elf
 #
 
