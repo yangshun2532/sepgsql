@@ -537,28 +537,6 @@ extern void
 sepgsqlInitialize(void);
 
 /*
- * hooks.c : routines to check certain permissions
- */
-extern void
-sepgsqlCheckBlobCreate(Relation rel, HeapTuple lotup);
-extern void
-sepgsqlCheckBlobDrop(Relation rel, HeapTuple lotup);
-extern void
-sepgsqlCheckBlobRead(LargeObjectDesc *lobj);
-extern void
-sepgsqlCheckBlobWrite(LargeObjectDesc *lobj);
-extern void
-sepgsqlCheckBlobGetattr(HeapTuple tuple);
-extern void
-sepgsqlCheckBlobSetattr(HeapTuple tuple);
-extern void
-sepgsqlCheckBlobExport(LargeObjectDesc *lobj, const char *filename);
-extern void
-sepgsqlCheckBlobImport(LargeObjectDesc *lobj, const char *filename);
-extern void
-sepgsqlCheckBlobRelabel(HeapTuple oldtup, HeapTuple newtup);
-
-/*
  * label.c : security label management
  */
 extern bool

@@ -36,6 +36,7 @@
 #include "catalog/pg_foreign_data_wrapper.h"
 #include "catalog/pg_foreign_server.h"
 #include "catalog/pg_language.h"
+#include "catalog/pg_largeobject.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_operator.h"
@@ -130,6 +131,7 @@ static const Oid object_classes[MAX_OCLASS] = {
 	ConversionRelationId,		/* OCLASS_CONVERSION */
 	AttrDefaultRelationId,		/* OCLASS_DEFAULT */
 	LanguageRelationId,			/* OCLASS_LANGUAGE */
+	LargeObjectRelationId,		/* OCLASS_LARGEOBJECT */
 	OperatorRelationId,			/* OCLASS_OPERATOR */
 	OperatorClassRelationId,	/* OCLASS_OPCLASS */
 	OperatorFamilyRelationId,	/* OCLASS_OPFAMILY */
@@ -1090,6 +1092,10 @@ doDeletion(const ObjectAddress *object)
 			DropProceduralLanguageById(object->objectId);
 			break;
 
+		case OCLASS_LARGEOBJECT:
+			LargeObjectDrop(object->objectId);
+			break;
+
 		case OCLASS_OPERATOR:
 			RemoveOperatorById(object->objectId);
 			break;
@@ -2003,6 +2009,10 @@ getObjectClass(const ObjectAddress *object)
 			Assert(object->objectSubId == 0);
 			return OCLASS_LANGUAGE;
 
+		case LargeObjectRelationId:
+			Assert(object->objectSubId == 0);
+			return OCLASS_LARGEOBJECT;
+
 		case OperatorRelationId:
 			Assert(object->objectSubId == 0);
 			return OCLASS_OPERATOR;
@@ -2251,6 +2261,10 @@ getObjectDescription(const ObjectAddress *object)
 				ReleaseSysCache(langTup);
 				break;
 			}
+		case OCLASS_LARGEOBJECT:
+			appendStringInfo(&buffer, _("large object %u"),
+							 object->objectId);
+			break;
 
 		case OCLASS_OPERATOR:
 			appendStringInfo(&buffer, _("operator %s"),
