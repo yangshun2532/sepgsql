@@ -32,7 +32,7 @@
 #include "pgstat.h"
 #include "postmaster/autovacuum.h"
 #include "postmaster/postmaster.h"
-#include "security/sepgsql.h"
+#include "security/pgace.h"
 #include "storage/backendid.h"
 #include "storage/bufmgr.h"
 #include "storage/fd.h"
@@ -202,20 +202,15 @@ CheckMyDatabase(const char *name, bool am_superuser)
 					name)));
 
 		/*
-		 * Check privilege to connect to the database.  (The am_superuser test
-		 * is redundant, but since we have the flag, might as well check it
-		 * and save a few cycles.)
+		 * Check privilege to connect to the database.
 		 */
-		if (!am_superuser &&
-			pg_database_aclcheck(MyDatabaseId, GetUserId(),
-								 ACL_CONNECT) != ACLCHECK_OK)
+		if (pg_database_aclcheck(MyDatabaseId, GetUserId(),
+								 ACL_CONNECT) != ACLCHECK_OK ||
+			!pgace_database_connect(MyDatabaseId))
 			ereport(FATAL,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 					 errmsg("permission denied for database \"%s\"", name),
 					 errdetail("User does not have CONNECT privilege.")));
-
-		/* SELinux: db_database:{access} */
-		sepgsql_database_access(MyDatabaseId);
 
 		/*
 		 * Check connection limit for this database.
