@@ -42,17 +42,21 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "catalog/pg_largeobject.h"
-#include "catalog/pg_security.h"
+#include "catalog/pg_largeobject_metadata.h"
 #include "libpq/be-fsstubs.h"
 #include "libpq/libpq-fs.h"
 #include "miscadmin.h"
 #include "security/sepgsql.h"
 #include "storage/fd.h"
 #include "storage/large_object.h"
+#include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/memutils.h"
 
+/*
+ * compatibility flag for permission checks
+ */
+bool lo_compat_privileges;
 
 /*#define FSDB 1*/
 #define BUFSIZE			8192
@@ -159,8 +163,19 @@ lo_read(int fd, char *buf, int len)
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("invalid large-object descriptor: %d", fd)));
 
-	/* SELinux checks db_blob:{read} */
-	sepgsqlCheckBlobRead(cookies[fd]);
+	/* Permission checks */
+	if (!lo_compat_privileges &&
+		pg_largeobject_aclcheck_snapshot(cookies[fd]->id,
+										 GetUserId(),
+										 ACL_SELECT,
+										 cookies[fd]->snapshot) != ACLCHECK_OK)
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("permission denied for large object %u",
+						cookies[fd]->id)));
+
+	/* SELinux db_blob:{read} checks */
+	sepgsql_largeobject_read(cookies[fd]->id, cookies[fd]->snapshot);
 
 	status = inv_read(cookies[fd], buf, len);
 
@@ -183,8 +198,19 @@ lo_write(int fd, const char *buf, int len)
 			  errmsg("large object descriptor %d was not opened for writing",
 					 fd)));
 
-	/* SELinux checks db_blob:{write} */
-	sepgsqlCheckBlobWrite(cookies[fd]);
+	/* Permission checks */
+	if (!lo_compat_privileges &&
+		pg_largeobject_aclcheck_snapshot(cookies[fd]->id,
+										 GetUserId(),
+										 ACL_UPDATE,
+										 cookies[fd]->snapshot) != ACLCHECK_OK)
+		ereport(ERROR,
+                (errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("permission denied for large object %u",
+						cookies[fd]->id)));
+
+	/* SELinux db_blob:{write} */
+	sepgsql_largeobject_write(cookies[fd]->id, cookies[fd]->snapshot);
 
 	status = inv_write(cookies[fd], buf, len);
 
@@ -214,6 +240,10 @@ Datum
 lo_creat(PG_FUNCTION_ARGS)
 {
 	Oid			lobjId;
+	Oid			secid;
+
+	/* SELinux: db_blob:{create} */
+	secid = sepgsql_largeobject_create(InvalidOid, NULL);
 
 	/*
 	 * We don't actually need to store into fscxt, but create it anyway to
@@ -221,7 +251,7 @@ lo_creat(PG_FUNCTION_ARGS)
 	 */
 	CreateFSContext();
 
-	lobjId = inv_create(InvalidOid);
+	lobjId = inv_create(InvalidOid, secid);
 
 	PG_RETURN_OID(lobjId);
 }
@@ -230,6 +260,10 @@ Datum
 lo_create(PG_FUNCTION_ARGS)
 {
 	Oid			lobjId = PG_GETARG_OID(0);
+	Oid			secid;
+
+	/* SELinux: db_blob:{create} */
+	secid = sepgsql_largeobject_create(lobjId, NULL);
 
 	/*
 	 * We don't actually need to store into fscxt, but create it anyway to
@@ -237,7 +271,7 @@ lo_create(PG_FUNCTION_ARGS)
 	 */
 	CreateFSContext();
 
-	lobjId = inv_create(lobjId);
+	lobjId = inv_create(lobjId, secid);
 
 	PG_RETURN_OID(lobjId);
 }
@@ -259,6 +293,16 @@ Datum
 lo_unlink(PG_FUNCTION_ARGS)
 {
 	Oid			lobjId = PG_GETARG_OID(0);
+
+	/* Must be owner of the largeobject */
+	if (!lo_compat_privileges &&
+		!pg_largeobject_ownercheck(lobjId, GetUserId()))
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("must be owner of large object %u", lobjId)));
+
+	/* SELinux: db_blob:{drop} */
+	sepgsql_largeobject_drop(lobjId);
 
 	/*
 	 * If there are any open LO FDs referencing that ID, close 'em.
@@ -355,9 +399,10 @@ lo_import_internal(text *filename, Oid lobjOid)
 	int			nbytes,
 				tmp;
 	char		buf[BUFSIZE];
-	char		fnamebuf[MAXPGPATH];
+	char	   *fnamebuf = text_to_cstring(filename);
 	LargeObjectDesc *lobj;
 	Oid			oid;
+	Oid			secid;
 
 #ifndef ALLOW_DANGEROUS_LO_FUNCTIONS
 	if (!superuser())
@@ -366,16 +411,14 @@ lo_import_internal(text *filename, Oid lobjOid)
 				 errmsg("must be superuser to use server-side lo_import()"),
 				 errhint("Anyone can use the client-side lo_import() provided by libpq.")));
 #endif
+	/* SELinux: db_blob:{create import} */
+	secid = sepgsql_largeobject_import(lobjOid, fnamebuf);
 
 	CreateFSContext();
 
 	/*
 	 * open the file to be read in
 	 */
-	text_to_cstring_buffer(filename, fnamebuf, sizeof(fnamebuf));
-	/* SELinux checks db_blob:{write import} and file:{read}  */
-	//sepgsqlCheckBlobImport(lobj, fnamebuf);
-
 	fd = PathNameOpenFile(fnamebuf, O_RDONLY | PG_BINARY, 0666);
 	if (fd < 0)
 		ereport(ERROR,
@@ -386,7 +429,7 @@ lo_import_internal(text *filename, Oid lobjOid)
 	/*
 	 * create an inversion object
 	 */
-	oid = inv_create(lobjOid);
+	oid = inv_create(lobjOid, secid);
 
 	/*
 	 * read in from the filesystem and write to the inversion object
@@ -424,7 +467,7 @@ lo_export(PG_FUNCTION_ARGS)
 	int			nbytes,
 				tmp;
 	char		buf[BUFSIZE];
-	char		fnamebuf[MAXPGPATH];
+	char	   *fnamebuf = text_to_cstring(filename);
 	LargeObjectDesc *lobj;
 	mode_t		oumask;
 
@@ -435,6 +478,8 @@ lo_export(PG_FUNCTION_ARGS)
 				 errmsg("must be superuser to use server-side lo_export()"),
 				 errhint("Anyone can use the client-side lo_export() provided by libpq.")));
 #endif
+	/* SELinux: db_blob:{read export} */
+	sepgsql_largeobject_export(lobjId, fnamebuf);
 
 	CreateFSContext();
 
@@ -451,9 +496,6 @@ lo_export(PG_FUNCTION_ARGS)
 	 * world-writable export files doesn't seem wise.
 	 */
 	text_to_cstring_buffer(filename, fnamebuf, sizeof(fnamebuf));
-	/* SELinux checks db_blob:{read export} and file:{write} */
-	//sepgsqlCheckBlobExport(lobj, fnamebuf);
-
 	oumask = umask((mode_t) 0022);
 	fd = PathNameOpenFile(fnamebuf, O_CREAT | O_WRONLY | O_TRUNC | PG_BINARY, 0666);
 	umask(oumask);
@@ -462,6 +504,7 @@ lo_export(PG_FUNCTION_ARGS)
 				(errcode_for_file_access(),
 				 errmsg("could not create server file \"%s\": %m",
 						fnamebuf)));
+
 	/*
 	 * read in from the inversion file and write to the filesystem
 	 */
@@ -496,61 +539,23 @@ lo_truncate(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("invalid large-object descriptor: %d", fd)));
 
-	/* SELinux checks db_blob:{write} */
-	sepgsqlCheckBlobWrite(cookies[fd]);
+	/* Permission checks */
+	if (!lo_compat_privileges &&
+		pg_largeobject_aclcheck_snapshot(cookies[fd]->id,
+										 GetUserId(),
+										 ACL_UPDATE,
+										 cookies[fd]->snapshot) != ACLCHECK_OK)
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("permission denied for large object %u",
+						cookies[fd]->id)));
+
+	/* SELinux: db_blob:{write} */
+	sepgsql_largeobject_write(cookies[fd]->id, cookies[fd]->snapshot);
 
 	inv_truncate(cookies[fd], len);
 
 	PG_RETURN_INT32(0);
-}
-
-/*
- * lo_get_seclabel
- *    get a security label of large object
- */
-Datum
-lo_get_security(PG_FUNCTION_ARGS)
-{
-	Oid     loid = PG_GETARG_OID(0);
-	Oid     secid;
-	char   *seclabel;
-
-	secid = inv_get_security(loid);
-	seclabel = securityTransSecLabelOut(LargeObjectRelationId, secid);
-
-	return CStringGetTextDatum(seclabel);
-}
-
-/*
- * lo_set_seclabel
- *    set a security label of large object
- */
-Datum
-lo_set_security(PG_FUNCTION_ARGS)
-{
-	Oid		loid = PG_GETARG_OID(0);
-	char   *seclabel = TextDatumGetCString(PG_GETARG_DATUM(1));
-	Oid		secid;
-
-	secid = securityTransSecLabelIn(LargeObjectRelationId, seclabel);
-
-	inv_set_security(loid, secid);
-
-	/*
-	 * Also on memory caches to be updated
-	 */
-	if (fscxt != NULL)
-	{
-		int		i;
-
-		for (i = 0; i < cookies_size; i++)
-		{
-			if (cookies[i] != NULL && cookies[i]->id == loid)
-				cookies[i]->secid = secid;
-		}
-	}
-
-	PG_RETURN_BOOL(true);
 }
 
 /*

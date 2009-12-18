@@ -41,6 +41,11 @@ extern Datum lo_get_security(PG_FUNCTION_ARGS);
 extern Datum lo_set_security(PG_FUNCTION_ARGS);
 
 /*
+ * compatibility option for access control
+ */
+extern bool	lo_compat_privileges;
+
+/*
  * These are not fmgr-callable, but are available to C code.
  * Probably these should have had the underscore-free names,
  * but too late now...
