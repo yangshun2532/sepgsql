@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/tablecmds.c,v 1.309 2009/12/11 03:34:55 itagaki Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/tablecmds.c,v 1.310 2009/12/15 04:57:47 rhaas Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -936,7 +936,7 @@ ExecuteTruncate(TruncateStmt *stmt)
 						  rel,
 						  0,	/* dummy rangetable index */
 						  CMD_DELETE,	/* don't need any index info */
-						  false);
+						  0);
 		resultRelInfo++;
 	}
 	estate->es_result_relations = resultRelInfos;
@@ -7780,6 +7780,7 @@ AlterTableNamespace(RangeVar *relation, const char *newschema,
 	Oid			oldNspOid;
 	Oid			nspOid;
 	Relation	classRel;
+	AclResult	aclresult;
 
 	rel = relation_openrv(relation, AccessExclusiveLock);
 
@@ -7856,7 +7857,7 @@ AlterTableNamespace(RangeVar *relation, const char *newschema,
 							RelationGetRelationName(rel))));
 	}
 
-	/* get schema OID and check its permissions */
+	/* get schema OID */
 	nspOid = LookupCreationNamespace(newschema);
 
 	if (oldNspOid == nspOid)
@@ -7865,6 +7866,14 @@ AlterTableNamespace(RangeVar *relation, const char *newschema,
 				 errmsg("relation \"%s\" is already in schema \"%s\"",
 						RelationGetRelationName(rel),
 						newschema)));
+
+	/*
+	 * permission check on schema
+	 * XXX - to be consolidated with pg_class_ownercheck() later	 
+	 */
+	aclresult = pg_namespace_aclcheck(nspOid, GetUserId(), ACL_CREATE);
+	if (aclresult != ACLCHECK_OK)
+		aclcheck_error(aclresult, ACL_KIND_NAMESPACE, newschema);
 
 	/* disallow renaming into or out of temp schemas */
 	if (isAnyTempNamespace(nspOid) || isAnyTempNamespace(oldNspOid))
