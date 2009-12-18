@@ -18,14 +18,21 @@
 
 #include <selinux/selinux.h>
 
-/* GUC parameter to turn on/off SE-PostgreSQL */
-extern bool sepostgresql_is_enabled;
+/* GUC parameter of SE-PostgreSQL global working mode */
+extern int sepostgresql_mode;
+
+#define SEPGSQL_MODE_DEFAULT		0x0000
+#define SEPGSQL_MODE_ENFORCING		0x0001
+#define SEPGSQL_MODE_PERMISSIVE		0x0002
+#define SEPGSQL_MODE_DISABLED		0x0003
+#define SEPGSQL_MODE_MASK			0x000f
+#define SEPGSQL_FLAG_NOAUDIT		0x0100
 
 /* GUC parameter to turn on/off Row-level controls */
 extern bool sepostgresql_row_level;
 
 /* GUC parameter to turn on/off mcstrans */
-extern bool sepostgresql_use_mcstrans;
+extern bool sepostgresql_mcstrans;
 
 /* Objject classes and permissions internally used */
 enum SepgsqlClasses
@@ -95,7 +102,6 @@ enum SepgsqlClasses
 #define SEPG_DB_DATABASE__ACCESS			(1<<6)
 #define SEPG_DB_DATABASE__INSTALL_MODULE	(1<<7)
 #define SEPG_DB_DATABASE__LOAD_MODULE		(1<<8)
-#define SEPG_DB_DATABASE__SUPERUSER			(1<<9)
 
 #define SEPG_DB_SCHEMA__CREATE				(SEPG_DB_DATABASE__CREATE)
 #define SEPG_DB_SCHEMA__DROP				(SEPG_DB_DATABASE__DROP)
@@ -139,7 +145,6 @@ enum SepgsqlClasses
 #define SEPG_DB_PROCEDURE__EXECUTE			(1<<6)
 #define SEPG_DB_PROCEDURE__ENTRYPOINT		(1<<7)
 #define SEPG_DB_PROCEDURE__INSTALL			(1<<8)
-#define SEPG_DB_PROCEDURE__UNTRUSTED		(1<<9)
 
 #define SEPG_DB_COLUMN__CREATE				(SEPG_DB_DATABASE__CREATE)
 #define SEPG_DB_COLUMN__DROP				(SEPG_DB_DATABASE__DROP)
@@ -183,8 +188,10 @@ typedef struct {
 /*
  * selinux.c : communication with in-kernel SELinux
  */
-extern bool
-sepgsql_is_enabled(void);
+extern bool sepgsql_is_enabled(void);
+extern bool sepgsql_get_enforce(void);
+extern void sepgsql_initialize(void);
+extern char *sepgsql_show_mode(void);
 
 /*
  * avc.c : userspace access vector caches
