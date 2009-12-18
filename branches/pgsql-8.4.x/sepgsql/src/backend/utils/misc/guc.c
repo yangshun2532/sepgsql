@@ -38,6 +38,7 @@
 #include "commands/trigger.h"
 #include "funcapi.h"
 #include "libpq/auth.h"
+#include "libpq/be-fsstubs.h"
 #include "libpq/pqformat.h"
 #include "miscadmin.h"
 #include "optimizer/cost.h"
@@ -1247,6 +1248,16 @@ static struct config_bool ConfigureNamesBool[] =
 		true, NULL, NULL
 	},
 #endif
+
+	{
+		{"lo_compat_privileges", PGC_SUSET, COMPAT_OPTIONS_PREVIOUS,
+			gettext_noop("Enables backward compatibility in privilege checks on large objects"),
+			gettext_noop("When turned on, privilege checks on large objects perform "
+						 "with backward compatibility as 8.4.x or earlier releases.")
+		},
+		&lo_compat_privileges,
+		false, NULL, NULL
+	},
 
 	/* End-of-list marker */
 	{

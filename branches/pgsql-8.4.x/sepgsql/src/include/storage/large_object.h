@@ -44,7 +44,6 @@ typedef struct LargeObjectDesc
 #define IFS_RDLOCK		(1 << 0)
 #define IFS_WRLOCK		(1 << 1)
 
-	Oid			secid;			/* security identifier of largeobject */
 } LargeObjectDesc;
 
 
@@ -71,7 +70,7 @@ typedef struct LargeObjectDesc
 
 /* inversion stuff in inv_api.c */
 extern void close_lo_relation(bool isCommit);
-extern Oid	inv_create(Oid lobjId);
+extern Oid	inv_create(Oid lobjId, Oid secid);
 extern LargeObjectDesc *inv_open(Oid lobjId, int flags, MemoryContext mcxt);
 extern void inv_close(LargeObjectDesc *obj_desc);
 extern int	inv_drop(Oid lobjId);
@@ -80,7 +79,5 @@ extern int	inv_tell(LargeObjectDesc *obj_desc);
 extern int	inv_read(LargeObjectDesc *obj_desc, char *buf, int nbytes);
 extern int	inv_write(LargeObjectDesc *obj_desc, const char *buf, int nbytes);
 extern void inv_truncate(LargeObjectDesc *obj_desc, int len);
-extern Oid	inv_get_security(Oid loid);
-extern void	inv_set_security(Oid loid, Oid secid);
 
 #endif   /* LARGE_OBJECT_H */

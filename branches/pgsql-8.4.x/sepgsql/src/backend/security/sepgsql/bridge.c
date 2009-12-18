@@ -1762,25 +1762,25 @@ sepgsql_language_grant(Oid langOid)
  * (need to backport v8.5 feature)
  * ------------------------------------------------------------ */
 Oid
-sepgsql_largeobject_create(Oid loid, DefElem *newLabel)
+sepgsql_largeobject_create(Oid loid, Value *secLabel)
 {
 	return InvalidOid;
 }
 
 void
-sepgsql_largeobject_alter(Oid loid, Oid newOwner)
+sepgsql_largeobject_alter(Oid loid)
 {}
 
 void
-sepgsql_largeobject_drop(Oid loid, bool dacSkip)
+sepgsql_largeobject_drop(Oid loid)
 {}
 
 void
-sepgsql_largeobject_read(Oid loid)
+sepgsql_largeobject_read(Oid loid, Snapshot snapshot)
 {}
 
 void
-sepgsql_largeobject_write(Oid loid)
+sepgsql_largeobject_write(Oid loid, Snapshot snapshot)
 {}
 
 void
@@ -1788,8 +1788,10 @@ sepgsql_largeobject_export(Oid loid, const char *filename)
 {}
 
 Oid
-sepgsql_largeobject_import(Oid loid, const char *filename, DefElem *newLabel)
-{}
+sepgsql_largeobject_import(Oid loid, const char *filename)
+{
+	return InvalidOid;
+}
 
 /* ------------------------------------------------------------ *
  *

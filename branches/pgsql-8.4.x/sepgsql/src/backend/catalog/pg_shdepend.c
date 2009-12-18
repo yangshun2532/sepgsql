@@ -24,6 +24,7 @@
 #include "catalog/pg_conversion.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_language.h"
+#include "catalog/pg_largeobject.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_operator.h"
 #include "catalog/pg_proc.h"
@@ -1211,6 +1212,9 @@ shdepDropOwned(List *roleids, DropBehavior behavior)
 						case LanguageRelationId:
 							istmt.objtype = ACL_OBJECT_LANGUAGE;
 							break;
+						case LargeObjectRelationId:
+							istmt.objtype = ACL_OBJECT_LARGEOBJECT;
+							break;
 						case NamespaceRelationId:
 							istmt.objtype = ACL_OBJECT_NAMESPACE;
 							break;
@@ -1367,6 +1371,10 @@ shdepReassignOwned(List *roleids, Oid newrole)
 
 				case LanguageRelationId:
 					AlterLanguageOwner_oid(sdepForm->objid, newrole);
+					break;
+
+				case LargeObjectRelationId:
+					LargeObjectAlterOwner(sdepForm->objid, newrole);
 					break;
 
 				default:
