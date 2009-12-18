@@ -7,10 +7,6 @@ subdir = src/backend/security/sepgsql
 top_builddir = ../../../..
 include $(top_builddir)/src/Makefile.global
 
-ifeq ($(enable_selinux), yes)
-OBJS = avc.o checker.o bridge.o label.o misc.o perms.o
-else
-OBJS = dummy.o
-endif
+OBJS = avc.o checker.o bridge.o label.o misc.o perms.o selinux.o
 
 include $(top_srcdir)/src/backend/common.mk
