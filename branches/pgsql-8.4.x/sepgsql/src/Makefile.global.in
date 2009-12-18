@@ -164,7 +164,6 @@ enable_rpath	= @enable_rpath@
 enable_nls	= @enable_nls@
 enable_debug	= @enable_debug@
 enable_dtrace	= @enable_dtrace@
-enable_selinux	= @enable_selinux@
 enable_coverage	= @enable_coverage@
 enable_thread_safety	= @enable_thread_safety@
 
@@ -184,6 +183,8 @@ TCL_LIB_SPEC		= @TCL_LIB_SPEC@
 TCL_INCLUDE_SPEC	= @TCL_INCLUDE_SPEC@
 TCL_SHARED_BUILD	= @TCL_SHARED_BUILD@
 TCL_SHLIB_LD_LIBS	= @TCL_SHLIB_LD_LIBS@
+
+SELINUX_LIBS		= @SELINUX_LIBS@
 
 PTHREAD_CFLAGS		= @PTHREAD_CFLAGS@
 PTHREAD_LIBS		= @PTHREAD_LIBS@
