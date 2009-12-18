@@ -26,7 +26,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/executor/execMain.c,v 1.336 2009/12/09 21:57:51 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/executor/execMain.c,v 1.338 2009/12/15 04:57:47 rhaas Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -181,7 +181,7 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	 */
 	estate->es_snapshot = RegisterSnapshot(queryDesc->snapshot);
 	estate->es_crosscheck_snapshot = RegisterSnapshot(queryDesc->crosscheck_snapshot);
-	estate->es_instrument = queryDesc->doInstrument;
+	estate->es_instrument = queryDesc->instrument_options;
 
 	/*
 	 * Initialize the plan state tree
@@ -863,7 +863,7 @@ InitResultRelInfo(ResultRelInfo *resultRelInfo,
 				  Relation resultRelationDesc,
 				  Index resultRelationIndex,
 				  CmdType operation,
-				  bool doInstrument)
+				  int instrument_options)
 {
 	/*
 	 * Check valid relkind ... parser and/or planner should have noticed this
@@ -918,10 +918,8 @@ InitResultRelInfo(ResultRelInfo *resultRelInfo,
 			palloc0(n * sizeof(FmgrInfo));
 		resultRelInfo->ri_TrigWhenExprs = (List **)
 			palloc0(n * sizeof(List *));
-		if (doInstrument)
-			resultRelInfo->ri_TrigInstrument = InstrAlloc(n);
-		else
-			resultRelInfo->ri_TrigInstrument = NULL;
+		if (instrument_options)
+			resultRelInfo->ri_TrigInstrument = InstrAlloc(n, instrument_options);
 	}
 	else
 	{
@@ -1410,6 +1408,16 @@ EvalPlanQual(EState *estate, EPQState *epqstate,
 	 * Run the EPQ query.  We assume it will return at most one tuple.
 	 */
 	slot = EvalPlanQualNext(epqstate);
+
+	/*
+	 * If we got a tuple, force the slot to materialize the tuple so that
+	 * it is not dependent on any local state in the EPQ query (in particular,
+	 * it's highly likely that the slot contains references to any pass-by-ref
+	 * datums that may be present in copyTuple).  As with the next step,
+	 * this is to guard against early re-use of the EPQ query.
+	 */
+	if (!TupIsNull(slot))
+		(void) ExecMaterializeSlot(slot);
 
 	/*
 	 * Clear out the test tuple.  This is needed in case the EPQ query

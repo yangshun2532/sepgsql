@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/tcop/postgres.c,v 1.575 2009/11/04 22:26:06 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/tcop/postgres.c,v 1.578 2009/12/16 23:05:00 petere Exp $
  *
  * NOTES
  *	  this is the "main" module of the postgres backend and
@@ -2538,6 +2538,7 @@ drop_unnamed_stmt(void)
 void
 quickdie(SIGNAL_ARGS)
 {
+	sigaddset(&BlockSig, SIGQUIT); /* prevent nested calls */
 	PG_SETMASK(&BlockSig);
 
 	/*
@@ -3292,11 +3293,7 @@ PostgresMain(int argc, char *argv[], const char *username)
 	if (IsUnderPostmaster)
 	{
 		/* We allow SIGQUIT (quickdie) at all times */
-#ifdef HAVE_SIGPROCMASK
 		sigdelset(&BlockSig, SIGQUIT);
-#else
-		BlockSig &= ~(sigmask(SIGQUIT));
-#endif
 	}
 
 	PG_SETMASK(&BlockSig);		/* block everything except SIGQUIT */
@@ -3901,7 +3898,6 @@ ResetUsage(void)
 {
 	getrusage(RUSAGE_SELF, &Save_r);
 	gettimeofday(&Save_t, NULL);
-	ResetBufferUsage();
 }
 
 void
@@ -3912,7 +3908,6 @@ ShowUsage(const char *title)
 				sys;
 	struct timeval elapse_t;
 	struct rusage r;
-	char	   *bufusage;
 
 	getrusage(RUSAGE_SELF, &r);
 	gettimeofday(&elapse_t, NULL);
@@ -3985,10 +3980,6 @@ ShowUsage(const char *title)
 					 r.ru_nivcsw - Save_r.ru_nivcsw,
 					 r.ru_nvcsw, r.ru_nivcsw);
 #endif   /* HAVE_GETRUSAGE */
-
-	bufusage = ShowBufferUsage();
-	appendStringInfo(&str, "! buffer usage stats:\n%s", bufusage);
-	pfree(bufusage);
 
 	/* remove trailing newline */
 	if (str.data[str.len - 1] == '\n')
