@@ -192,6 +192,25 @@ extern bool sepgsql_is_enabled(void);
 extern bool sepgsql_get_enforce(void);
 extern void sepgsql_initialize(void);
 extern char *sepgsql_show_mode(void);
+extern Size sepgsql_shmem_getsize(void);
+extern bool
+sepgsql_compute_perms(char *scontext, char *tcontext,
+					  uint16 tclass, uint32 required,
+					  const char *audit_name, bool abort);
+extern char *
+sepgsql_compute_create(char *scontext, char *tcontext, uint16 tclass);
+extern bool
+sepgsql_avc_has_perms(sepgsql_sid_t tsid,
+                      uint16 tclass, uint32 required,
+                      const char *audit_name, bool abort);
+extern sepgsql_sid_t
+sepgsql_avc_create_secid(sepgsql_sid_t tsid, uint16 tclass, Oid nrelid);
+extern char *
+sepgsql_avc_create_label(sepgsql_sid_t tsid, uint16 tclass);
+
+
+
+
 
 /*
  * avc.c : userspace access vector caches
