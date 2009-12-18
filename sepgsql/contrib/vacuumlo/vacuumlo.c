@@ -142,10 +142,7 @@ vacuumlo(char *database, struct _param * param)
 	 */
 	buf[0] = '\0';
 	strcat(buf, "CREATE TEMP TABLE vacuum_l AS ");
-	if (PQserverVersion(conn) >= 80500)
-		strcat(buf, "SELECT oid AS lo FROM pg_largeobject_metadata");
-	else
-		strcat(buf, "SELECT DISTINCT loid AS lo FROM pg_largeobject");
+	strcat(buf, "SELECT DISTINCT loid AS lo FROM pg_largeobject ");
 	res = PQexec(conn, buf);
 	if (PQresultStatus(res) != PGRES_COMMAND_OK)
 	{
