@@ -7,7 +7,7 @@
  * Portions Copyright (c) 1994-5, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/explain.c,v 1.194 2009/12/11 01:33:35 adunstan Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/explain.c,v 1.197 2009/12/16 22:16:16 rhaas Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -91,8 +91,6 @@ static void ExplainCloseGroup(const char *objtype, const char *labelname,
 				 bool labeled, ExplainState *es);
 static void ExplainDummyGroup(const char *objtype, const char *labelname,
 							  ExplainState *es);
-static void ExplainBeginOutput(ExplainState *es);
-static void ExplainEndOutput(ExplainState *es);
 static void ExplainXMLTag(const char *tagname, int flags, ExplainState *es);
 static void ExplainJSONLineEnding(ExplainState *es);
 static void ExplainYAMLLineStarting(ExplainState *es);
@@ -127,6 +125,8 @@ ExplainQuery(ExplainStmt *stmt, const char *queryString,
 			es.verbose = defGetBoolean(opt);
 		else if (strcmp(opt->defname, "costs") == 0)
 			es.costs = defGetBoolean(opt);
+		else if (strcmp(opt->defname, "buffers") == 0)
+			es.buffers = defGetBoolean(opt);
 		else if (strcmp(opt->defname, "format") == 0)
 		{
 			char   *p = defGetString(opt);
@@ -151,6 +151,11 @@ ExplainQuery(ExplainStmt *stmt, const char *queryString,
 					 errmsg("unrecognized EXPLAIN option \"%s\"",
 							opt->defname)));
 	}
+
+	if (es.buffers && !es.analyze)
+		ereport(ERROR,
+			(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+			 errmsg("EXPLAIN option BUFFERS requires ANALYZE")));
 
 	/*
 	 * Run parse analysis and rewrite.	Note this also acquires sufficient
@@ -341,6 +346,12 @@ ExplainOnePlan(PlannedStmt *plannedstmt, ExplainState *es,
 	instr_time	starttime;
 	double		totaltime = 0;
 	int			eflags;
+	int			instrument_option = 0;
+
+	if (es->analyze)
+		instrument_option |= INSTRUMENT_TIMER;
+	if (es->buffers)
+		instrument_option |= INSTRUMENT_BUFFERS;
 
 	/*
 	 * Use a snapshot with an updated command ID to ensure this query sees
@@ -351,7 +362,7 @@ ExplainOnePlan(PlannedStmt *plannedstmt, ExplainState *es,
 	/* Create a QueryDesc requesting no output */
 	queryDesc = CreateQueryDesc(plannedstmt, queryString,
 								GetActiveSnapshot(), InvalidSnapshot,
-								None_Receiver, params, es->analyze);
+								None_Receiver, params, instrument_option);
 
 	INSTR_TIME_SET_CURRENT(starttime);
 
@@ -1044,6 +1055,84 @@ ExplainNode(Plan *plan, PlanState *planstate,
 			break;
 	}
 
+	/* Show buffer usage */
+	if (es->buffers)
+	{
+		const BufferUsage *usage = &planstate->instrument->bufusage;
+
+		if (es->format == EXPLAIN_FORMAT_TEXT)
+		{
+			bool	has_shared = (usage->shared_blks_hit > 0 ||
+								  usage->shared_blks_read > 0 ||
+								  usage->shared_blks_written);
+			bool	has_local = (usage->local_blks_hit > 0 ||
+								 usage->local_blks_read > 0 ||
+								 usage->local_blks_written);
+			bool	has_temp = (usage->temp_blks_read > 0 ||
+								usage->temp_blks_written);
+
+			/* Show only positive counter values. */
+			if (has_shared || has_local || has_temp)
+			{
+				appendStringInfoSpaces(es->str, es->indent * 2);
+				appendStringInfoString(es->str, "Buffers:");
+
+				if (has_shared)
+				{
+					appendStringInfoString(es->str, " shared");
+					if (usage->shared_blks_hit > 0)
+						appendStringInfo(es->str, " hit=%ld",
+							usage->shared_blks_hit);
+					if (usage->shared_blks_read > 0)
+						appendStringInfo(es->str, " read=%ld",
+							usage->shared_blks_read);
+					if (usage->shared_blks_written > 0)
+						appendStringInfo(es->str, " written=%ld",
+							usage->shared_blks_written);
+					if (has_local || has_temp)
+						appendStringInfoChar(es->str, ',');
+				}
+				if (has_local)
+				{
+					appendStringInfoString(es->str, " local");
+					if (usage->local_blks_hit > 0)
+						appendStringInfo(es->str, " hit=%ld",
+							usage->local_blks_hit);
+					if (usage->local_blks_read > 0)
+						appendStringInfo(es->str, " read=%ld",
+							usage->local_blks_read);
+					if (usage->local_blks_written > 0)
+						appendStringInfo(es->str, " written=%ld",
+							usage->local_blks_written);
+					if (has_temp)
+						appendStringInfoChar(es->str, ',');
+				}
+				if (has_temp)
+				{
+					appendStringInfoString(es->str, " temp");
+					if (usage->temp_blks_read > 0)
+						appendStringInfo(es->str, " read=%ld",
+							usage->temp_blks_read);
+					if (usage->temp_blks_written > 0)
+						appendStringInfo(es->str, " written=%ld",
+							usage->temp_blks_written);
+				}
+				appendStringInfoChar(es->str, '\n');
+			}
+		}
+		else
+		{
+			ExplainPropertyLong("Shared Hit Blocks", usage->shared_blks_hit, es);
+			ExplainPropertyLong("Shared Read Blocks", usage->shared_blks_read, es);
+			ExplainPropertyLong("Shared Written Blocks", usage->shared_blks_written, es);
+			ExplainPropertyLong("Local Hit Blocks", usage->local_blks_hit, es);
+			ExplainPropertyLong("Local Read Blocks", usage->local_blks_read, es);
+			ExplainPropertyLong("Local Written Blocks", usage->local_blks_written, es);
+			ExplainPropertyLong("Temp Read Blocks", usage->temp_blks_read, es);
+			ExplainPropertyLong("Temp Written Blocks", usage->temp_blks_written, es);
+		}
+	}
+
 	/* Get ready to display the child plans */
 	haschildren = plan->initPlan ||
 		outerPlan(plan) ||
@@ -1605,10 +1694,7 @@ ExplainProperty(const char *qlabel, const char *value, bool numeric,
 		case EXPLAIN_FORMAT_YAML:
 			ExplainYAMLLineStarting(es);
 			appendStringInfo(es->str, "%s: ", qlabel);
-			if (numeric)
-				appendStringInfoString(es->str, value);
-			else
-				escape_yaml(es->str, value);
+			escape_yaml(es->str, value);
 			break;
 	}
 }
@@ -1696,15 +1782,23 @@ ExplainOpenGroup(const char *objtype, const char *labelname,
 			break;
 
 		case EXPLAIN_FORMAT_YAML:
+
+			/*
+			 * In YAML format, the grouping stack is an integer list.  0 means
+			 * we've emitted nothing at this grouping level AND this grouping
+			 * level is unlabelled and must be marked with "- ".  See
+			 * ExplainYAMLLineStarting().
+			 */
 			ExplainYAMLLineStarting(es);
 			if (labelname)
 			{
-				appendStringInfo(es->str, "%s:", labelname);
+				escape_yaml(es->str, labelname);
+				appendStringInfoChar(es->str, ':');
 				es->grouping_stack = lcons_int(1, es->grouping_stack);
 			}
 			else
 			{
-				appendStringInfoChar(es->str, '-');
+				appendStringInfoString(es->str, "- ");
 				es->grouping_stack = lcons_int(0, es->grouping_stack);
 			}
 			es->indent++;
@@ -1779,8 +1873,15 @@ ExplainDummyGroup(const char *objtype, const char *labelname, ExplainState *es)
 		case EXPLAIN_FORMAT_YAML:
 			ExplainYAMLLineStarting(es);
 			if (labelname)
-				appendStringInfo(es->str, "%s:", labelname);
-			appendStringInfoString(es->str, objtype);
+			{
+				escape_yaml(es->str, labelname);
+				appendStringInfoString(es->str, ": ");
+			}
+			else
+			{
+				appendStringInfoString(es->str, "- ");
+			}
+			escape_yaml(es->str, objtype);
 			break;
 	}
 }
@@ -1791,7 +1892,7 @@ ExplainDummyGroup(const char *objtype, const char *labelname, ExplainState *es)
  * This is just enough different from processing a subgroup that we need
  * a separate pair of subroutines.
  */
-static void
+void
 ExplainBeginOutput(ExplainState *es)
 {
 	switch (es->format)
@@ -1822,7 +1923,7 @@ ExplainBeginOutput(ExplainState *es)
 /*
  * Emit the end-of-output boilerplate.
  */
-static void
+void
 ExplainEndOutput(ExplainState *es)
 {
 	switch (es->format)
@@ -1857,18 +1958,14 @@ ExplainSeparatePlans(ExplainState *es)
 	switch (es->format)
 	{
 		case EXPLAIN_FORMAT_TEXT:
-		case EXPLAIN_FORMAT_YAML:
 			/* add a blank line */
 			appendStringInfoChar(es->str, '\n');
 			break;
 
 		case EXPLAIN_FORMAT_XML:
-			/* nothing to do */
-			break;
-
 		case EXPLAIN_FORMAT_JSON:
-			/* must have a comma between array elements */
-			appendStringInfoChar(es->str, ',');
+		case EXPLAIN_FORMAT_YAML:
+			/* nothing to do */
 			break;
 	}
 }
@@ -1922,6 +2019,12 @@ ExplainJSONLineEnding(ExplainState *es)
 
 /*
  * Indent a YAML line.
+ *
+ * YAML lines are ordinarily indented by two spaces per indentation level.
+ * The text emitted for each property begins just prior to the preceding
+ * line-break, except for the first property in an unlabelled group, for which
+ * it begins immediately after the "- " that introduces the group.  The first
+ * property of the group appears on the same line as the opening "- ".
  */
 static void
 ExplainYAMLLineStarting(ExplainState *es)
@@ -1929,7 +2032,6 @@ ExplainYAMLLineStarting(ExplainState *es)
 	Assert(es->format == EXPLAIN_FORMAT_YAML);
 	if (linitial_int(es->grouping_stack) == 0)
 	{
-		appendStringInfoChar(es->str, ' ');
 		linitial_int(es->grouping_stack) = 1;
 	}
 	else
@@ -1985,7 +2087,8 @@ escape_json(StringInfo buf, const char *str)
 }
 
 /*
- * YAML is a superset of JSON: if we find quotable characters, we call escape_json
+ * YAML is a superset of JSON: if we find quotable characters, we call
+ * escape_json.  If not, we emit the property unquoted for better readability.
  */
 static void
 escape_yaml(StringInfo buf, const char *str)

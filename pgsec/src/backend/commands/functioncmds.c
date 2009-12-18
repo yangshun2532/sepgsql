@@ -1874,6 +1874,7 @@ AlterFunctionNamespace(List *name, List *argtypes, bool isagg,
 	HeapTuple	tup;
 	Relation	procRel;
 	Form_pg_proc proc;
+	AclResult	aclresult;
 
 	procRel = heap_open(ProcedureRelationId, RowExclusiveLock);
 
@@ -1897,7 +1898,7 @@ AlterFunctionNamespace(List *name, List *argtypes, bool isagg,
 
 	oldNspOid = proc->pronamespace;
 
-	/* get schema OID and check its permissions */
+	/* get schema OID */
 	nspOid = LookupCreationNamespace(newschema);
 
 	if (oldNspOid == nspOid)
@@ -1906,6 +1907,14 @@ AlterFunctionNamespace(List *name, List *argtypes, bool isagg,
 				 errmsg("function \"%s\" is already in schema \"%s\"",
 						NameListToString(name),
 						newschema)));
+
+	/*
+	 * check permissions on schema
+	 * XXX - to be consolidated with pg_proc_ownercheck() later
+	 */
+	aclresult = pg_namespace_aclcheck(nspOid, GetUserId(), ACL_CREATE);
+	if (aclresult != ACLCHECK_OK)
+		aclcheck_error(aclresult, ACL_KIND_NAMESPACE, newschema);
 
 	/* disallow renaming into or out of temp schemas */
 	if (isAnyTempNamespace(nspOid) || isAnyTempNamespace(oldNspOid))

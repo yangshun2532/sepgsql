@@ -103,7 +103,7 @@ createdb(const CreatedbStmt *stmt)
 	Oid			src_lastsysoid;
 	TransactionId src_frozenxid;
 	Oid			src_deftablespace;
-	volatile Oid dst_deftablespace;
+	volatile Oid dst_deftablespace = InvalidOid;
 	Relation	pg_database_rel;
 	HeapTuple	tuple;
 	Datum		new_record[Natts_pg_database];
@@ -204,6 +204,18 @@ createdb(const CreatedbStmt *stmt)
 				 defel->defname);
 	}
 
+	if (dtablespacename && dtablespacename->arg)
+	{
+		char	   *tablespacename;
+
+		tablespacename = strVal(dtablespacename->arg);
+		dst_deftablespace = get_tablespace_oid(tablespacename);
+		if (!OidIsValid(dst_deftablespace))
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_OBJECT),
+					 errmsg("tablespace \"%s\" does not exist",
+							tablespacename)));
+	}
 	if (downer && downer->arg)
 		dbowner = strVal(downer->arg);
 	if (dtemplate && dtemplate->arg)
@@ -258,20 +270,6 @@ createdb(const CreatedbStmt *stmt)
 		datdba = GetUserId();
 
 	/*
-	 * To create a database, must have createdb privilege and must be able to
-	 * become the target role (this does not imply that the target role itself
-	 * must have createdb privilege).  The latter provision guards against
-	 * "giveaway" attacks.	Note that a superuser will always have both of
-	 * these privileges a fortiori.
-	 */
-	if (!have_createdb_privilege())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied to create database")));
-
-	check_is_member_of_role(GetUserId(), datdba);
-
-	/*
 	 * Lookup database (template) to be cloned, and obtain share lock on it.
 	 * ShareLock allows two CREATE DATABASEs to work from the same template
 	 * concurrently, while ensuring no one is busy dropping it in parallel
@@ -294,6 +292,20 @@ createdb(const CreatedbStmt *stmt)
 						dbtemplate)));
 
 	/*
+	 * To create a database, must have createdb privilege and must be able to
+	 * become the target role (this does not imply that the target role itself
+	 * must have createdb privilege).  The latter provision guards against
+	 * "giveaway" attacks.	Note that a superuser will always have both of
+	 * these privileges a fortiori.
+	 */
+	if (!have_createdb_privilege())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("permission denied to create database")));
+
+	check_is_member_of_role(GetUserId(), datdba);
+
+	/*
 	 * Permission check: to copy a DB that's not marked datistemplate, you
 	 * must be superuser or the owner thereof.
 	 */
@@ -304,6 +316,21 @@ createdb(const CreatedbStmt *stmt)
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 					 errmsg("permission denied to copy database \"%s\"",
 							dbtemplate)));
+	}
+
+	/*
+	 * Permission check: to create object under explicitly given
+	 * tablespace, instead of the copied one from the source database
+	 */
+	if (OidIsValid(dst_deftablespace))
+	{
+		AclResult	aclresult;
+
+		aclresult = pg_tablespace_aclcheck(dst_deftablespace, GetUserId(),
+										   ACL_CREATE);
+		if (aclresult != ACLCHECK_OK)
+			aclcheck_error(aclresult, ACL_KIND_TABLESPACE,
+						   get_tablespace_name(dst_deftablespace));
 	}
 
 	/* If encoding or locales are defaulted, use source's setting */
@@ -421,25 +448,8 @@ createdb(const CreatedbStmt *stmt)
 	}
 
 	/* Resolve default tablespace for new database */
-	if (dtablespacename && dtablespacename->arg)
+	if (OidIsValid(dst_deftablespace))
 	{
-		char	   *tablespacename;
-		AclResult	aclresult;
-
-		tablespacename = strVal(dtablespacename->arg);
-		dst_deftablespace = get_tablespace_oid(tablespacename);
-		if (!OidIsValid(dst_deftablespace))
-			ereport(ERROR,
-					(errcode(ERRCODE_UNDEFINED_OBJECT),
-					 errmsg("tablespace \"%s\" does not exist",
-							tablespacename)));
-		/* check permissions */
-		aclresult = pg_tablespace_aclcheck(dst_deftablespace, GetUserId(),
-										   ACL_CREATE);
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, ACL_KIND_TABLESPACE,
-						   tablespacename);
-
 		/* pg_global must never be the default tablespace */
 		if (dst_deftablespace == GLOBALTABLESPACE_OID)
 			ereport(ERROR,
@@ -471,7 +481,7 @@ createdb(const CreatedbStmt *stmt)
 				ereport(ERROR,
 						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 						 errmsg("cannot assign new default tablespace \"%s\"",
-								tablespacename),
+								get_tablespace_name(dst_deftablespace)),
 						 errdetail("There is a conflict because database \"%s\" already has some tables in this tablespace.",
 								   dbtemplate)));
 			pfree(srcpath);
@@ -1015,13 +1025,6 @@ movedb(const char *dbname, const char *tblspcname)
 							   AccessExclusiveLock);
 
 	/*
-	 * Permission checks
-	 */
-	if (!pg_database_ownercheck(db_id, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
-					   dbname);
-
-	/*
 	 * Obviously can't move the tables of my own database
 	 */
 	if (db_id == MyDatabaseId)
@@ -1041,6 +1044,10 @@ movedb(const char *dbname, const char *tblspcname)
 	/*
 	 * Permission checks
 	 */
+	if (!pg_database_ownercheck(db_id, GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
+					   dbname);
+
 	aclresult = pg_tablespace_aclcheck(dst_tblspcoid, GetUserId(),
 									   ACL_CREATE);
 	if (aclresult != ACLCHECK_OK)
