@@ -122,7 +122,7 @@ static struct
 			{ "access",			SEPG_DB_DATABASE__ACCESS },
 			{ "install_module",	SEPG_DB_DATABASE__INSTALL_MODULE },
 			{ "load_module",	SEPG_DB_DATABASE__LOAD_MODULE },
-			{ "superuser",		SEPG_DB_DATABASE__SUPERUSER },
+//			{ "superuser",		SEPG_DB_DATABASE__SUPERUSER },
 			{ NULL, 0UL },
 		}
 	},
@@ -186,7 +186,7 @@ static struct
 			{ "execute",		SEPG_DB_PROCEDURE__EXECUTE },
 			{ "entrypoint",		SEPG_DB_PROCEDURE__ENTRYPOINT },
 			{ "install",		SEPG_DB_PROCEDURE__INSTALL },
-			{ "untrusted",		SEPG_DB_PROCEDURE__UNTRUSTED },
+//			{ "untrusted",		SEPG_DB_PROCEDURE__UNTRUSTED },
 			{ NULL, 0UL },
 		}
 	},

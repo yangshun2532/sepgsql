@@ -332,6 +332,18 @@ static const struct config_enum_entry constraint_exclusion_options[] = {
 	{NULL, 0, false}
 };
 
+#ifdef HAVE_SELINUX
+static const struct config_enum_entry sepgsql_options[] = {
+	{"default", SEPGSQL_MODE_DEFAULT, false},
+	{"enforcing", SEPGSQL_MODE_ENFORCING, false},
+	{"permissive", SEPGSQL_MODE_PERMISSIVE, false},
+	{"disabled", SEPGSQL_MODE_DISABLED, false},
+	{"on", SEPGSQL_MODE_DEFAULT, true},
+	{"off", SEPGSQL_MODE_DISABLED, true},
+	{NULL, 0, false}
+};
+#endif
+
 /*
  * Options for enum values stored in other modules
  */
@@ -1224,14 +1236,6 @@ static struct config_bool ConfigureNamesBool[] =
 	},
 #ifdef HAVE_SELINUX
 	{
-		{"sepostgresql", PGC_POSTMASTER, CONN_AUTH_SECURITY,
-		 gettext_noop("SE-PostgreSQL activation option to be turned on/off"),
-		 NULL,
-		},
-		&sepostgresql_is_enabled,
-		false, NULL, NULL
-	},
-	{
 		{"sepostgresql_row_level", PGC_POSTMASTER, CONN_AUTH_SECURITY,
 		 gettext_noop("Row-level access controls on SE-PostgreSQL"),
 		 NULL,
@@ -1244,7 +1248,7 @@ static struct config_bool ConfigureNamesBool[] =
 		 gettext_noop("SE-PostgreSQL uses mcstrans on printing security labels"),
 		 NULL,
 		},
-		&sepostgresql_use_mcstrans,
+		&sepostgresql_mcstrans,
 		true, NULL, NULL
 	},
 #endif
@@ -2715,8 +2719,16 @@ static struct config_enum ConfigureNamesEnum[] =
 		&xmloption,
 		XMLOPTION_CONTENT, xmloption_options, NULL, NULL
 	},
-
-
+#ifdef HAVE_SELINUX
+	{
+		{"sepostgresql", PGC_POSTMASTER, CONN_AUTH_SECURITY,
+		 gettext_noop("SE-PostgreSQL activation option to be turned on/off"),
+		 NULL,
+		},
+		&sepostgresql_mode,
+		SEPGSQL_MODE_DISABLED, sepgsql_options, NULL, sepgsql_show_mode
+	},
+#endif
 	/* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, 0, NULL, NULL, NULL

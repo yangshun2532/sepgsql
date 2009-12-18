@@ -61,6 +61,83 @@ static struct
 	} perms[32];
 } selinux_catalog[] = {
 	{
+		"process",				SEPG_CLASS_PROCESS,
+		{
+			{ "transition",		SEPG_PROCESS__TRANSITION },
+			{ NULL, 0UL },
+		}
+	},
+	{
+		"file",					SEPG_CLASS_FILE,
+		{
+			{ "read",			SEPG_FILE__READ },
+			{ "write",			SEPG_FILE__WRITE },
+			{ "create",			SEPG_FILE__CREATE },
+			{ "getattr",		SEPG_FILE__GETATTR },
+			{ NULL, 0UL },
+		}
+	},
+	{
+		"dir",					SEPG_CLASS_DIR,
+		{
+			{ "read",			SEPG_DIR__READ },
+			{ "write",			SEPG_DIR__WRITE },
+			{ "create",			SEPG_DIR__CREATE },
+			{ "getattr",		SEPG_DIR__GETATTR },
+			{ NULL, 0UL },
+		},
+	},
+	{
+		"lnk_file",				SEPG_CLASS_LNK_FILE,
+		{
+			{ "read",			SEPG_LNK_FILE__READ },
+			{ "write",			SEPG_LNK_FILE__WRITE },
+			{ "create",			SEPG_LNK_FILE__CREATE },
+			{ "getattr",		SEPG_LNK_FILE__GETATTR },
+			{ NULL, 0UL },
+		},
+	},
+	{
+		"chr_file",				SEPG_CLASS_CHR_FILE,
+		{
+			{ "read",			SEPG_CHR_FILE__READ },
+			{ "write",			SEPG_CHR_FILE__WRITE },
+			{ "create",			SEPG_CHR_FILE__CREATE },
+			{ "getattr",		SEPG_CHR_FILE__GETATTR },
+			{ NULL, 0UL },
+		},
+	},
+	{
+		"blk_file",				SEPG_CLASS_BLK_FILE,
+		{
+			{ "read",			SEPG_BLK_FILE__READ },
+			{ "write",			SEPG_BLK_FILE__WRITE },
+			{ "create",			SEPG_BLK_FILE__CREATE },
+			{ "getattr",		SEPG_BLK_FILE__GETATTR },
+			{ NULL, 0UL },
+		},
+	},
+	{
+		"sock_file",			SEPG_CLASS_SOCK_FILE,
+		{
+			{ "read",			SEPG_SOCK_FILE__READ },
+			{ "write",			SEPG_SOCK_FILE__WRITE },
+			{ "create",			SEPG_SOCK_FILE__CREATE },
+			{ "getattr",		SEPG_SOCK_FILE__GETATTR },
+			{ NULL, 0UL },
+		},
+	},
+	{
+		"fifo_file",			SEPG_CLASS_FIFO_FILE,
+		{
+			{ "read",			SEPG_FIFO_FILE__READ },
+			{ "write",			SEPG_FIFO_FILE__WRITE },
+			{ "create",			SEPG_FIFO_FILE__CREATE },
+			{ "getattr",		SEPG_FIFO_FILE__GETATTR },
+			{ NULL, 0UL },
+		},
+	},
+	{
 		"db_database",			SEPG_CLASS_DB_DATABASE,
 		{
 			{ "create",			SEPG_DB_DATABASE__CREATE },
@@ -71,7 +148,6 @@ static struct
 			{ "relabelto",		SEPG_DB_DATABASE__RELABELTO },
 			{ "access",			SEPG_DB_DATABASE__ACCESS },
 			{ "load_module",	SEPG_DB_DATABASE__LOAD_MODULE },
-			{ "superuser",		SEPG_DB_DATABASE__SUPERUSER },
 			{ NULL, 0UL },
 		}
 	},
@@ -104,7 +180,36 @@ static struct
 			{ "insert",         SEPG_DB_TABLE__INSERT },
 			{ "delete",         SEPG_DB_TABLE__DELETE },
 			{ "lock",           SEPG_DB_TABLE__LOCK },
-			{ "inherit",		SEPG_DB_TABLE__INHERIT },
+			{ NULL, 0UL },
+		}
+	},
+	{
+		"db_sequence",			SEPG_CLASS_DB_SEQUENCE,
+		{
+			{ "create",			SEPG_DB_SEQUENCE__CREATE },
+			{ "drop",			SEPG_DB_SEQUENCE__DROP },
+			{ "getattr",		SEPG_DB_SEQUENCE__GETATTR },
+			{ "setattr",		SEPG_DB_SEQUENCE__SETATTR },
+			{ "relabelfrom",	SEPG_DB_SEQUENCE__RELABELFROM },
+			{ "relabelto",		SEPG_DB_SEQUENCE__RELABELTO },
+			{ "get_value",		SEPG_DB_SEQUENCE__GET_VALUE },
+			{ "next_value",		SEPG_DB_SEQUENCE__NEXT_VALUE },
+			{ "set_value",		SEPG_DB_SEQUENCE__SET_VALUE },
+			{ NULL, 0UL },
+		}
+	},
+	{
+		"db_procedure",			SEPG_CLASS_DB_PROCEDURE,
+		{
+			{ "create",			SEPG_DB_PROCEDURE__CREATE },
+			{ "drop",			SEPG_DB_PROCEDURE__DROP },
+			{ "getattr",		SEPG_DB_PROCEDURE__GETATTR },
+			{ "setattr",		SEPG_DB_PROCEDURE__SETATTR },
+			{ "relabelfrom",	SEPG_DB_PROCEDURE__RELABELFROM },
+			{ "relabelto",		SEPG_DB_PROCEDURE__RELABELTO },
+			{ "execute",		SEPG_DB_PROCEDURE__EXECUTE },
+			{ "entrypoint",		SEPG_DB_PROCEDURE__ENTRYPOINT },
+			{ "install",		SEPG_DB_PROCEDURE__INSTALL },
 			{ NULL, 0UL },
 		}
 	},
@@ -123,6 +228,34 @@ static struct
 			{ NULL, 0UL },
 		}
 	},
+	{
+		"db_tuple",				SEPG_CLASS_DB_TUPLE,
+		{
+			{ "relabelfrom",	SEPG_DB_TUPLE__RELABELFROM },
+			{ "relabelto",		SEPG_DB_TUPLE__RELABELTO },
+			{ "select",			SEPG_DB_TUPLE__SELECT },
+			{ "update",			SEPG_DB_TUPLE__UPDATE },
+			{ "insert",			SEPG_DB_TUPLE__INSERT },
+			{ "delete",			SEPG_DB_TUPLE__DELETE },
+			{ NULL, 0UL },
+		}
+	},
+	{
+		"db_blob",				SEPG_CLASS_DB_BLOB,
+		{
+			{ "create",			SEPG_DB_BLOB__CREATE },
+			{ "drop",			SEPG_DB_BLOB__DROP },
+			{ "getattr",		SEPG_DB_BLOB__GETATTR },
+			{ "setattr",		SEPG_DB_BLOB__SETATTR },
+			{ "relabelfrom",	SEPG_DB_BLOB__RELABELFROM },
+			{ "relabelto",		SEPG_DB_BLOB__RELABELTO },
+			{ "read",			SEPG_DB_BLOB__READ },
+			{ "write",			SEPG_DB_BLOB__WRITE },
+			{ "import",			SEPG_DB_BLOB__IMPORT },
+			{ "export",			SEPG_DB_BLOB__EXPORT },
+			{ NULL, 0UL },
+		}
+	}
 };
 
 /*
@@ -131,11 +264,9 @@ static struct
  * SEPGSQL_MODE_DEFAULT		: It follows system setting
  * SEPGSQL_MODE_ENFORCING	: Use enforcing mode always
  * SEPGSQL_MODE_PERMISSIVE	: Use permissive mode always
- * SEPGSQL_MODE_INTERNAL	: Internally used mode. Same as permissive mode
- *							  except for silence in audit logs
  * SEPGSQL_MODE_DISABLED	: It always disables SE-PgSQL configuration
  */
-int sepgsql_mode;
+int sepostgresql_mode;
 
 /*
  * sepgsql_initialize
@@ -148,15 +279,12 @@ sepgsql_initialize(void)
 {
 	char   *context;
 
-	if (!sepgsql_is_enabled())
-		return;
-
 	if (!MyProcPort)
 	{
 		/*
 		 * SE-PgSQL does not prevent anything in single-user mode.
 		 */
-		sepgsql_mode = SEPGSQL_MODE_INTERNAL;
+		sepostgresql_mode = SEPGSQL_MODE_PERMISSIVE | SEPGSQL_FLAG_NOAUDIT;
 
 		/*
 		 * When this server process was launched in single-user mode,
@@ -222,7 +350,7 @@ sepgsql_is_enabled(void)
 	 * If sepostgresql = disabled, it always returns FALSE
 	 * independently from the system status.
 	 */
-	if (sepgsql_mode == SEPGSQL_MODE_DISABLED)
+	if (sepostgresql_mode == SEPGSQL_MODE_DISABLED)
 		return false;
 
 	/*
@@ -250,12 +378,12 @@ sepgsql_is_enabled(void)
 bool
 sepgsql_get_enforce(void)
 {
-	if (sepgsql_mode == SEPGSQL_MODE_DEFAULT)
+	if (sepostgresql_mode == SEPGSQL_MODE_DEFAULT)
 	{
 		if (security_getenforce() == 1)
 			return true;
 	}
-	else if (sepgsql_mode == SEPGSQL_MODE_ENFORCING)
+	else if (sepostgresql_mode == SEPGSQL_MODE_ENFORCING)
 		return true;
 
 	return false;
@@ -298,8 +426,6 @@ sepgsql_show_mode(void)
  * what was happen if we have a security incident. In fact, ISO/IEC15408
  * defines several security functionalities for audit features.
  */
-PGDLLIMPORT sepgsql_audit_hook_t sepgsql_audit_hook = NULL;
-
 static void
 sepgsql_audit_log(bool denied, char *scontext, char *tcontext,
 				  uint16 tclass, uint32 audited, const char *audit_name)
@@ -336,21 +462,17 @@ sepgsql_audit_log(bool denied, char *scontext, char *tcontext,
 	/*
 	 * Call external audit module, if loaded
 	 */
-	if (sepgsql_audit_hook)
-		(*sepgsql_audit_hook)(denied, scontext, tcontext,
-							  tclass_name, buf.data, audit_name);
-	else
-	{
-		appendStringInfo(&buf, " scontext=%s tcontext=%s tclass=%s",
+	appendStringInfo(&buf, " scontext=%s tcontext=%s tclass=%s",
 						 scontext, tcontext, tclass_name);
-		if (audit_name)
-			appendStringInfo(&buf, " name=%s", audit_name);
+	if (audit_name)
+		appendStringInfo(&buf, " name=%s", audit_name);
 
-		ereport(LOG,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("SELinux: %s %s",
-						(denied ? "denied" : "allowed"), buf.data)));
-	}
+	// TODO: add system audit support
+
+	ereport(LOG,
+			(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+			 errmsg("SELinux: %s %s",
+					(denied ? "denied" : "allowed"), buf.data)));
 }
 
 /*
@@ -481,7 +603,7 @@ sepgsql_compute_perms(char *scontext, char *tcontext,
 	audited = denied ? (denied & avd.auditdeny)
 					 : (required & avd.auditallow);
 
-	if (audited && sepgsql_mode != SEPGSQL_MODE_INTERNAL)
+	if (audited && (sepostgresql_mode & SEPGSQL_FLAG_NOAUDIT) != 0)
 	{
 		sepgsql_audit_log(!!denied, scontext, tcontext,
 						  tclass, audited, audit_name);
@@ -575,6 +697,7 @@ sepgsql_compute_create(char *scontext, char *tcontext, uint16 tclass)
 	return result;
 }
 
+#if 0
 /*
  * sepgsql_template1_getcon
  *
@@ -719,3 +842,4 @@ sepgsql_default_getcon(PG_FUNCTION_ARGS)
 			 errmsg("unknown object class \"%s\"", tclass_name)));
 	PG_RETURN_VOID();	/* be compiler quiet */
 }
+#endif
