@@ -15,7 +15,6 @@
 #include "postgres.h"
 
 #include "catalog/namespace.h"
-#include "catalog/pg_largeobject.h"
 #include "commands/alter.h"
 #include "commands/conversioncmds.h"
 #include "commands/dbcommands.h"
@@ -232,10 +231,6 @@ ExecAlterOwnerStmt(AlterOwnerStmt *stmt)
 
 		case OBJECT_LANGUAGE:
 			AlterLanguageOwner(strVal(linitial(stmt->object)), newowner);
-			break;
-
-		case OBJECT_LARGEOBJECT:
-			LargeObjectAlterOwner(intVal(linitial(stmt->object)), newowner);
 			break;
 
 		case OBJECT_OPERATOR:
