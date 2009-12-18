@@ -16,8 +16,6 @@
 #include "storage/large_object.h"
 #include "utils/relcache.h"
 
-#ifdef HAVE_SELINUX
-
 #include <selinux/selinux.h>
 
 /* GUC parameter to turn on/off SE-PostgreSQL */
@@ -181,6 +179,12 @@ typedef struct {
 } sepgsql_sid_t;
 
 #define SidIsValid(sid)		(OidIsValid((sid).relid) && OidIsValid((sid).secid))
+
+/*
+ * selinux.c : communication with in-kernel SELinux
+ */
+extern bool
+sepgsql_is_enabled(void);
 
 /*
  * avc.c : userspace access vector caches
@@ -606,164 +610,6 @@ extern void sepgsqlTransToInternalPerms(security_class_t tclass_ex,
 										struct av_decision *avd);
 extern const char *sepgsqlGetClassString(uint16 tclass);
 extern const char *sepgsqlGetPermString(uint16 tclass, uint32 permission);
-
-#else	/* HAVE_SELINUX */
-
-/* avc.c */
-#define sepgsqlShmemSize()						(0)
-
-/* checker.c */
-#define sepgsqlCheckRTEPerms(a)					do {} while(0)
-#define sepgsqlCheckCopyTable(a,b,c)			do {} while(0)
-#define sepgsqlCheckSelectInto(a)				do {} while(0)
-#define sepgsqlExecScan(a,b,c)					(true)
-#define sepgsqlSetupTuplePerms(a)				(0)
-#define sepgsqlHeapTupleInsert(a,b,c)			do {} while(0)
-#define sepgsqlHeapTupleUpdate(a,b,c)			do {} while(0)
-
-/* core.c */
-#define sepgsqlIsEnabled()						(false)
-#define sepgsqlInitialize()						do {} while(0)
-
-/* bridge.c */
-#define sepgsql_attribute_create(a,b)			(InvalidOid)
-#define sepgsql_attribute_alter(a,b)			do {} while(0)
-#define sepgsql_attribute_drop(a,b)				do {} while(0)
-#define sepgsql_attribute_grant(a,b)			do {} while(0)
-#define sepgsql_attribute_relabel(a,b,c)		(InvalidOid)
-
-#define sepgsql_cast_create(a,b,c)				(InvalidOid)
-#define sepgsql_cast_drop(a)					(InvalidOid)
-
-#define sepgsql_relation_create(a,b,c,d,e,f)	(NULL)
-#define sepgsql_relation_copy(a)				(NULL)
-#define sepgsql_relation_alter(a,b,c)			do {} while(0)
-#define sepgsql_relation_drop(a)				do {} while(0)
-#define sepgsql_relation_grant(a)				do {} while(0)
-#define sepgsql_relation_relabel(a,b)			do {} while(0)
-#define sepgsql_relation_get_transaction_id(a)	do {} while(0)
-#define sepgsql_relation_copy_definition(a)		do {} while(0)
-#define sepgsql_relation_truncate(a)			do {} while(0)
-#define sepgsql_relation_references(a,b,c)		do {} while(0)
-#define sepgsql_relation_lock(a)				do {} while(0)
-#define sepgsql_view_replace(a)					do {} while(0)
-#define sepgsql_index_create(a,b,c)				do {} while(0)
-#define sepgsql_sequence_get_value(a)			do {} while(0)
-#define sepgsql_sequence_next_value(a)			do {} while(0)
-#define sepgsql_sequence_set_value(a)			do {} while(0)
-
-#define sepgsql_conversion_create(a,b,c)		do {} while(0)
-#define sepgsql_conversion_alter(a,b)			do {} while(0)
-#define sepgsql_conversion_drop(a)				do {} while(0)
-
-#define sepgsql_database_create(a,b)			(InvalidOid)
-#define sepgsql_database_alter(a)				do {} while(0)
-#define sepgsql_database_drop(a)				do {} while(0)
-#define sepgsql_database_relabel(a,b)			(InvalidOid)
-#define sepgsql_database_grant(a)				do {} while(0)
-#define sepgsql_database_access(a)				do {} while(0)
-#define sepgsql_database_superuser(a)			(true)
-#define sepgsql_database_load_module(a,b)		do {} while(0)
-
-#define sepgsql_fdw_create(a,b)					(InvalidOid)
-#define sepgsql_fdw_alter(a,b)					do {} while(0)
-#define sepgsql_fdw_drop(a)						do {} while(0)
-#define sepgsql_fdw_grant(a)					do {} while(0)
-
-#define sepgsql_foreign_server_create(a)		(InvalidOid)
-#define sepgsql_foreign_server_alter(a)			do {} while(0)
-#define sepgsql_foreign_server_drop(a)			do {} while(0)
-#define sepgsql_foreign_server_grant(a)			do {} while(0)
-
-#define sepgsql_language_create(a,b,c)			(InvalidOid)
-#define sepgsql_language_alter(a)				do {} while(0)
-#define sepgsql_language_drop(a)				do {} while(0)
-#define sepgsql_language_grant(a)				do {} while(0)
-
-#define sepgsql_largeobject_create(a,b)			(InvalidOid)
-#define sepgsql_largeobject_alter(a,b)			do {} while(0)
-#define sepgsql_largeobject_drop(a)				do {} while(0)
-#define sepgsql_largeobject_read(a)				do {} while(0)
-#define sepgsql_largeobject_write(a)			do {} while(0)
-#define sepgsql_largeobject_export(a,b)			do {} while(0)
-#define sepgsql_largeobject_import(a,b)			(InvalidOid)
-
-#define sepgsql_schema_create(a,b,c)			(InvalidOid)
-#define sepgsql_schema_alter(a)					do {} while(0)
-#define sepgsql_schema_drop(a)					do {} while(0)
-#define sepgsql_schema_relabel(a,b)				(InvalidOid)
-#define sepgsql_schema_grant(a)					do {} while(0)
-#define sepgsql_schema_search(a,b)				(true)
-
-#define sepgsql_opclass_create(a,b)				(InvalidOid)
-#define sepgsql_opclass_alter(a,b)				do {} while(0)
-#define sepgsql_opclass_drop(a)					do {} while(0)
-
-#define sepgsql_opfamily_create(a,b)			(InvalidOid)
-#define sepgsql_opfamily_alter(a,b)				do {} while(0)
-#define sepgsql_opfamily_drop(a)				do {} while(0)
-#define sepgsql_opfamily_add_operator(a,b)		do {} while(0)
-#define sepgsql_opfamily_add_procedure(a,b)		do {} while(0)
-
-#define sepgsql_operator_create(a,b,c,d,e,f)	(InvalidOid)
-#define sepgsql_operator_alter(a)				do {} while(0)
-#define sepgsql_operator_drop(a)				do {} while(0)
-
-#define sepgsql_proc_create(a,b,c,d,e)			(InvalidOid)
-#define sepgsql_proc_alter(a,b,c)				do {} while(0)
-#define sepgsql_proc_drop(a)					do {} while(0)
-#define sepgsql_proc_relabel(a,b)				(InvalidOid)
-#define sepgsql_proc_grant(a)					do {} while(0)
-#define sepgsql_proc_execute(a)					do {} while(0)
-#define sepgsql_proc_hint_inlined(a)			(true)
-#define sepgsql_proc_entrypoint(a,b)			do {} while(0)
-
-#define sepgsql_rule_create(a,b)				do {} while(0)
-#define sepgsql_rule_drop(a,b)					do {} while(0)
-
-#define sepgsql_trigger_create(a,b,c)			do {} while(0)
-#define sepgsql_trigger_alter(a,b)				do {} while(0)
-#define sepgsql_trigger_drop(a,b)				do {} while(0)
-
-#define sepgsql_ts_config_create(a,b)			(InvalidOid)
-#define sepgsql_ts_config_alter(a,b)			do {} while(0)
-#define sepgsql_ts_config_drop(a)				do {} while(0)
-
-#define sepgsql_ts_config_create(a,b)			(InvalidOid)
-#define sepgsql_ts_config_alter(a,b)			do {} while(0)
-#define sepgsql_ts_config_drop(a)				do {} while(0)
-
-#define sepgsql_ts_dict_create(a,b)				(InvalidOid)
-#define sepgsql_ts_dict_alter(a,b)				do {} while(0)
-#define sepgsql_ts_dict_drop(a)					do {} while(0)
-
-#define sepgsql_ts_parser_create(a,b,c,d,e,f,g)	(InvalidOid)
-#define sepgsql_ts_parser_alter(a,b)			do {} while(0)
-#define sepgsql_ts_parser_drop(a)				do {} while(0)
-
-#define sepgsql_ts_template_create(a,b,c,d)		(InvalidOid)
-#define sepgsql_ts_template_alter(a,b)			do {} while(0)
-#define sepgsql_ts_template_drop(a)				do {} while(0)
-
-#define sepgsql_type_create(a,b,c,d,e,f,g,h,i,j)	(InvalidOid)
-#define sepgsql_type_alter(a,b,c)				do {} while(0)
-#define sepgsql_type_drop(a)					do {} while(0)
-
-#define sepgsql_sysobj_drop(a)					do {} while(0)
-
-#define sepgsql_file_stat(a)					do {} while(0)
-#define sepgsql_file_read(a)					do {} while(0)
-#define sepgsql_file_write(a)					do {} while(0)
-
-/* label.c */
-#define sepgsqlTupleDescHasSecLabel(a,b)		(false)
-#define sepgsqlSetDefaultSecLabel(a,b)			do {} while(0)
-#define sepgsqlTransSecLabelIn(a)				(a)
-#define sepgsqlTransSecLabelOut(a)				(a)
-#define sepgsqlRawSecLabelIn(a)					(a)
-#define sepgsqlRawSecLabelOut(a)				(a)
-
-#endif	/* HAVE_SELINUX */
 
 extern Datum sepgsql_getcon(PG_FUNCTION_ARGS);
 extern Datum sepgsql_server_getcon(PG_FUNCTION_ARGS);

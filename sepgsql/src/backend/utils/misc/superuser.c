@@ -21,7 +21,6 @@
 #include "postgres.h"
 
 #include "catalog/pg_authid.h"
-#include "security/sepgsql.h"
 #include "utils/inval.h"
 #include "utils/syscache.h"
 #include "miscadmin.h"
@@ -61,10 +60,7 @@ superuser_arg(Oid roleid)
 
 	/* Quick out for cache hit */
 	if (OidIsValid(last_roleid) && last_roleid == roleid)
-	{
-		result = last_roleid_is_super;
-		goto out;
-	}
+		return last_roleid_is_super;
 
 	/* Special escape path in case you deleted all your users. */
 	if (!IsUnderPostmaster && roleid == BOOTSTRAP_SUPERUSERID)
@@ -97,10 +93,6 @@ superuser_arg(Oid roleid)
 	/* Cache the result for next time */
 	last_roleid = roleid;
 	last_roleid_is_super = result;
-
-out:
-	if (result)
-		result = sepgsql_database_superuser(MyDatabaseId);
 
 	return result;
 }

@@ -8,6 +8,6 @@ include $(top_builddir)/src/Makefile.global
 
 SUBDIRS	= sepgsql
 
-OBJS = rowlevel.o
+OBJS = pgace.o rowlevel.o
 
 include $(top_srcdir)/src/backend/common.mk

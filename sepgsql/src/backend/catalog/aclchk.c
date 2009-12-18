@@ -46,6 +46,7 @@
 #include "foreign/foreign.h"
 #include "miscadmin.h"
 #include "parser/parse_func.h"
+#include "security/pgace.h"
 #include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/fmgroids.h"
@@ -1256,8 +1257,9 @@ ExecGrant_Database(InternalGrant *istmt)
 									 datId, grantorId, ACL_KIND_DATABASE,
 									 NameStr(pg_database_tuple->datname),
 									 0, NULL);
-		/* SELinux permission checks */
-		sepgsql_database_grant(datId);
+
+		/* Enhanced permission checks to grant/revoke */
+		pgace_database_grant(datId);
 
 		/*
 		 * Generate new ACL.
