@@ -777,6 +777,7 @@ if test "$enable_selinux" = yes; then
     AC_CHECK_LIB(audit, audit_open,
                  AC_DEFINE_UNQUOTED(HAVE_LIBAUDIT, 1)
                  SELINUX_LIBS="$SELINUX_LIBS -laudit")
+    AC_SUBST(enable_selinux)
     AC_SUBST(SELINUX_LIBS)
 fi
 

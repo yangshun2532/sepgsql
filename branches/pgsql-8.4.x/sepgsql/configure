@@ -710,6 +710,7 @@ with_libxml
 with_libxslt
 with_system_tzdata
 with_zlib
+enable_selinux
 SELINUX_LIBS
 GREP
 EGREP
@@ -5705,6 +5706,7 @@ _ACEOF
 
                  SELINUX_LIBS="$SELINUX_LIBS -laudit"
 fi
+
 
 
 fi
@@ -28315,11 +28317,11 @@ with_libxml!$with_libxml$ac_delim
 with_libxslt!$with_libxslt$ac_delim
 with_system_tzdata!$with_system_tzdata$ac_delim
 with_zlib!$with_zlib$ac_delim
+enable_selinux!$enable_selinux$ac_delim
 SELINUX_LIBS!$SELINUX_LIBS$ac_delim
 GREP!$GREP$ac_delim
 EGREP!$EGREP$ac_delim
 ELF_SYS!$ELF_SYS$ac_delim
-LDFLAGS_SL!$LDFLAGS_SL$ac_delim
 _ACEOF
 
   if test `sed -n "s/.*$ac_delim\$/X/p" conf$$subs.sed | grep -c X` = 97; then
@@ -28361,6 +28363,7 @@ _ACEOF
 ac_delim='%!_!# '
 for ac_last_try in false false false false false :; do
   cat >conf$$subs.sed <<_ACEOF
+LDFLAGS_SL!$LDFLAGS_SL$ac_delim
 LD!$LD$ac_delim
 with_gnu_ld!$with_gnu_ld$ac_delim
 ld_R_works!$ld_R_works$ac_delim
@@ -28424,7 +28427,7 @@ vpath_build!$vpath_build$ac_delim
 LTLIBOBJS!$LTLIBOBJS$ac_delim
 _ACEOF
 
-  if test `sed -n "s/.*$ac_delim\$/X/p" conf$$subs.sed | grep -c X` = 61; then
+  if test `sed -n "s/.*$ac_delim\$/X/p" conf$$subs.sed | grep -c X` = 62; then
     break
   elif $ac_last_try; then
     { { echo "$as_me:$LINENO: error: could not make $CONFIG_STATUS" >&5
