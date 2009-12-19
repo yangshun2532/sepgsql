@@ -233,6 +233,7 @@ fmgr_info_cxt_security(Oid functionId, FmgrInfo *finfo, MemoryContext mcxt,
 	 */
 	if (!ignore_security &&
 		(procedureStruct->prosecdef ||
+		 sepgsql_proc_entrypoint(procedureTuple) ||
 		 !heap_attisnull(procedureTuple, Anum_pg_proc_proconfig)))
 	{
 		finfo->fn_addr = fmgr_security_definer;
@@ -290,7 +291,6 @@ fmgr_info_cxt_security(Oid functionId, FmgrInfo *finfo, MemoryContext mcxt,
 	}
 
 	finfo->fn_oid = functionId;
-	sepgsql_proc_entrypoint(finfo, procedureTuple);
 	ReleaseSysCache(procedureTuple);
 }
 
@@ -862,6 +862,7 @@ struct fmgr_security_definer_cache
 {
 	FmgrInfo	flinfo;			/* lookup info for target function */
 	Oid			userid;			/* userid to set, or InvalidOid */
+	char	   *seclabel;		/* security label to set, or NULL */
 	ArrayType  *proconfig;		/* GUC values to set, or NULL */
 };
 
@@ -883,6 +884,7 @@ fmgr_security_definer(PG_FUNCTION_ARGS)
 	FmgrInfo   *save_flinfo;
 	Oid			save_userid;
 	int			save_sec_context;
+	char	   *save_label;
 	volatile int save_nestlevel;
 	PgStat_FunctionCallUsage fcusage;
 
@@ -912,6 +914,9 @@ fmgr_security_definer(PG_FUNCTION_ARGS)
 		if (procedureStruct->prosecdef)
 			fcache->userid = procedureStruct->proowner;
 
+		fcache->seclabel
+			= sepgsql_proc_trusted(tuple, fcinfo->flinfo->fn_mcxt);
+
 		datum = SysCacheGetAttr(PROCOID, tuple, Anum_pg_proc_proconfig,
 								&isnull);
 		if (!isnull)
@@ -938,6 +943,8 @@ fmgr_security_definer(PG_FUNCTION_ARGS)
 	if (OidIsValid(fcache->userid))
 		SetUserIdAndSecContext(fcache->userid,
 							   save_sec_context | SECURITY_LOCAL_USERID_CHANGE);
+	if (fcache->seclabel)
+		save_label = sepgsqlSetClientLabel(fcache->seclabel);
 
 	if (fcache->proconfig)
 	{
@@ -985,6 +992,8 @@ fmgr_security_definer(PG_FUNCTION_ARGS)
 		AtEOXact_GUC(true, save_nestlevel);
 	if (OidIsValid(fcache->userid))
 		SetUserIdAndSecContext(save_userid, save_sec_context);
+	if (fcache->seclabel)
+		sepgsqlSetClientLabel(save_label);
 
 	return result;
 }

@@ -590,7 +590,7 @@ security_reclaim(Oid relid, char seckind)
 	/*
 	 * Disables SE-PostgreSQL temporary
 	 */
-	saved_mode = sepgsqlSetEnforce(0);
+	//saved_mode = sepgsqlSetEnforce(0);
 
 	PG_TRY();
 	{
@@ -607,11 +607,11 @@ security_reclaim(Oid relid, char seckind)
 	}
 	PG_CATCH();
 	{
-		sepgsqlSetEnforce(saved_mode);
+		//sepgsqlSetEnforce(saved_mode);
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
-	sepgsqlSetEnforce(saved_mode);
+	//sepgsqlSetEnforce(saved_mode);
 
 	return count;
 }

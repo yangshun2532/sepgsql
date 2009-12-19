@@ -198,6 +198,9 @@ DefineIndex(RangeVar *heapRelation,
 		if (aclresult != ACLCHECK_OK)
 			aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
 						   get_namespace_name(namespaceId));
+
+		/* SELinux checks */
+		sepgsql_index_create(relationId, namespaceId);
 	}
 
 	/*
@@ -258,9 +261,6 @@ DefineIndex(RangeVar *heapRelation,
 												   namespaceId);
 		}
 	}
-
-	/* SELinux checks */
-	sepgsql_index_create(relationId, namespaceId, check_rights);
 
 	/*
 	 * look up the access method, verify it can handle the requested features

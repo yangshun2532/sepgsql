@@ -93,12 +93,12 @@ checkTabelColumnPerms(Oid relid, Bitmapset *selected, Bitmapset *modified,
 						 SEPG_DB_TABLE__INSERT |
 						 SEPG_DB_TABLE__DELETE)) != 0)
 			ereport(ERROR,
-					(errcode(ERRCODE_SELINUX_ERROR),
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("SE-PostgreSQL prevents to modidy \"%s\"",
 							get_rel_name(relid))));
 		if (get_rel_relkind(relid) == RELKIND_TOASTVALUE)
 			ereport(ERROR,
-					(errcode(ERRCODE_SELINUX_ERROR),
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("SE-PostgreSQL prevents to access \"%s\"",
 							get_rel_name(relid))));
 	}

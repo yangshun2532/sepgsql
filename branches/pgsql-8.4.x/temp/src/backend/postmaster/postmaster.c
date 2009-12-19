@@ -1440,8 +1440,8 @@ ServerLoop(void)
 			PgStatPID = pgstat_start();
 
 		/* if we have lost the selinux netlink receiver, try to start */
-		if (sepgsqlIsEnabled() &&
-			sepgsqlReceiverPID == 0 && pmState == PM_RUN)
+		if (sepgsqlReceiverPID == 0 && pmState == PM_RUN &&
+			sepgsqlReceiverStart())
 			sepgsqlReceiverPID = StartSELinuxReceiver();
 
 		/* If we need to signal the autovacuum launcher, do so now */

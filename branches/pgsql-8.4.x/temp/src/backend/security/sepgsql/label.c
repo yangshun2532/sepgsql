@@ -63,7 +63,7 @@
 bool sepostgresql_row_level;
 
 /* GUC parameter to turn on/off mcstrans */
-bool sepostgresql_use_mcstrans;
+bool sepostgresql_mcstrans;
 
 /*
  * sepgsqlTupleDescHasSecid
@@ -1025,7 +1025,7 @@ sepgsqlRawSecLabelIn(char *seclabel)
 
 	if (!seclabel || security_check_context_raw(seclabel) < 0)
 		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
+				(errcode(ERRCODE_INVALID_SECURITY_LABEL),
 				 errmsg("Invalid security context: \"%s\"", seclabel)));
 
 	return seclabel;
@@ -1049,7 +1049,7 @@ sepgsqlRawSecLabelOut(char *seclabel)
 		if (security_get_initial_context_raw("unlabeled",
 											 &unlabeledcon) < 0)
 			ereport(ERROR,
-					(errcode(ERRCODE_SELINUX_ERROR),
+					(errcode(ERRCODE_INTERNAL_ERROR),
 					 errmsg("Unabled to get unlabeled security context")));
 		PG_TRY();
 		{
@@ -1078,12 +1078,12 @@ sepgsqlTransSecLabelIn(char *seclabel)
 	security_context_t	result;
 
 	if (!sepgsqlIsEnabled() ||
-		!sepostgresql_use_mcstrans)
+		!sepostgresql_mcstrans)
 		return seclabel;
 
 	if (selinux_trans_to_raw_context(seclabel, &rawlabel) < 0)
 		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
+				(errcode(ERRCODE_INTERNAL_ERROR),
 				 errmsg("SELinux: failed to translate \"%s\"", seclabel)));
 	PG_TRY();
 	{
@@ -1107,12 +1107,12 @@ sepgsqlTransSecLabelOut(char *seclabel)
 	security_context_t	result;
 
 	if (!sepgsqlIsEnabled() ||
-		!sepostgresql_use_mcstrans)
+		!sepostgresql_mcstrans)
 		return seclabel;
 
 	if (selinux_raw_to_trans_context(seclabel, &translabel) < 0)
 		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
+				(errcode(ERRCODE_INTERNAL_ERROR),
 				 errmsg("SELinux: failed to translate \"%s\"", seclabel)));
 	PG_TRY();
 	{

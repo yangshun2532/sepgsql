@@ -258,6 +258,18 @@ static const struct config_enum_entry isolation_level_options[] = {
 	{NULL, 0}
 };
 
+#ifdef HAVE_SELINUX
+static const struct config_enum_entry sepostgresql_mode_options [] = {
+	{"on",			SEPGSQL_MODE_DEFAULT,		true},
+	{"off",			SEPGSQL_MODE_DISABLED,		true},
+	{"default",		SEPGSQL_MODE_DEFAULT,		false},
+	{"permissive",	SEPGSQL_MODE_PERMISSIVE,	false},
+	{"enforcing",	SEPGSQL_MODE_ENFORCING,		false},
+	{"disabled",	SEPGSQL_MODE_DISABLED,		false},
+	{NULL, 0}
+};
+#endif
+
 static const struct config_enum_entry session_replication_role_options[] = {
 	{"origin", SESSION_REPLICATION_ROLE_ORIGIN, false},
 	{"replica", SESSION_REPLICATION_ROLE_REPLICA, false},
@@ -1224,14 +1236,6 @@ static struct config_bool ConfigureNamesBool[] =
 	},
 #ifdef HAVE_SELINUX
 	{
-		{"sepostgresql", PGC_POSTMASTER, CONN_AUTH_SECURITY,
-		 gettext_noop("SE-PostgreSQL activation option to be turned on/off"),
-		 NULL,
-		},
-		&sepostgresql_is_enabled,
-		false, NULL, NULL
-	},
-	{
 		{"sepostgresql_row_level", PGC_POSTMASTER, CONN_AUTH_SECURITY,
 		 gettext_noop("Row-level access controls on SE-PostgreSQL"),
 		 NULL,
@@ -1244,7 +1248,7 @@ static struct config_bool ConfigureNamesBool[] =
 		 gettext_noop("SE-PostgreSQL uses mcstrans on printing security labels"),
 		 NULL,
 		},
-		&sepostgresql_use_mcstrans,
+		&sepostgresql_mcstrans,
 		true, NULL, NULL
 	},
 #endif
@@ -2667,7 +2671,17 @@ static struct config_enum ConfigureNamesEnum[] =
 		&regex_flavor,
 		REG_ADVANCED, regex_flavor_options, NULL, NULL
 	},
-
+#ifdef HAVE_SELINUX
+	{
+		{"sepostgresql", PGC_POSTMASTER, CONN_AUTH_SECURITY,
+			gettext_noop("SE-PostgreSQL performing mode"),
+			NULL,
+		},
+		&sepostgresql_mode,
+		SEPGSQL_MODE_DISABLED, sepostgresql_mode_options,
+		NULL, sepgsqlShowMode
+	},
+#endif
 	{
 		{"session_replication_role", PGC_SUSET, CLIENT_CONN_STATEMENT,
 			gettext_noop("Sets the session's behavior for triggers and rewrite rules."),
