@@ -138,7 +138,7 @@ sepgsql_database_relabel(Oid datOid, DefElem *newLabel)
 	{
 		if (newLabel)
 			ereport(ERROR,
-					(errcode(ERRCODE_SELINUX_ERROR),
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("SELinux is disabled now")));
 
 		return InvalidOid;
@@ -176,15 +176,6 @@ sepgsql_database_access(Oid datOid)
 		return;
 
 	sepgsql_database_common(datOid, SEPG_DB_DATABASE__ACCESS, true);
-}
-
-bool
-sepgsql_database_superuser(Oid datOid)
-{
-	if (!sepgsqlIsEnabled())
-		return true;
-
-	return sepgsql_database_common(datOid, SEPG_DB_DATABASE__SUPERUSER, false);
 }
 
 void
@@ -318,7 +309,7 @@ sepgsql_schema_relabel(Oid nspOid, DefElem *newLabel)
 	{
 		if (newLabel)
 			ereport(ERROR,
-					(errcode(ERRCODE_SELINUX_ERROR),
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("SELinux is disabled now")));
 		return InvalidOid;
 	}
@@ -417,7 +408,7 @@ sepgsql_attribute_create(Oid relOid, ColumnDef *cdef)
 	{
 		if (cdef->secLabel)
 			ereport(ERROR,
-					(errcode(ERRCODE_SELINUX_ERROR),
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("SELinux is disabled now")));
 		return InvalidOid;
 	}
@@ -527,7 +518,7 @@ sepgsql_attribute_relabel(Oid relOid, AttrNumber attnum, DefElem *newLabel)
 	{
 		if (!newLabel)
 			ereport(ERROR,
-					(errcode(ERRCODE_SELINUX_ERROR),
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("SELinux is disabled now")));
 		return InvalidOid;
 	}
@@ -892,7 +883,7 @@ sepgsql_relation_relabel(Oid relOid, DefElem *newLabel)
 	{
 		if (newLabel)
 			ereport(ERROR,
-					(errcode(ERRCODE_SELINUX_ERROR),
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("SELinux is disabled now")));
 		return InvalidOid;
 	}
@@ -977,25 +968,6 @@ sepgsql_relation_truncate(Relation rel)
 }
 
 void
-sepgsql_relation_references(Relation rel, int16 *attnums, int natts)
-{
-	Oid		relOid = RelationGetRelid(rel);
-	int		i;
-
-	Assert(RelationGetForm(rel)->relkind == RELKIND_RELATION);
-
-	if (!sepgsqlIsEnabled())
-		return;
-
-	/* db_table:{reference} */
-	sepgsql_relation_common(relOid, SEPG_DB_TABLE__REFERENCE, true);
-
-	for (i=0; i < natts; i++)
-		sepgsql_attribute_common(relOid, attnums[i],
-								 SEPG_DB_COLUMN__REFERENCE, true);
-}
-
-void
 sepgsql_relation_lock(Oid relOid)
 {
 	if (!sepgsqlIsEnabled())
@@ -1019,19 +991,16 @@ sepgsql_view_replace(Oid viewOid)
 }
 
 void
-sepgsql_index_create(Oid relOid, Oid nspOid, bool check_rights)
+sepgsql_index_create(Oid relOid, Oid nspOid)
 {
 	if (!sepgsqlIsEnabled())
 		return;
 
-	if (check_rights)
-	{
-		/* db_table:{setattr} */
-		sepgsql_relation_common(relOid, SEPG_DB_TABLE__SETATTR, true);
+	/* db_table:{setattr} */
+	sepgsql_relation_common(relOid, SEPG_DB_TABLE__SETATTR, true);
 
-		/* db_schema:{add_name} */
-		sepgsql_schema_common(nspOid, SEPG_DB_SCHEMA__ADD_NAME, true);
-	}
+	/* db_schema:{add_name} */
+	sepgsql_schema_common(nspOid, SEPG_DB_SCHEMA__ADD_NAME, true);
 }
 
 void
@@ -1138,6 +1107,7 @@ sepgsql_proc_create(const char *procName, HeapTuple oldTup,
 		sid = sepgsqlGetTupleSecid(ProcedureRelationId, oldTup, NULL);
 	}
 
+#if 0
 	/* Procedural language is trusted? */
 	tuple = SearchSysCache(LANGOID,
 						   ObjectIdGetDatum(langOid),
@@ -1150,6 +1120,7 @@ sepgsql_proc_create(const char *procName, HeapTuple oldTup,
 		required |= SEPG_DB_PROCEDURE__UNTRUSTED;
 
 	ReleaseSysCache(tuple);
+#endif
 
 	/* check it */
 	sepgsqlClientHasPerms(sid, SEPG_CLASS_DB_PROCEDURE,
@@ -1221,7 +1192,7 @@ sepgsql_proc_relabel(Oid procOid, DefElem *newLabel)
 	{
 		if (newLabel)
 			ereport(ERROR,
-					(errcode(ERRCODE_SELINUX_ERROR),
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("SELinux is disabled now")));
 		return InvalidOid;
 	}
@@ -1278,59 +1249,14 @@ sepgsql_proc_hint_inlined(HeapTuple protup)
 	return false;
 }
 
-/*
- * sepgsqlCheckProcedureEntrypoint
- *   checks whether the given function call causes domain transition,
- *   or not. If it needs a domain transition, it injects a wrapper
- *   function to invoke it under new domain.
- */
-struct TrustedProcedureCache
+bool
+sepgsql_proc_entrypoint(HeapTuple protup)
 {
-	FmgrInfo	flinfo;
-	char		newcon[1];
-};
-
-static Datum
-sepgsqlTrustedProcedure(PG_FUNCTION_ARGS)
-{
-	struct TrustedProcedureCache *tcache;
-	security_context_t	save_context;
-	FmgrInfo		   *save_flinfo;
-	Datum				result;
-
-	tcache = fcinfo->flinfo->fn_extra;
-	Assert(tcache != NULL);
-
-	save_context = sepgsqlSwitchClient(tcache->newcon);
-	save_flinfo = fcinfo->flinfo;
-	fcinfo->flinfo = &tcache->flinfo;
-
-	PG_TRY();
-	{
-		result = FunctionCallInvoke(fcinfo);
-	}
-	PG_CATCH();
-	{
-		sepgsqlSwitchClient(save_context);
-		fcinfo->flinfo = save_flinfo;
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
-	sepgsqlSwitchClient(save_context);
-	fcinfo->flinfo = save_flinfo;
-
-	return result;
-}
-
-void
-sepgsql_proc_entrypoint(FmgrInfo *flinfo, HeapTuple protup)
-{
-	struct TrustedProcedureCache   *tcache;
 	security_context_t	newcon;
 	sepgsql_sid_t		proSid;
 
 	if (!sepgsqlIsEnabled())
-		return;
+		return false;
 
 	proSid = sepgsqlGetTupleSecid(ProcedureRelationId,
 								  protup, NULL);
@@ -1339,7 +1265,7 @@ sepgsql_proc_entrypoint(FmgrInfo *flinfo, HeapTuple protup)
 
 	/* Do nothing, if it is not a trusted procedure */
 	if (strcmp(newcon, sepgsqlGetClientLabel()) == 0)
-		return;
+		return false;
 
 	/* check db_procedure:{entrypoint} */
 	sepgsqlClientHasPerms(proSid,
@@ -1354,13 +1280,28 @@ sepgsql_proc_entrypoint(FmgrInfo *flinfo, HeapTuple protup)
 						SEPG_PROCESS__TRANSITION,
 						NULL, true);
 
-	/* setup trusted procedure */
-	tcache = MemoryContextAllocZero(flinfo->fn_mcxt,
-							sizeof(*tcache) + strlen(newcon));
-	memcpy(&tcache->flinfo, flinfo, sizeof(*flinfo));
-	strcpy(tcache->newcon, newcon);
-	flinfo->fn_addr = sepgsqlTrustedProcedure;
-	flinfo->fn_extra = tcache;
+	return true;
+}
+
+char *
+sepgsql_proc_trusted(HeapTuple protup, MemoryContext mcxt)
+{
+	MemoryContext		oldcxt;
+	security_context_t	newcon;
+	sepgsql_sid_t		proSid;
+
+	if (!sepgsqlIsEnabled())
+		return NULL;
+
+	proSid = sepgsqlGetTupleSecid(ProcedureRelationId, protup, NULL);
+
+	oldcxt = MemoryContextSwitchTo(mcxt);
+
+	newcon = sepgsqlClientCreateLabel(proSid, SEPG_CLASS_PROCESS);
+
+	MemoryContextSwitchTo(oldcxt);
+
+	return newcon;
 }
 
 /* ------------------------------------------------------------ *

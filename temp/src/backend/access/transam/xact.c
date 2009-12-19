@@ -142,6 +142,7 @@ typedef struct TransactionStateData
 	Oid			prevUser;		/* previous CurrentUserId setting */
 	int			prevSecContext;	/* previous SecurityRestrictionContext */
 	bool		prevXactReadOnly;		/* entry-time xact r/o state */
+	char	   *prevSecLabel;	/* previous security label of client */
 	int			prevRowlv;		/* previous Row-level control behavior */
 	struct TransactionStateData *parent;		/* back link to parent */
 } TransactionStateData;
@@ -171,6 +172,7 @@ static TransactionStateData TopTransactionStateData = {
 	InvalidOid,					/* previous CurrentUserId setting */
 	0,							/* previous SecurityRestrictionContext */
 	false,						/* entry-time xact r/o state */
+	NULL,						/* previous security label of client */
 	ROWLV_FILTER_MODE,			/* previous Row-level control behavior */
 	NULL						/* link to parent state block */
 };
@@ -1528,9 +1530,11 @@ StartTransaction(void)
 	s->nChildXids = 0;
 	s->maxChildXids = 0;
 	GetUserIdAndSecContext(&s->prevUser, &s->prevSecContext);
-	s->prevRowlv = rowlvGetPerformingMode();
 	/* SecurityRestrictionContext should never be set outside a transaction */
 	Assert(s->prevSecContext == 0);
+
+	s->prevSecLabel = sepgsqlGetClientLabel();
+	s->prevRowlv = rowlvGetPerformingMode();
 
 	/*
 	 * initialize other subsystems for new transaction
@@ -2036,14 +2040,10 @@ AbortTransaction(void)
 	SetUserIdAndSecContext(s->prevUser, s->prevSecContext);
 
 	/*
-	 * Reset behavior of row-level access controls
+	 * Reset SELinux features
 	 */
+	sepgsqlSetClientLabel(s->prevSecLabel);
 	rowlvSetPerformingMode(s->prevRowlv);
-
-	/*
-	 * Reset access vector cache on error
-	 */
-	sepgsqlAvcReset();
 
 	/*
 	 * do abort processing
@@ -3889,14 +3889,10 @@ AbortSubTransaction(void)
 	SetUserIdAndSecContext(s->prevUser, s->prevSecContext);
 
 	/*
-	 * Reset behavior of row-level access controls
+	 * Reset SELinux features
 	 */
+	sepgsqlSetClientLabel(s->prevSecLabel);
 	rowlvSetPerformingMode(s->prevRowlv);
-
-    /*
-     * Reset access vector cache on error
-     */
-    sepgsqlAvcReset();
 
 	/*
 	 * We can skip all this stuff if the subxact failed before creating a
@@ -4040,6 +4036,7 @@ PushTransaction(void)
 	s->blockState = TBLOCK_SUBBEGIN;
 	GetUserIdAndSecContext(&s->prevUser, &s->prevSecContext);
 	s->prevXactReadOnly = XactReadOnly;
+	s->prevSecLabel = sepgsqlGetClientLabel();
 	s->prevRowlv = rowlvGetPerformingMode();
 
 	CurrentTransactionState = s;

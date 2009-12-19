@@ -579,9 +579,6 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	 */
 	RelationCacheInitializePhase2();
 
-	/* Initialize SE-PostgreSQL internal facilities */
-	sepgsqlAvcInitialize();
-
 	/*
 	 * Figure out our postgres user id, and see if we are a superuser.
 	 *
@@ -613,6 +610,9 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 
 	/* set up ACL framework (so CheckMyDatabase can check permissions) */
 	initialize_acl();
+
+	/* Initialize SE-PostgreSQL */
+	sepgsqlInitialize();
 
 	/*
 	 * Read the real pg_database row for our database, check permissions and

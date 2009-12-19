@@ -21,13 +21,19 @@
 #include <selinux/selinux.h>
 
 /* GUC parameter to turn on/off SE-PostgreSQL */
-extern bool sepostgresql_is_enabled;
+extern int sepostgresql_mode;
+
+#define SEPGSQL_MODE_DEFAULT		1
+#define SEPGSQL_MODE_ENFORCING		2
+#define SEPGSQL_MODE_PERMISSIVE		3
+#define SEPGSQL_MODE_INTERNAL		4
+#define SEPGSQL_MODE_DISABLED		5
 
 /* GUC parameter to turn on/off Row-level controls */
 extern bool sepostgresql_row_level;
 
 /* GUC parameter to turn on/off mcstrans */
-extern bool sepostgresql_use_mcstrans;
+extern bool sepostgresql_mcstrans;
 
 /* Objject classes and permissions internally used */
 enum SepgsqlClasses
@@ -95,9 +101,7 @@ enum SepgsqlClasses
 #define SEPG_DB_DATABASE__RELABELFROM		(1<<4)
 #define SEPG_DB_DATABASE__RELABELTO			(1<<5)
 #define SEPG_DB_DATABASE__ACCESS			(1<<6)
-#define SEPG_DB_DATABASE__INSTALL_MODULE	(1<<7)
-#define SEPG_DB_DATABASE__LOAD_MODULE		(1<<8)
-#define SEPG_DB_DATABASE__SUPERUSER			(1<<9)
+#define SEPG_DB_DATABASE__LOAD_MODULE		(1<<7)
 
 #define SEPG_DB_SCHEMA__CREATE				(SEPG_DB_DATABASE__CREATE)
 #define SEPG_DB_SCHEMA__DROP				(SEPG_DB_DATABASE__DROP)
@@ -141,7 +145,6 @@ enum SepgsqlClasses
 #define SEPG_DB_PROCEDURE__EXECUTE			(1<<6)
 #define SEPG_DB_PROCEDURE__ENTRYPOINT		(1<<7)
 #define SEPG_DB_PROCEDURE__INSTALL			(1<<8)
-#define SEPG_DB_PROCEDURE__UNTRUSTED		(1<<9)
 
 #define SEPG_DB_COLUMN__CREATE				(SEPG_DB_DATABASE__CREATE)
 #define SEPG_DB_COLUMN__DROP				(SEPG_DB_DATABASE__DROP)
@@ -183,47 +186,31 @@ typedef struct {
 #define SidIsValid(sid)		(OidIsValid((sid).relid) && OidIsValid((sid).secid))
 
 /*
- * avc.c : userspace access vector caches
+ * selinux.c : communication to in-kernel SELinux
  */
-
-/* Hook to record audit logs */
-typedef void (*sepgsqlAvcAuditHook_t)(bool denied,
-									  const char *scontext,
-									  const char *tcontext,
-									  const char *tclass,
-									  const char *permissions,
-									  const char *audit_name);
-extern PGDLLIMPORT sepgsqlAvcAuditHook_t sepgsqlAvcAuditHook;
-
-extern Size sepgsqlShmemSize(void);
-extern void sepgsqlAvcInitialize(void);
-
-extern bool sepgsqlGetEnforce(void);
-extern int  sepgsqlSetEnforce(int new_mode);
-extern void sepgsqlAvcReset(void);
-extern void sepgsqlAvcSwitchClient(const char *scontext);
-
+extern void  sepgsqlInitialize(void);
+extern Size  sepgsqlShmemSize(void);
+extern bool  sepgsqlIsEnabled(void);
+extern bool  sepgsqlGetEnforce(void);
+extern char *sepgsqlShowMode(void);
+extern char *sepgsqlGetServerLabel(void);
+extern char *sepgsqlGetClientLabel(void);
+extern char *sepgsqlSetClientLabel(char *new_label);
 extern bool
-sepgsqlClientHasPerms(sepgsql_sid_t tsid,
-					  uint16 tclass, uint32 required,
+sepgsqlComputePerms(char *scontext, char *tcontext,
+					uint16 tclass, uint32 required,
+					const char *audit_name, bool abort);
+extern char *
+sepgsqlComputeCreate(char *scontext, char *tcontext, uint16 tclass);
+extern bool
+sepgsqlClientHasPerms(sepgsql_sid_t tsid, uint16 tclass, uint32 required,
 					  const char *audit_name, bool abort);
 extern sepgsql_sid_t
 sepgsqlClientCreateSecid(sepgsql_sid_t tsid, uint16 tclass, Oid nrelid);
-
-extern security_context_t
+extern char *
 sepgsqlClientCreateLabel(sepgsql_sid_t tsid, uint16 tclass);
 
-extern bool
-sepgsqlComputePerms(security_context_t scontext,
-					security_context_t tcontext,
-					uint16 tclass, uint32 required,
-					const char *audit_name, bool abort);
-
-extern security_context_t
-sepgsqlComputeCreate(security_context_t scontext,
-					 security_context_t tcontext,
-					 uint16 tclass);
-
+extern bool sepgsqlReceiverStart(void);
 extern void sepgsqlReceiverMain(void);
 
 /*
@@ -281,7 +268,7 @@ sepgsql_relation_lock(Oid relOid);
 extern void
 sepgsql_view_replace(Oid viewOid);
 extern void
-sepgsql_index_create(Oid relOid, Oid nspOid, bool check_rights);
+sepgsql_index_create(Oid relOid, Oid nspOid);
 extern void
 sepgsql_sequence_get_value(Oid seqOid);
 extern void
@@ -422,8 +409,10 @@ extern void
 sepgsql_proc_execute(Oid procOid);
 extern bool
 sepgsql_proc_hint_inlined(HeapTuple protup);
-extern void
-sepgsql_proc_entrypoint(FmgrInfo *flinfo, HeapTuple protup);
+extern bool
+sepgsql_proc_entrypoint(HeapTuple protup);
+extern char *
+sepgsql_proc_trusted(HeapTuple protup, MemoryContext mcxt);
 
 /* pg_rewrite */
 extern void
@@ -521,46 +510,6 @@ extern void
 sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup);
 
 /*
- * core.c : core facilities
- */
-extern security_context_t
-sepgsqlGetServerLabel(void);
-
-extern security_context_t
-sepgsqlGetClientLabel(void);
-
-extern security_context_t
-sepgsqlSwitchClient(security_context_t new_client);
-
-extern bool
-sepgsqlIsEnabled(void);
-
-extern void
-sepgsqlInitialize(void);
-
-/*
- * hooks.c : routines to check certain permissions
- */
-extern void
-sepgsqlCheckBlobCreate(Relation rel, HeapTuple lotup);
-extern void
-sepgsqlCheckBlobDrop(Relation rel, HeapTuple lotup);
-extern void
-sepgsqlCheckBlobRead(LargeObjectDesc *lobj);
-extern void
-sepgsqlCheckBlobWrite(LargeObjectDesc *lobj);
-extern void
-sepgsqlCheckBlobGetattr(HeapTuple tuple);
-extern void
-sepgsqlCheckBlobSetattr(HeapTuple tuple);
-extern void
-sepgsqlCheckBlobExport(LargeObjectDesc *lobj, const char *filename);
-extern void
-sepgsqlCheckBlobImport(LargeObjectDesc *lobj, const char *filename);
-extern void
-sepgsqlCheckBlobRelabel(HeapTuple oldtup, HeapTuple newtup);
-
-/*
  * label.c : security label management
  */
 extern bool
@@ -592,20 +541,6 @@ extern char *sepgsqlTransSecLabelOut(char *seclabel);
 extern char *sepgsqlRawSecLabelIn(char *seclabel);
 extern char *sepgsqlRawSecLabelOut(char *seclabel);
 extern char *sepgsqlSysattSecLabelOut(Oid relid, HeapTuple tuple);
-
-/*
- * perms.c : SELinux permission related stuff
- */
-extern uint16 sepgsqlFileObjectClass(int fdesc);
-
-extern uint16 sepgsqlTupleObjectClass(Oid relid, HeapTuple tuple);
-
-extern security_class_t sepgsqlTransToExternalClass(uint16 tclass_in);
-
-extern void sepgsqlTransToInternalPerms(security_class_t tclass_ex,
-										struct av_decision *avd);
-extern const char *sepgsqlGetClassString(uint16 tclass);
-extern const char *sepgsqlGetPermString(uint16 tclass, uint32 permission);
 
 #else	/* HAVE_SELINUX */
 
