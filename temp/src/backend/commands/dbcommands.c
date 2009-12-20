@@ -284,9 +284,6 @@ createdb(const CreatedbStmt *stmt)
 
 	check_is_member_of_role(GetUserId(), datdba);
 
-	/* SELinux checks db_database:{create} */
-	datsecid = sepgsql_database_create(dbname, dseclabel);
-
 	/*
 	 * Lookup database (template) to be cloned, and obtain share lock on it.
 	 * ShareLock allows two CREATE DATABASEs to work from the same template
@@ -308,6 +305,9 @@ createdb(const CreatedbStmt *stmt)
 				(errcode(ERRCODE_UNDEFINED_DATABASE),
 				 errmsg("template database \"%s\" does not exist",
 						dbtemplate)));
+
+	/* SELinux checks db_database:{create} */
+	datsecid = sepgsql_database_create(dbname, src_dboid, dseclabel);
 
 	/*
 	 * Permission check: to copy a DB that's not marked datistemplate, you

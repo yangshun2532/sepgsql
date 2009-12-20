@@ -32,6 +32,7 @@
 #include "catalog/pg_inherits.h"
 #include "catalog/pg_language.h"
 #include "catalog/pg_largeobject.h"
+#include "catalog/pg_largeobject_metadata.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_operator.h"
@@ -74,7 +75,12 @@ bool sepostgresql_mcstrans;
 bool
 sepgsqlTupleDescHasSecid(Oid relid, char relkind)
 {
-	if (!sepgsqlIsEnabled())
+	/*
+	 * sepgsqlIsEnabled() is not available because it always returns
+	 * false in bootstraping mode
+	 */
+	if (sepostgresql_mode == SEPGSQL_MODE_DISABLED ||
+		is_selinux_enabled() < 1)
 		return false;
 
 	if (!OidIsValid(relid))
@@ -99,6 +105,7 @@ sepgsqlTupleDescHasSecid(Oid relid, char relkind)
 		relid == EnumRelationId						||
 		relid == IndexRelationId					||
 		relid == InheritsRelationId					||
+		relid == LargeObjectRelationId				||
 		relid == RewriteRelationId					||
 		relid == SecurityRelationId					||
 		relid == SharedDescriptionRelationId		||
@@ -110,91 +117,78 @@ sepgsqlTupleDescHasSecid(Oid relid, char relkind)
 }
 
 /*
+ * defaultSecidWithXXXX
+ */
+static sepgsql_sid_t
+defaultSecidWithDatabase(Oid relOid, Oid datOid, uint16 tclass)
+{
+	HeapTuple		tuple;
+	sepgsql_sid_t	datSid;
+
+	tuple = SearchSysCache(DATABASEOID,
+						   ObjectIdGetDatum(datOid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for database: %u", datOid);
+
+	datSid.relid = DatabaseRelationId;
+	datSid.secid = HeapTupleGetSecid(tuple);
+
+	ReleaseSysCache(tuple);
+
+	return sepgsqlClientCreateSecid(datSid, tclass, relOid);
+}
+
+static sepgsql_sid_t
+defaultSecidWithSchema(Oid relOid, Oid nspOid, uint16 tclass)
+{
+	HeapTuple		tuple;
+	sepgsql_sid_t	nspSid;
+
+	tuple = SearchSysCache(NAMESPACEOID,
+						   ObjectIdGetDatum(nspOid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for schema: %u", nspOid);
+
+	nspSid.relid = NamespaceRelationId;
+	nspSid.secid = HeapTupleGetSecid(tuple);
+
+	ReleaseSysCache(tuple);
+
+	return sepgsqlClientCreateSecid(nspSid, tclass, relOid);
+}
+
+static sepgsql_sid_t
+defaultSecidWithTable(Oid relOid, Oid tblOid, uint16 tclass)
+{
+	HeapTuple		tuple;
+	sepgsql_sid_t	tblSid;
+
+	tuple = SearchSysCache(RELOID,
+						   ObjectIdGetDatum(tblOid),
+						   0, 0, 0);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for relation: %u", tblOid);
+
+	tblSid.relid = RelationRelationId;
+	tblSid.secid = HeapTupleGetSecid(tuple);
+
+	ReleaseSysCache(tuple);
+
+	return sepgsqlClientCreateSecid(tblSid, tclass, relOid);
+}
+
+/*
  * sepgsqlGetDefaultDatabaseSecid
  *   It returns the default security label of a database object.
  */
 sepgsql_sid_t
-sepgsqlGetDefaultDatabaseSecid(void)
+sepgsqlGetDefaultDatabaseSecid(Oid source_database_oid)
 {
-	security_context_t	seclabel;
-	sepgsql_sid_t		sid;
-	char		filename[MAXPGPATH];
-	char		buffer[1024], *policy_type, *tmp;
-	FILE	   *filp;
-
-	/*
-	 * NOTE: when the security policy provide a configuration to
-	 * specify the default security context of database object,
-	 * we apply is as a default one.
-	 * If the configuration is unavailable, we compute the
-	 * default security context without any parent object.
-	 */
-	if (selinux_getpolicytype(&policy_type) < 0)
-		goto fallback;
-
-	snprintf(filename, sizeof(filename),
-			 "%s%s/contexts/sepgsql_context", selinux_path(), policy_type);
-	filp = AllocateFile(filename, PG_BINARY_R);
-	if (!filp)
-		goto fallback;
-
-	while (fgets(buffer, sizeof(buffer), filp) != NULL)
-	{
-		tmp = strchr(buffer, '#');
-		if (tmp)
-			*tmp = '\0';
-
-		seclabel = strtok(buffer, " \t\n\r");
-		if (!seclabel)
-			continue;
-
-		/* An entry found */
-		FreeFile(filp);
-
-		sid.relid = DatabaseRelationId;
-		sid.secid = securityTransSecLabelIn(sid.relid, seclabel);
-
-		return sid;
-	}
-	FreeFile(filp);
-
-fallback:
-	seclabel = sepgsqlComputeCreate(sepgsqlGetClientLabel(),
-									sepgsqlGetClientLabel(),
+	return defaultSecidWithDatabase(DatabaseRelationId,
+									source_database_oid,
 									SEPG_CLASS_DB_DATABASE);
-	sid.relid = DatabaseRelationId;
-	sid.secid = securityTransSecLabelIn(sid.relid, seclabel);
-
-	return sid;
-}
-
-static sepgsql_sid_t
-defaultSecidWithDatabase(Oid relid, Oid datoid, uint16 tclass)
-{
-	HeapTuple		tuple;
-	sepgsql_sid_t	datsid;
-
-	if (IsBootstrapProcessingMode())
-	{
-		static sepgsql_sid_t cached = { InvalidOid, InvalidOid };
-
-		if (!SidIsValid(cached))
-			cached = sepgsqlGetDefaultDatabaseSecid();
-		datsid = cached;
-	}
-	else
-	{
-		tuple = SearchSysCache(DATABASEOID,
-							   ObjectIdGetDatum(datoid),
-							   0, 0, 0);
-		if (!HeapTupleIsValid(tuple))
-			elog(ERROR, "cache lookup failed for database: %u", datoid);
-		datsid.relid = DatabaseRelationId;
-		datsid.secid = HeapTupleGetSecid(tuple);
-		ReleaseSysCache(tuple);
-	}
-
-	return sepgsqlClientCreateSecid(datsid, tclass, relid);
 }
 
 sepgsql_sid_t
@@ -203,36 +197,6 @@ sepgsqlGetDefaultSchemaSecid(Oid database_oid)
 	return defaultSecidWithDatabase(NamespaceRelationId,
 									database_oid,
 									SEPG_CLASS_DB_SCHEMA);
-}
-
-static sepgsql_sid_t
-defaultSecidWithSchema(Oid relid, Oid nspoid, uint16 tclass)
-{
-	HeapTuple		tuple;
-	sepgsql_sid_t	nspsid;
-
-	if (IsBootstrapProcessingMode())
-	{
-		static sepgsql_sid_t cached = { InvalidOid, InvalidOid };
-
-		if (!SidIsValid(cached))
-			cached = sepgsqlGetDefaultSchemaSecid(MyDatabaseId);
-
-		nspsid = sepgsqlGetDefaultSchemaSecid(MyDatabaseId);
-	}
-	else
-	{
-		tuple = SearchSysCache(NAMESPACEOID,
-							   ObjectIdGetDatum(nspoid),
-							   0, 0, 0);
-		if (!HeapTupleIsValid(tuple))
-			elog(ERROR, "cache lookup failed for namespace: %u", nspoid);
-		nspsid.relid = NamespaceRelationId;
-		nspsid.secid = HeapTupleGetSecid(tuple);
-		ReleaseSysCache(tuple);
-	}
-
-	return sepgsqlClientCreateSecid(nspsid, tclass, relid);
 }
 
 sepgsql_sid_t
@@ -259,40 +223,6 @@ sepgsqlGetDefaultProcedureSecid(Oid namespace_oid)
 								  SEPG_CLASS_DB_PROCEDURE);
 }
 
-static sepgsql_sid_t
-defaultSecidWithTable(Oid relid, Oid tbloid, security_class_t tclass)
-{
-	HeapTuple		tuple;
-	sepgsql_sid_t	relsid;
-
-	if (IsBootstrapProcessingMode()
-		&& (tbloid == TypeRelationId ||
-			tbloid == ProcedureRelationId ||
-			tbloid == AttributeRelationId ||
-			tbloid == RelationRelationId))
-	{
-		static sepgsql_sid_t cached = { InvalidOid, InvalidOid };
-
-		if (!SidIsValid(cached))
-			cached = sepgsqlGetDefaultTableSecid(PG_CATALOG_NAMESPACE);
-
-		relsid = cached;
-	}
-	else
-	{
-		tuple = SearchSysCache(RELOID,
-							   ObjectIdGetDatum(tbloid),
-							   0, 0, 0);
-		if (!HeapTupleIsValid(tuple))
-			elog(ERROR, "cache lookup failed for relation: %u", tbloid);
-		relsid.relid = RelationRelationId;
-		relsid.secid = HeapTupleGetSecid(tuple);
-		ReleaseSysCache(tuple);
-	}
-
-	return sepgsqlClientCreateSecid(relsid, tclass, relid);
-}
-
 sepgsql_sid_t
 sepgsqlGetDefaultColumnSecid(Oid table_oid)
 {
@@ -312,7 +242,7 @@ sepgsqlGetDefaultTupleSecid(Oid table_oid)
 sepgsql_sid_t
 sepgsqlGetDefaultBlobSecid(Oid database_oid)
 {
-	return defaultSecidWithDatabase(LargeObjectRelationId,
+	return defaultSecidWithDatabase(LargeObjectMetadataRelationId,
 									MyDatabaseId,
 									SEPG_CLASS_DB_BLOB);
 }
@@ -325,9 +255,6 @@ sepgsqlSetDefaultSecid(Relation rel, HeapTuple tuple)
 	Oid		nspOid, tblOid;
 	char	relkind;
 
-	if (!sepgsqlIsEnabled())
-		return;
-
 	if (!HeapTupleHasSecid(tuple))
 		return;
 
@@ -338,7 +265,8 @@ sepgsqlSetDefaultSecid(Relation rel, HeapTuple tuple)
 	switch (relOid)
 	{
 	case DatabaseRelationId:
-		newSid = sepgsqlGetDefaultDatabaseSecid();
+		/* should be never happen */
+		elog(WARNING, "bug? pg_database tuple without security label");
 		break;
 
 	case NamespaceRelationId:
@@ -372,21 +300,8 @@ sepgsqlSetDefaultSecid(Relation rel, HeapTuple tuple)
 
 	case AttributeRelationId:
 		tblOid = ((Form_pg_attribute) GETSTRUCT(tuple))->attrelid;
-
-		/*
-		 * We cannot refer system cache in the very early initdb
-		 * phase, because pg_class is not constructed yet.
-		 */
-		if ((IsBootstrapProcessingMode() &&
-			 (tblOid == TypeRelationId		||
-			  tblOid == ProcedureRelationId	||
-			  tblOid == AttributeRelationId	||
-			  tblOid == RelationRelationId))
-			|| get_rel_relkind(tblOid) == RELKIND_RELATION)
-		{
+		if (get_rel_relkind(tblOid) == RELKIND_RELATION)
 			newSid = sepgsqlGetDefaultColumnSecid(tblOid);
-		}
-		/* otherwise, it does not have individual security context */
 		break;
 
 	case LargeObjectRelationId:
@@ -399,6 +314,159 @@ sepgsqlSetDefaultSecid(Relation rel, HeapTuple tuple)
 	}
 
 	HeapTupleSetSecid(tuple, newSid.secid);
+}
+
+/*
+ * sepgsqlPostBootstrapingMode
+ *
+ * Assign initial security context
+ */
+static void
+sepgsqlInitialLabeling(Oid relOid, char *seclabels[])
+{
+	Relation		rel;
+	HeapScanDesc	scan;
+	HeapTuple		tuple;
+	HeapTuple		newtup;
+
+	rel = heap_open(relOid, RowExclusiveLock);
+
+	scan = heap_beginscan(rel, SnapshotNow, 0, NULL);
+
+	while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
+	{
+		Oid		secid = InvalidOid;
+		Oid		attrelid;
+		char	relkind;
+
+		if (!HeapTupleHasSecid(tuple))
+			continue;
+
+		switch (relOid)
+		{
+		case DatabaseRelationId:
+			secid = securityRawSecLabelIn(relOid, seclabels[0]);
+			break;
+
+		case NamespaceRelationId:
+			secid = securityRawSecLabelIn(relOid, seclabels[1]);
+			break;
+
+		case RelationRelationId:
+			relkind = ((Form_pg_class) GETSTRUCT(tuple))->relkind;
+			switch (relkind)
+			{
+			case RELKIND_RELATION:
+				secid = securityRawSecLabelIn(relOid, seclabels[2]);
+				break;
+			case RELKIND_SEQUENCE:
+				secid = securityRawSecLabelIn(relOid, seclabels[3]);
+				break;
+			default:
+				secid = securityRawSecLabelIn(relOid, seclabels[6]);
+				break;
+			}
+			break;
+
+		case AttributeRelationId:
+			attrelid = ((Form_pg_attribute) GETSTRUCT(tuple))->attrelid;
+			if (get_rel_relkind(attrelid) == RELKIND_RELATION)
+				secid = securityRawSecLabelIn(relOid, seclabels[5]);
+			break;
+
+		case ProcedureRelationId:
+			secid = securityRawSecLabelIn(relOid, seclabels[4]);
+			break;
+
+		case LargeObjectMetadataRelationId:
+			secid = securityRawSecLabelIn(relOid, seclabels[7]);
+			break;
+
+		default:
+			secid = securityRawSecLabelIn(relOid, seclabels[6]);
+			break;
+		}
+
+		/*
+		 * Inplace update
+		 */
+		newtup = heap_copytuple(tuple);
+
+		HeapTupleSetSecid(newtup, secid);
+
+		heap_inplace_update(rel, newtup);
+	}
+	heap_endscan(scan);
+
+	heap_close(rel, RowExclusiveLock);
+}
+
+void
+sepgsqlPostBootstrapingMode(void)
+{
+	Form_pg_class	classForm;
+	Relation	rel;
+	ScanKeyData	skey;
+	SysScanDesc	scan;
+	HeapTuple	tuple;
+	char	   *scontext;
+	char	   *seclabels[8];
+
+	/*
+	 * sepgsqlIsEnabled() is not available because it always returns
+	 * false in bootstraping mode
+	 */
+	Assert(IsBootstrapProcessingMode());
+	if (sepostgresql_mode == SEPGSQL_MODE_DISABLED ||
+		is_selinux_enabled() < 1)
+		return;
+
+	/*
+	 * Compute default initial security context
+	 */
+	if (getprevcon_raw(&scontext) < 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_INTERNAL_ERROR),
+				 errmsg("could not obtain current context")));
+
+	seclabels[0] = sepgsqlComputeCreate(scontext, scontext,
+										SEPG_CLASS_DB_DATABASE);
+	seclabels[1] = sepgsqlComputeCreate(scontext, seclabels[0],
+										SEPG_CLASS_DB_SCHEMA);
+	seclabels[2] = sepgsqlComputeCreate(scontext, seclabels[1],
+										SEPG_CLASS_DB_TABLE);
+	seclabels[3] = sepgsqlComputeCreate(scontext, seclabels[1],
+										SEPG_CLASS_DB_SEQUENCE);
+	seclabels[4] = sepgsqlComputeCreate(scontext, seclabels[1],
+										SEPG_CLASS_DB_PROCEDURE);
+	seclabels[5] = sepgsqlComputeCreate(scontext, seclabels[2],
+										SEPG_CLASS_DB_COLUMN);
+	seclabels[6] = sepgsqlComputeCreate(scontext, seclabels[2],
+										SEPG_CLASS_DB_TUPLE);
+	seclabels[7] = sepgsqlComputeCreate(scontext, seclabels[0],
+										SEPG_CLASS_DB_BLOB);
+	/*
+	 * Inplace update
+	 */
+	StartTransactionCommand();
+
+	rel = heap_open(RelationRelationId, AccessShareLock);
+
+	ScanKeyInit(&skey,
+				Anum_pg_class_relkind,
+				BTEqualStrategyNumber, F_CHAREQ,
+				CharGetDatum(RELKIND_RELATION));
+
+	scan = heap_beginscan(rel, SnapshotNow, 1, &skey);
+
+	while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
+		sepgsqlInitialLabeling(HeapTupleGetOid(tuple), seclabels);
+
+	heap_endscan(scan);
+
+	heap_close(rel, AccessShareLock);
+
+	CommitTransactionCommand();
 }
 
 /*
@@ -525,13 +593,13 @@ sepgsqlGetSysobjSecid(Oid classOid, Oid objectId, int32 objsubId, uint16 *tclass
 		break;
 
 	case LargeObjectRelationId:
-		/* to be replaced by LargeObjectMetaRelationId! */
+	case LargeObjectMetadataRelationId:
 		{
 			Relation		rel;
 			ScanKeyData		skey;
 			SysScanDesc		scan;
 
-			rel = heap_open(LargeObjectRelationId, AccessShareLock);
+			rel = heap_open(LargeObjectMetadataRelationId, AccessShareLock);
 
 			ScanKeyInit(&skey,
 						Anum_pg_largeobject_loid,
@@ -904,6 +972,11 @@ sepgsqlGetTupleSecid(Oid tableOid, HeapTuple tuple, uint16 *tclass)
 		break;
 
 	case LargeObjectRelationId:
+		extid = ((Form_pg_largeobject) GETSTRUCT(tuple))->loid;
+		extcls = LargeObjectMetadataRelationId;
+		return sepgsqlGetSysobjSecid(extcls, extid, 0, tclass);
+
+	case LargeObjectMetadataRelationId:
 		sid.secid = HeapTupleGetSecid(tuple);
 		if (tclass)
 			*tclass = SEPG_CLASS_DB_BLOB;

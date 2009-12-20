@@ -884,7 +884,7 @@ fmgr_security_definer(PG_FUNCTION_ARGS)
 	FmgrInfo   *save_flinfo;
 	Oid			save_userid;
 	int			save_sec_context;
-	char	   *save_label;
+	char	   *save_label = NULL;
 	volatile int save_nestlevel;
 	PgStat_FunctionCallUsage fcusage;
 

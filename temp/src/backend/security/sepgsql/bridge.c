@@ -89,7 +89,7 @@ sepgsql_database_common(Oid datOid, uint32 required, bool abort)
 }
 
 Oid
-sepgsql_database_create(const char *datName, DefElem *newLabel)
+sepgsql_database_create(const char *datName, Oid srcDatOid, DefElem *newLabel)
 {
 	sepgsql_sid_t	sid;
 
@@ -97,7 +97,7 @@ sepgsql_database_create(const char *datName, DefElem *newLabel)
 		return InvalidOid;
 
 	if (!newLabel)
-		sid = sepgsqlGetDefaultDatabaseSecid();
+		sid = sepgsqlGetDefaultDatabaseSecid(srcDatOid);
 	else
 	{
 		sid.relid = DatabaseRelationId;
@@ -1071,9 +1071,9 @@ sepgsql_proc_create(const char *procName, HeapTuple oldTup,
 					Oid nspOid, Oid langOid, DefElem *newLabel)
 {
 	sepgsql_sid_t	sid;
-	HeapTuple		tuple;
+	//HeapTuple		tuple;
 	uint32			required;
-	bool			trusted;
+	//bool			trusted;
 
 	if (!sepgsqlIsEnabled())
 		return InvalidOid;

@@ -35,102 +35,6 @@ securityTupleDescHasSecid(Oid relid, char relkind)
 }
 
 /*
- * security attribute management at the initdb phase.
- */
-typedef struct earlySecAttr
-{
-	struct earlySecAttr	   *next;
-	Oid		secid;
-	Oid		datid;
-	Oid		relid;
-	char	seckind;
-	char	secattr[1];
-} earlySecAttr;
-
-static earlySecAttr *earlySecAttrList = NULL;
-
-static Oid
-earlyInputSecurityAttr(Oid datid, Oid relid, char seckind, const char *secattr)
-{
-	static Oid		dummySecid = SecurityRelationId;
-	earlySecAttr   *es;
-
-	for (es = earlySecAttrList; es; es = es->next)
-	{
-		if (es->datid == datid &&
-			es->relid == relid &&
-			es->seckind == seckind &&
-			strcmp(es->secattr, secattr) == 0)
-			return es->secid;
-	}
-	/* Not found */
-	es = MemoryContextAlloc(TopMemoryContext,
-							sizeof(*es) + strlen(secattr));
-	es->secid = --dummySecid;
-	es->datid = datid;
-	es->relid = relid;
-	es->seckind = seckind;
-	strcpy(es->secattr, secattr);
-
-	es->next = earlySecAttrList;
-	earlySecAttrList = es;
-
-	return es->secid;
-}
-
-static char *
-earlyOutputSecurityAttr(Oid datid, Oid relid, char seckind, Oid secid)
-{
-	earlySecAttr   *es;
-
-	for (es = earlySecAttrList; es; es = es->next)
-	{
-		if (es->datid == datid &&
-			es->relid == relid &&
-			es->seckind == seckind &&
-			es->secid == secid)
-			return pstrdup(es->secattr);
-	}
-	return NULL;	/* Not found */
-}
-
-void
-securityPostBootstrapingMode(void)
-{
-	Relation		rel;
-	HeapTuple		tuple;
-	earlySecAttr   *es;
-	Datum			values[Natts_pg_security];
-	bool			nulls[Natts_pg_security];
-
-	if (!earlySecAttrList)
-		return;		/* do nothing */
-
-	StartTransactionCommand();
-
-	/* flush all the cached entries */
-	rel = heap_open(SecurityRelationId, RowExclusiveLock);
-	for (es = earlySecAttrList; es; es = es->next)
-	{
-		memset(nulls, false, sizeof(nulls));
-		values[Anum_pg_security_secid - 1] = ObjectIdGetDatum(es->secid);
-		values[Anum_pg_security_datid - 1] = ObjectIdGetDatum(es->datid);
-		values[Anum_pg_security_relid - 1] = ObjectIdGetDatum(es->relid);
-		values[Anum_pg_security_seckind - 1] = CharGetDatum(es->seckind);
-		values[Anum_pg_security_secattr - 1] = CStringGetTextDatum(es->secattr);
-
-		tuple = heap_form_tuple(RelationGetDescr(rel), values, nulls);
-
-		simple_heap_insert(rel, tuple);
-		CatalogUpdateIndexes(rel, tuple);
-		heap_freetuple(tuple);
-	}
-	heap_close(rel, RowExclusiveLock);
-
-	CommitTransactionCommand();
-}
-
-/*
  * securityOnCreateDatabase
  *   copies all the entries refered by source database
  */
@@ -218,7 +122,10 @@ securityOnDropDatabase(Oid datid)
 static Oid
 InputSecurityAttr(Oid relid, char seckind, const char *secattr)
 {
+	LOCKMODE		lockmode = AccessShareLock;
 	Relation		rel;
+	ScanKeyData		skey[4];
+	SysScanDesc		scan;
 	HeapTuple		tuple;
 	Oid				datid;
 	Oid				secid;
@@ -227,30 +134,57 @@ InputSecurityAttr(Oid relid, char seckind, const char *secattr)
 
 	datid = (IsSharedRelation(relid) ? InvalidOid : MyDatabaseId);
 
-	if (IsBootstrapProcessingMode())
-		return earlyInputSecurityAttr(datid, relid, seckind, secattr);
-
+retry:
 	/*
-	 * Lookup the syscache first
+	 * Lookup pg_security catalog first
 	 */
-	tuple = SearchSysCache(SECURITYATTR,
-						   ObjectIdGetDatum(datid),
-						   ObjectIdGetDatum(relid),
-						   CharGetDatum(seckind),
-						   CStringGetTextDatum(secattr));
+	rel = heap_open(SecurityRelationId, lockmode);
+
+	ScanKeyInit(&skey[0],
+				Anum_pg_security_datid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(datid));
+	ScanKeyInit(&skey[1],
+				Anum_pg_security_relid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(relid));
+	ScanKeyInit(&skey[2],
+				Anum_pg_security_seckind,
+				BTEqualStrategyNumber, F_CHAREQ,
+				CharGetDatum(seckind));
+	ScanKeyInit(&skey[3],
+				Anum_pg_security_secattr,
+				BTEqualStrategyNumber, F_TEXTEQ,
+				CStringGetTextDatum(secattr));
+
+	scan = systable_beginscan(rel, SecuritySecattrIndexId, true,
+							  SnapshotToast, 4, skey);
+
+	tuple = systable_getnext(scan);
 	if (HeapTupleIsValid(tuple))
 	{
 		secid = ((Form_pg_security) GETSTRUCT(tuple))->secid;
 
-		ReleaseSysCache(tuple);
+		systable_endscan(scan);
+
+		heap_close(rel, lockmode);
 
 		return secid;
 	}
 
+	systable_endscan(scan);
+
 	/*
-	 * Insert a new tuple, if not exist
+	 * If not exist, try to insert a new entry.
 	 */
-	rel = heap_open(SecurityRelationId, RowExclusiveLock);
+	if (lockmode == AccessShareLock)
+	{
+		heap_close(rel, lockmode);
+
+		lockmode = RowExclusiveLock;
+
+		goto retry;
+	}
 
 	memset(nulls, false, sizeof(nulls));
 	secid = GetNewOidWithIndex(rel, SecuritySecidIndexId,
@@ -264,15 +198,10 @@ InputSecurityAttr(Oid relid, char seckind, const char *secattr)
 	tuple = heap_form_tuple(RelationGetDescr(rel), values, nulls);
 
 	simple_heap_insert(rel, tuple);
+
 	CatalogUpdateIndexes(rel, tuple);
 
-	heap_close(rel, RowExclusiveLock);
-
-	/*
-	 * Newly inserted security label needs to be visible by
-	 * later operations in this transaction.
-	 */
-	CommandCounterIncrement();
+	heap_close(rel, lockmode);
 
 	return secid;
 }
@@ -280,55 +209,54 @@ InputSecurityAttr(Oid relid, char seckind, const char *secattr)
 static char *
 OutputSecurityAttr(Oid relid, char seckind, Oid secid)
 {
-	Form_pg_security	secForm;
-	Oid			datid;
-	HeapTuple	tuple;
-	Datum		datum;
-	bool		isnull;
-	char	   *result;
+	Relation		rel;
+	ScanKeyData		skey[3];
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+	Oid				datid;
+	char		   *result = NULL;
 
 	datid = (IsSharedRelation(relid) ? InvalidOid : MyDatabaseId);
 
-	if (IsBootstrapProcessingMode())
-		return earlyOutputSecurityAttr(datid, relid, seckind, secid);
-
-	tuple = SearchSysCache(SECURITYSECID,
-						   ObjectIdGetDatum(secid),
-						   ObjectIdGetDatum(datid),
-						   0, 0);
-	if (!HeapTupleIsValid(tuple))
-		return NULL;
-
 	/*
-	 * Integrity checks
+	 * Lookup pg_security catalog first
 	 */
-	secForm = (Form_pg_security) GETSTRUCT(tuple);
-	if (secForm->relid != relid)
-		goto error;
-	if (secForm->seckind != seckind)
-		goto error;
-	datum = SysCacheGetAttr(SECURITYSECID, tuple,
-							Anum_pg_security_secattr,
-							&isnull);
-	if (isnull)
-		goto error;
+	rel = heap_open(SecurityRelationId, AccessShareLock);
 
-	result = TextDatumGetCString(datum);
+	ScanKeyInit(&skey[0],
+				Anum_pg_security_secid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(secid));
+	ScanKeyInit(&skey[1],
+				Anum_pg_security_datid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(datid));
+	ScanKeyInit(&skey[2],
+				Anum_pg_security_relid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(relid));
 
-	ReleaseSysCache(tuple);
+	scan = systable_beginscan(rel, SecuritySecidIndexId, true,
+							  SnapshotToast, 3, skey);
+
+	tuple = systable_getnext(scan);
+	if (HeapTupleIsValid(tuple))
+	{
+		Datum	datum;
+		bool	isnull;
+
+		datum = heap_getattr(tuple,
+							 Anum_pg_security_secattr,
+							 RelationGetDescr(rel), &isnull);
+		if (!isnull)
+			result = TextDatumGetCString(datum);
+	}
+
+	systable_endscan(scan);
+
+	heap_close(rel, AccessShareLock);
 
 	return result;
-
-error:
-	ReleaseSysCache(tuple);
-
-	elog(NOTICE,
-		 "invalid pg_security (secid=%u, datid=%u, relid=%u, seckind=%c)"
-		 " for relid=%u, seckind=%c secid=%u",
-		 secForm->secid, secForm->datid, secForm->relid, secForm->seckind,
-		 relid, seckind, secid);
-
-	return NULL;
 }
 
 /*
