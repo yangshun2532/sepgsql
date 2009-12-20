@@ -32,6 +32,7 @@
 #include "catalog/namespace.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_namespace.h"
+#include "catalog/pg_security.h"
 #include "catalog/storage.h"
 #include "commands/dbcommands.h"
 #include "commands/vacuum.h"
@@ -1208,6 +1209,9 @@ vacuum_rel(Oid relid, VacuumStmt *vacstmt, bool do_toast, bool for_wraparound,
 
 	/* all done with this class, but hold lock until commit */
 	relation_close(onerel, NoLock);
+
+	/* Also reclaim orphan security label */
+	seclabelRelationReclaim(relid);
 
 	/*
 	 * Complete the transaction and free all temporary memory used.

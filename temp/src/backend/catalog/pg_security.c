@@ -120,11 +120,11 @@ securityOnDropDatabase(Oid datid)
  * InputSecurityAttr
  */
 static Oid
-InputSecurityAttr(Oid relid, char seckind, const char *secattr)
+InputSecurityAttr(Oid relid, const char *secattr)
 {
 	LOCKMODE		lockmode = AccessShareLock;
 	Relation		rel;
-	ScanKeyData		skey[4];
+	ScanKeyData		skey[3];
 	SysScanDesc		scan;
 	HeapTuple		tuple;
 	Oid				datid;
@@ -149,16 +149,12 @@ retry:
 				BTEqualStrategyNumber, F_OIDEQ,
 				ObjectIdGetDatum(relid));
 	ScanKeyInit(&skey[2],
-				Anum_pg_security_seckind,
-				BTEqualStrategyNumber, F_CHAREQ,
-				CharGetDatum(seckind));
-	ScanKeyInit(&skey[3],
 				Anum_pg_security_secattr,
 				BTEqualStrategyNumber, F_TEXTEQ,
 				CStringGetTextDatum(secattr));
 
 	scan = systable_beginscan(rel, SecuritySecattrIndexId, true,
-							  SnapshotToast, 4, skey);
+							  SnapshotToast, 3, skey);
 
 	tuple = systable_getnext(scan);
 	if (HeapTupleIsValid(tuple))
@@ -192,7 +188,6 @@ retry:
 	values[Anum_pg_security_secid - 1] = ObjectIdGetDatum(secid);
 	values[Anum_pg_security_datid - 1] = ObjectIdGetDatum(datid);
 	values[Anum_pg_security_relid - 1] = ObjectIdGetDatum(relid);
-	values[Anum_pg_security_seckind - 1] = CharGetDatum(seckind);
 	values[Anum_pg_security_secattr - 1] = CStringGetTextDatum(secattr);
 
 	tuple = heap_form_tuple(RelationGetDescr(rel), values, nulls);
@@ -207,7 +202,7 @@ retry:
 }
 
 static char *
-OutputSecurityAttr(Oid relid, char seckind, Oid secid)
+OutputSecurityAttr(Oid relid, Oid secid)
 {
 	Relation		rel;
 	ScanKeyData		skey[3];
@@ -267,13 +262,13 @@ securityRawSecLabelIn(Oid relid, char *seclabel)
 {
 	seclabel = sepgsqlRawSecLabelIn(seclabel);
 
-	return InputSecurityAttr(relid, SECKIND_SECURITY_LABEL, seclabel);
+	return InputSecurityAttr(relid, seclabel);
 }
 
 char *
 securityRawSecLabelOut(Oid relid, Oid secid)
 {
-	char   *seclabel = OutputSecurityAttr(relid, SECKIND_SECURITY_LABEL, secid);
+	char   *seclabel = OutputSecurityAttr(relid, secid);
 
 	return sepgsqlRawSecLabelOut(seclabel);
 }
@@ -365,7 +360,7 @@ security_quote_relation(Oid relid)
  *   reclaims orphan entries associated to a certain table
  */
 static int
-security_reclaim_table(Oid relid, char seckind)
+seclabelRelationReclaimExec(Oid relOid)
 {
 	StringInfoData	query;
 	SPIPlanPtr		plan;
@@ -388,7 +383,7 @@ security_reclaim_table(Oid relid, char seckind)
 	 * LOCK the target table
 	 */
 	initStringInfo(&query);
-	relname_full = security_quote_relation(relid);
+	relname_full = security_quote_relation(relOid);
 	appendStringInfo(&query, "LOCK %s IN SHARE MODE", relname_full);
 	if (SPI_execute(query.data, false, 0) != SPI_OK_UTILITY)
 		elog(ERROR, "SPI_execute failed on %s", query.data);
@@ -400,34 +395,22 @@ security_reclaim_table(Oid relid, char seckind)
 	attname_secid = get_attname(SecurityRelationId, Anum_pg_security_secid);
 	attname_datid = get_attname(SecurityRelationId, Anum_pg_security_datid);
 	attname_relid = get_attname(SecurityRelationId, Anum_pg_security_relid);
-	attname_seckind = get_attname(SecurityRelationId, Anum_pg_security_seckind);
 	attname_secattr = get_attname(SecurityRelationId, Anum_pg_security_secattr);
 
 	appendStringInfo(&query,
 					 "DELETE FROM %s "
-					 "WHERE %s = $1 AND %s = $2 "
-					 "  AND %s = $3 AND %s NOT IN ",
+					 "WHERE %s = $1 AND %s = $2 AND %s NOT IN ",
 					 security_quote_relation(SecurityRelationId),
 					 quote_identifier(attname_datid),
 					 quote_identifier(attname_relid),
-					 quote_identifier(attname_seckind),
 					 quote_identifier(attname_secid));
-	switch (seckind)
-	{
-	case SECKIND_SECURITY_LABEL:
-		proc_oid = F_SECURITY_LABEL_TO_SECID;
-		break;
-	default:
-		elog(ERROR, "unexpected seckind: %c", seckind);
-		proc_oid = InvalidOid;	/* to compiler silent */
-		break;
-	}
 
 	protup = SearchSysCache(PROCOID,
-							ObjectIdGetDatum(proc_oid),
+							ObjectIdGetDatum(F_SECLABEL_TO_SECID),
 							0, 0, 0);
 	if (!HeapTupleIsValid(protup))
-		elog(ERROR, "cache lookup failed for procedure: %u", proc_oid);
+		elog(ERROR, "cache lookup failed for procedure: %u", F_SECLABEL_TO_SECID);
+
 	proForm = (Form_pg_proc) GETSTRUCT(protup);
 	sec_proname = NameStr(proForm->proname);
 	sec_nspname = get_namespace_name(proForm->pronamespace);
@@ -436,7 +419,7 @@ security_reclaim_table(Oid relid, char seckind)
 					 "(SELECT %s.%s(%s) FROM ONLY %s)",
 					 quote_identifier(sec_nspname),
 					 quote_identifier(sec_proname),
-					 quote_identifier(get_rel_name(relid)),
+					 quote_identifier(get_rel_name(relOid)),
 					 relname_full);
 	ReleaseSysCache(protup);
 
@@ -445,16 +428,14 @@ security_reclaim_table(Oid relid, char seckind)
 	 */
 	types[0] = OIDOID;
 	types[1] = OIDOID;
-	types[2] = CHAROID;
-	plan = SPI_prepare(query.data, 3, types);
+	plan = SPI_prepare(query.data, 2, types);
 	if (!plan)
 		elog(ERROR, "SPI_prepare failed on %s", query.data);
 
-	database_oid = (IsSharedRelation(relid) ? InvalidOid : MyDatabaseId);
+	database_oid = (IsSharedRelation(relOid) ? InvalidOid : MyDatabaseId);
 
 	values[0] = ObjectIdGetDatum(database_oid);
-	values[1] = ObjectIdGetDatum(relid);
-	values[2] = CharGetDatum(seckind);
+	values[1] = ObjectIdGetDatum(relOid);
 	if (SPI_execute_plan(plan, values, NULL, false, 0) != SPI_OK_DELETE)
 		elog(ERROR, "SPI_execute_plan failed on %s", query.data);
 
@@ -463,101 +444,38 @@ security_reclaim_table(Oid relid, char seckind)
 	return SPI_processed;
 }
 
-static int
-security_reclaim_all_tables(char seckind)
+void
+seclabelRelationReclaim(Oid relOid)
 {
-	StringInfoData	query;
-	char	   *attname_datid;
-	char	   *attname_relid;
-	int			index;
-	Datum		datum;
-	bool		isnull;
-	int			count = 0;
-	List	   *relidList = NIL;
-	ListCell   *l;
+	int		save_mode;
 
-	initStringInfo(&query);
+	if (!superuser() ||
+		get_rel_relkind(relOid) != RELKIND_RELATION)
+		return;
 
-	attname_datid = get_attname(SecurityRelationId, Anum_pg_security_datid);
-	attname_relid = get_attname(SecurityRelationId, Anum_pg_security_relid);
-	appendStringInfo(&query,
-					 "SELECT DISTINCT %s FROM %s WHERE %s IN (%u,%u)",
-					 attname_relid,
-					 security_quote_relation(SecurityRelationId),
-					 attname_datid, InvalidOid, MyDatabaseId);
-
-	if (SPI_execute(query.data, true, 0) != SPI_OK_SELECT)
-		elog(ERROR, "SPI_execute failed on %s", query.data);
-
-	for (index = 0; index < SPI_processed; index++)
-	{
-		datum = SPI_getbinval(SPI_tuptable->vals[index],
-							  SPI_tuptable->tupdesc, 1, &isnull);
-		if (isnull)
-			continue;
-		relidList = lappend_oid(relidList, DatumGetObjectId(datum));
-	}
-	SPI_freetuptable(SPI_tuptable);
-
-	foreach (l, relidList)
-		count += security_reclaim_table(lfirst_oid(l), seckind);
-
-	return count;
-}
-
-static int
-security_reclaim(Oid relid, char seckind)
-{
-	int		saved_mode;
-	int		count;
-
-	if (!superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("must be superuser to reclaim security attributes")));
-	/*
-	 * Disables SE-PostgreSQL temporary
-	 */
-	//saved_mode = sepgsqlSetEnforce(0);
-
+	save_mode = sepostgresql_mode;
+	sepostgresql_mode = SEPGSQL_MODE_INTERNAL;
 	PG_TRY();
 	{
 		if (SPI_connect() != SPI_OK_CONNECT)
 			elog(ERROR, "SPI_connect failed");
 
-		if (OidIsValid(relid))
-			count = security_reclaim_table(relid, seckind);
-		else
-			count = security_reclaim_all_tables(seckind);
+		seclabelRelationReclaimExec(relOid);
 
 		if (SPI_finish() != SPI_OK_FINISH)
 			elog(ERROR, "SPI_finish failed");
 	}
 	PG_CATCH();
 	{
-		//sepgsqlSetEnforce(saved_mode);
+		sepostgresql_mode = save_mode;
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
-	//sepgsqlSetEnforce(saved_mode);
-
-	return count;
+	sepostgresql_mode = save_mode;
 }
 
 Datum
-security_reclaim_label(PG_FUNCTION_ARGS)
-{
-	PG_RETURN_INT32(security_reclaim(InvalidOid, SECKIND_SECURITY_LABEL));
-}
-
-Datum
-security_reclaim_table_label(PG_FUNCTION_ARGS)
-{
-	PG_RETURN_INT32(security_reclaim(PG_GETARG_OID(0), SECKIND_SECURITY_LABEL));
-}
-
-Datum
-security_label_to_secid(PG_FUNCTION_ARGS)
+seclabel_to_secid(PG_FUNCTION_ARGS)
 {
 	HeapTupleHeader tuphdr = PG_GETARG_HEAPTUPLEHEADER(0);
 
