@@ -345,13 +345,11 @@ sepgsqlHeapTupleInsert(Relation rel, HeapTuple newtup, bool internal)
 		return;
 
 	/*
-	 * assigns a default security label, if not explicit one
+	 * Assign a default security label, if necessary
 	 */
-	if (!OidIsValid(HeapTupleGetSecid(newtup)))
-	{
-		if (HeapTupleHasSecid(newtup))
-			sepgsqlSetDefaultSecid(rel, newtup);
-	}
+	if (HeapTupleHasSecid(newtup) &&
+		!OidIsValid(HeapTupleGetSecid(newtup)))
+		sepgsqlSetDefaultSecid(rel, newtup);
 
 	/*
 	 * It does not check permission for the new tuples

@@ -511,9 +511,9 @@ BootstrapModeMain(void)
 	boot_yyparse();
 
 	/*
-	 * Flush all the cached security label
+	 * SELinux initial labeling
 	 */
-	securityPostBootstrapingMode();
+	sepgsqlPostBootstrapingMode();
 
 	/* Perform a checkpoint to ensure everything's down to disk */
 	SetProcessingMode(NormalProcessing);

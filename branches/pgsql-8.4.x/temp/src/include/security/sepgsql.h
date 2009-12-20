@@ -286,7 +286,7 @@ sepgsql_conversion_drop(Oid convOid);
 
 /* pg_database */
 extern Oid
-sepgsql_database_create(const char *datName, DefElem *newLabel);
+sepgsql_database_create(const char *datName, Oid srcDatOid, DefElem *newLabel);
 extern void
 sepgsql_database_alter(Oid datOid);
 extern void
@@ -512,11 +512,12 @@ sepgsqlHeapTupleUpdate(Relation rel, ItemPointer otid, HeapTuple newtup);
 /*
  * label.c : security label management
  */
-extern bool
-sepgsqlTupleDescHasSecid(Oid relid, char relkind);
+extern bool sepgsqlTupleDescHasSecid(Oid relid, char relkind);
+
+extern void sepgsqlPostBootstrapingMode(void);
 
 extern void sepgsqlSetDefaultSecid(Relation rel, HeapTuple tuple);
-extern sepgsql_sid_t sepgsqlGetDefaultDatabaseSecid(void);
+extern sepgsql_sid_t sepgsqlGetDefaultDatabaseSecid(Oid src_database_oid);
 extern sepgsql_sid_t sepgsqlGetDefaultSchemaSecid(Oid database_oid);
 extern sepgsql_sid_t sepgsqlGetDefaultSchemaTempSecid(Oid database_oid);
 extern sepgsql_sid_t sepgsqlGetDefaultTableSecid(Oid namespace_oid);

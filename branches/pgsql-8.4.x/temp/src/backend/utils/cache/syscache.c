@@ -41,7 +41,6 @@
 #include "catalog/pg_opfamily.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_rewrite.h"
-#include "catalog/pg_security.h"
 #include "catalog/pg_statistic.h"
 #include "catalog/pg_ts_config.h"
 #include "catalog/pg_ts_config_map.h"
@@ -585,30 +584,6 @@ static const struct cachedesc cacheinfo[] = {
 		},
 		1024
 	},
-	{SecurityRelationId,		/* SECURITYATTR */
-		SecuritySecattrIndexId,
-		Anum_pg_security_relid,
-	 	4,
-		{
-			Anum_pg_security_datid,
-			Anum_pg_security_relid,
-			Anum_pg_security_seckind,
-			Anum_pg_security_secattr
-		},
-		128,
-	},
-	{SecurityRelationId,		/* SECURITYSECID */
-		SecuritySecidIndexId,
-		Anum_pg_security_relid,
-		2,
-		{
-			Anum_pg_security_secid,
-			Anum_pg_security_datid,
-			0,
-			0
-		},
-		128
-	},
 	{StatisticRelationId,		/* STATRELATT */
 		StatisticRelidAttnumIndexId,
 		Anum_pg_statistic_starelid,
@@ -955,6 +930,7 @@ GetSysCacheOid(int cacheId,
 	ReleaseSysCache(tuple);
 	return result;
 }
+
 
 /*
  * SearchSysCacheAttName

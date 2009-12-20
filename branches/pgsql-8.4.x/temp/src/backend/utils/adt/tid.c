@@ -27,6 +27,7 @@
 #include "libpq/pqformat.h"
 #include "miscadmin.h"
 #include "parser/parsetree.h"
+#include "security/sepgsql.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/rel.h"

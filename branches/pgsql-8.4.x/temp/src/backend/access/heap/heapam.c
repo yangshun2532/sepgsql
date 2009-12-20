@@ -3511,6 +3511,8 @@ heap_inplace_update(Relation relation, HeapTuple tuple)
 	memcpy((char *) htup + htup->t_hoff,
 		   (char *) tuple->t_data + tuple->t_data->t_hoff,
 		   newlen);
+	if (HeapTupleHeaderGetSecid(htup) != HeapTupleGetSecid(tuple))
+		HeapTupleHeaderSetSecid(htup, HeapTupleGetSecid(tuple));
 
 	MarkBufferDirty(buffer);
 
