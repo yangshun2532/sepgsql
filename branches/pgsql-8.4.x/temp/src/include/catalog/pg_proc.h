@@ -4335,22 +4335,18 @@ DESCR("I/O");
 DATA(insert OID = 2963 (  uuid_hash		   PGNSP PGUID 12 1 0 0 f f f t f i 1 0 23 "2950" _null_ _null_ _null_ _null_ uuid_hash _null_ _null_ _null_ ));
 DESCR("hash");
 
-/* Security attribute reclaimer */
-DATA(insert OID = 3411 ( security_reclaim_label	PGNSP PGUID 12 1 0 0 f f f t f v 0 0 23 "" _null_ _null_ _null_ _null_ security_reclaim_label	_null_ _null_ _null_ ));
-DATA(insert OID = 3413 ( security_reclaim_label	PGNSP PGUID 12 1 0 0 f f f t f v 1 0 23 "2205" _null_ _null_ _null_ _null_ security_reclaim_table_label	_null_ _null_ _null_ ));
-DATA(insert OID = 3415 ( security_label_to_secid	PGNSP PGUID 12 1 0 0 f f f t f v 1 0 26 "2249" _null_ _null_ _null_ _null_ security_label_to_secid	_null_ _null_ _null_ ));
-
 /* SE-PostgreSQL related functions */
-DATA(insert OID = 3416 (  sepgsql_getcon   PGNSP PGUID 12 1 0 0 f f f t f v 0 0 25 "" _null_ _null_ _null_ _null_ sepgsql_getcon _null_ _null_ _null_ ));
+DATA(insert OID = 3415 ( seclabel_to_secid	PGNSP PGUID 12 1 0 0 f f f t f v 1 0 26 "2249" _null_ _null_ _null_ _null_ seclabel_to_secid	_null_ _null_ _null_ ));
+DATA(insert OID = 3416 ( sepgsql_getcon		PGNSP PGUID 12 1 0 0 f f f t f v 0 0 25 "" _null_ _null_ _null_ _null_ sepgsql_getcon _null_ _null_ _null_ ));
 DATA(insert OID = 3417 (  sepgsql_server_getcon	PGNSP PGUID 12 1 0 0 f f f t f v 0 0 25 "" _null_ _null_ _null_ _null_ sepgsql_server_getcon _null_ _null_ _null_ ));
-DATA(insert OID = 3418 ( sepgsql_get_user  PGNSP PGUID 12 1 0 0 f f f t f v 1 0 25 "25" _null_ _null_ _null_ _null_ sepgsql_get_user _null_ _null_ _null_ ));
-DATA(insert OID = 3419 ( sepgsql_set_user  PGNSP PGUID 12 1 0 0 f f f t f v 2 0 25 "25 25" _null_ _null_ _null_ _null_ sepgsql_set_user _null_ _null_ _null_ ));
-DATA(insert OID = 3420 ( sepgsql_get_role  PGNSP PGUID 12 1 0 0 f f f t f v 1 0 25 "25" _null_ _null_ _null_ _null_ sepgsql_get_role _null_ _null_ _null_ ));
-DATA(insert OID = 3421 ( sepgsql_set_role  PGNSP PGUID 12 1 0 0 f f f t f v 2 0 25 "25 25" _null_ _null_ _null_ _null_ sepgsql_set_role _null_ _null_ _null_ ));
-DATA(insert OID = 3422 ( sepgsql_get_type  PGNSP PGUID 12 1 0 0 f f f t f v 1 0 25 "25" _null_ _null_ _null_ _null_ sepgsql_get_type _null_ _null_ _null_ ));
-DATA(insert OID = 3423 ( sepgsql_set_type  PGNSP PGUID 12 1 0 0 f f f t f v 2 0 25 "25 25" _null_ _null_ _null_ _null_ sepgsql_set_type _null_ _null_ _null_ ));
-DATA(insert OID = 3424 ( sepgsql_get_range PGNSP PGUID 12 1 0 0 f f f t f v 1 0 25 "25" _null_ _null_ _null_ _null_ sepgsql_get_range _null_ _null_ _null_ ));
-DATA(insert OID = 3425 ( sepgsql_set_range PGNSP PGUID 12 1 0 0 f f f t f v 2 0 25 "25 25" _null_ _null_ _null_ _null_ sepgsql_set_range _null_ _null_ _null_ ));
+DATA(insert OID = 3418 ( sepgsql_get_user	PGNSP PGUID 12 1 0 0 f f f t f v 1 0 25 "25" _null_ _null_ _null_ _null_ sepgsql_get_user _null_ _null_ _null_ ));
+DATA(insert OID = 3419 ( sepgsql_set_user	PGNSP PGUID 12 1 0 0 f f f t f v 2 0 25 "25 25" _null_ _null_ _null_ _null_ sepgsql_set_user _null_ _null_ _null_ ));
+DATA(insert OID = 3420 ( sepgsql_get_role	PGNSP PGUID 12 1 0 0 f f f t f v 1 0 25 "25" _null_ _null_ _null_ _null_ sepgsql_get_role _null_ _null_ _null_ ));
+DATA(insert OID = 3421 ( sepgsql_set_role	PGNSP PGUID 12 1 0 0 f f f t f v 2 0 25 "25 25" _null_ _null_ _null_ _null_ sepgsql_set_role _null_ _null_ _null_ ));
+DATA(insert OID = 3422 ( sepgsql_get_type	PGNSP PGUID 12 1 0 0 f f f t f v 1 0 25 "25" _null_ _null_ _null_ _null_ sepgsql_get_type _null_ _null_ _null_ ));
+DATA(insert OID = 3423 ( sepgsql_set_type	PGNSP PGUID 12 1 0 0 f f f t f v 2 0 25 "25 25" _null_ _null_ _null_ _null_ sepgsql_set_type _null_ _null_ _null_ ));
+DATA(insert OID = 3424 ( sepgsql_get_range	PGNSP PGUID 12 1 0 0 f f f t f v 1 0 25 "25" _null_ _null_ _null_ _null_ sepgsql_get_range _null_ _null_ _null_ ));
+DATA(insert OID = 3425 ( sepgsql_set_range	PGNSP PGUID 12 1 0 0 f f f t f v 2 0 25 "25 25" _null_ _null_ _null_ _null_ sepgsql_set_range _null_ _null_ _null_ ));
 
 /* enum related procs */
 DATA(insert OID = 3504 (  anyenum_in	PGNSP PGUID 12 1 0 0 f f f t f i 1 0 3500 "2275" _null_ _null_ _null_ _null_ anyenum_in _null_ _null_ _null_ ));

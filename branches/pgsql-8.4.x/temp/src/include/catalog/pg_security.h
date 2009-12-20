@@ -28,9 +28,6 @@ CATALOG(pg_security,3400) BKI_SHARED_RELATION BKI_WITHOUT_OIDS
 	/* OID of the table which refers the entry */
 	Oid		relid;
 
-	/* See the SECKIND_SECURITY_* definition */
-	char	seckind;
-
 	/* Text representation of security attribute */
 	text	secattr;
 } FormData_pg_security;
@@ -44,17 +41,11 @@ typedef FormData_pg_security *Form_pg_security;
 /*
  * Compiler constants for pg_security
  */
-#define Natts_pg_security				5
+#define Natts_pg_security				4
 #define Anum_pg_security_secid			1
 #define Anum_pg_security_datid			2
 #define Anum_pg_security_relid			3
-#define Anum_pg_security_seckind		4
-#define Anum_pg_security_secattr		5
-
-/*
- * Compiler constants for pg_security.seckind
- */
-#define SECKIND_SECURITY_LABEL			'l'
+#define Anum_pg_security_secattr		4
 
 /*
  * Functions to translate between security label and identifier
@@ -89,13 +80,10 @@ securitySysattSecLabelOut(Oid relid, HeapTuple tuple);
 extern void
 securityReclaimOnDropTable(Oid relid);
 
-extern Datum
-security_reclaim_label(PG_FUNCTION_ARGS);
+extern void
+seclabelRelationReclaim(Oid relOid);
 
 extern Datum
-security_reclaim_table_label(PG_FUNCTION_ARGS);
-
-extern Datum
-security_label_to_secid(PG_FUNCTION_ARGS);
+seclabel_to_secid(PG_FUNCTION_ARGS);
 
 #endif		/* PG_SECURITY_H */
