@@ -18,6 +18,7 @@
 #include "catalog/pg_foreign_data_wrapper.h"
 #include "catalog/pg_foreign_server.h"
 #include "catalog/pg_language.h"
+#include "catalog/pg_largeobject_metadata.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_operator.h"
 #include "catalog/pg_opclass.h"
@@ -1702,36 +1703,135 @@ sepgsql_language_grant(Oid langOid)
  * Pg_largeobject related security hooks
  * (need to backport v8.5 feature)
  * ------------------------------------------------------------ */
+static bool
+sepgsql_largeobject_common(Oid loid, uint32 required, Snapshot snapshot)
+{
+	Relation        rel;
+	ScanKeyData     skey;
+	SysScanDesc     scan;
+	HeapTuple		tuple;
+	sepgsql_sid_t	sid;
+	uint16			tclass;
+	char			auname[64];
+	bool			rc;
+
+	rel = heap_open(LargeObjectMetadataRelationId, AccessShareLock);
+
+	ScanKeyInit(&skey,
+				ObjectIdAttributeNumber,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(loid));
+
+	scan = systable_beginscan(rel, LargeObjectMetadataOidIndexId,
+							  true, snapshot, 1, &skey);
+
+	tuple = systable_getnext(scan);
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "largeobject %u lookup failed", loid);
+
+	snprintf(auname, sizeof(auname), "blob:%u", loid);
+
+	sid = sepgsqlGetTupleSecid(RelationGetRelid(rel), tuple, &tclass);
+
+	rc = sepgsqlClientHasPerms(sid, tclass, required, auname, true);
+
+	systable_endscan(scan);
+
+	heap_close(rel, AccessShareLock);
+
+	return rc;
+}
+
 Oid
 sepgsql_largeobject_create(Oid loid, Value *secLabel)
 {
-	return InvalidOid;
+	sepgsql_sid_t	sid;
+
+	if (!sepgsqlIsEnabled())
+		return InvalidOid;
+
+	if (!secLabel)
+		sid = sepgsqlGetDefaultBlobSecid(MyDatabaseId);
+	else
+	{
+		sid.relid = LargeObjectMetadataRelationId;
+		sid.secid = securityTransSecLabelIn(sid.relid, strVal(secLabel));
+	}
+
+	sepgsqlClientHasPerms(sid, SEPG_CLASS_DB_BLOB,
+						  SEPG_DB_BLOB__CREATE,
+                          NULL, true);
+    return sid.secid;
 }
 
 void
 sepgsql_largeobject_alter(Oid loid)
-{}
+{
+	if (!sepgsqlIsEnabled())
+		return;
+
+	sepgsql_largeobject_common(loid, SEPG_DB_BLOB__SETATTR, SnapshotNow);
+}
 
 void
 sepgsql_largeobject_drop(Oid loid)
-{}
+{
+	if (!sepgsqlIsEnabled())
+		return;
+
+	sepgsql_largeobject_common(loid, SEPG_DB_BLOB__DROP, SnapshotNow);
+}
 
 void
 sepgsql_largeobject_read(Oid loid, Snapshot snapshot)
-{}
+{
+	if (!sepgsqlIsEnabled())
+		return;
+
+	sepgsql_largeobject_common(loid, SEPG_DB_BLOB__READ, snapshot);
+}
 
 void
 sepgsql_largeobject_write(Oid loid, Snapshot snapshot)
-{}
+{
+	if (!sepgsqlIsEnabled())
+		return;
+
+	sepgsql_largeobject_common(loid, SEPG_DB_BLOB__WRITE, snapshot);
+}
 
 void
 sepgsql_largeobject_export(Oid loid, const char *filename)
-{}
+{
+	if (!sepgsqlIsEnabled())
+		return;
+
+	sepgsql_largeobject_common(loid,
+							   SEPG_DB_BLOB__READ |
+							   SEPG_DB_BLOB__EXPORT, SnapshotNow);
+
+	sepgsql_file_write(filename);
+}
 
 Oid
 sepgsql_largeobject_import(Oid loid, const char *filename)
 {
-	return InvalidOid;
+	sepgsql_sid_t	sid;
+
+	if (!sepgsqlIsEnabled())
+		return InvalidOid;
+
+	sid = sepgsqlGetDefaultBlobSecid(MyDatabaseId);
+
+	sepgsqlClientHasPerms(sid, SEPG_CLASS_DB_BLOB,
+						  SEPG_DB_BLOB__CREATE |
+						  SEPG_DB_BLOB__WRITE |
+						  SEPG_DB_BLOB__IMPORT,
+						  NULL, true);
+
+	sepgsql_file_read(filename);
+
+    return sid.secid;
 }
 
 /* ------------------------------------------------------------ *

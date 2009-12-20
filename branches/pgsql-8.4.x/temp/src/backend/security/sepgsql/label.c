@@ -304,7 +304,7 @@ sepgsqlSetDefaultSecid(Relation rel, HeapTuple tuple)
 			newSid = sepgsqlGetDefaultColumnSecid(tblOid);
 		break;
 
-	case LargeObjectRelationId:
+	case LargeObjectMetadataRelationId:
 		newSid = sepgsqlGetDefaultBlobSecid(MyDatabaseId);
 		break;
 
@@ -602,11 +602,11 @@ sepgsqlGetSysobjSecid(Oid classOid, Oid objectId, int32 objsubId, uint16 *tclass
 			rel = heap_open(LargeObjectMetadataRelationId, AccessShareLock);
 
 			ScanKeyInit(&skey,
-						Anum_pg_largeobject_loid,
+						ObjectIdAttributeNumber,
 						BTEqualStrategyNumber, F_OIDEQ,
 						ObjectIdGetDatum(objectId));
 
-			scan = systable_beginscan(rel, LargeObjectLOidPNIndexId,
+			scan = systable_beginscan(rel, LargeObjectMetadataOidIndexId,
 									  true, SnapshotNow, 1, &skey);
 
 			tup = systable_getnext(scan);
