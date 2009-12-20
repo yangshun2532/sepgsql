@@ -9,6 +9,7 @@
 
 #include "access/sysattr.h"
 #include "catalog/catalog.h"
+#include "catalog/pg_largeobject.h"
 #include "catalog/pg_security.h"
 #include "miscadmin.h"
 #include "security/sepgsql.h"
@@ -325,6 +326,15 @@ sepgsqlSetupTuplePerms(RangeTblEntry *rte)
 		perms |= SEPG_DB_TUPLE__UPDATE;
 	if (rte->requiredPerms & ACL_DELETE)
 		perms |= SEPG_DB_TUPLE__DELETE;
+
+	/*
+	 * Special case in pg_largeobject
+	 */
+	if (rte->relid == LargeObjectRelationId &&
+		bms_is_member(Anum_pg_largeobject_data
+					  - FirstLowInvalidHeapAttributeNumber,
+					  rte->selectedCols))
+		perms |= SEPG_DB_BLOB__READ;
 
 	return perms;
 }
