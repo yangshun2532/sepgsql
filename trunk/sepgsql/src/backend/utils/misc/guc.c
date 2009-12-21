@@ -10,7 +10,7 @@
  * Written by Peter Eisentraut <peter_e@gmx.net>.
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.527 2009/12/11 03:34:56 itagaki Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.529 2009/12/21 01:34:11 rhaas Exp $
  *
  *--------------------------------------------------------------------
  */
@@ -115,6 +115,9 @@ extern char *default_tablespace;
 extern char *temp_tablespaces;
 extern bool synchronize_seqscans;
 extern bool fullPageWrites;
+extern int	vacuum_defer_cleanup_age;
+
+int	trace_recovery_messages = LOG;
 
 #ifdef TRACE_SORT
 extern bool trace_sort;
@@ -1218,6 +1221,17 @@ static struct config_bool ConfigureNamesBool[] =
 	},
 
 	{
+		{"recovery_connections", PGC_POSTMASTER, WAL_SETTINGS,
+			gettext_noop("During recovery, allows connections and queries. "
+						 " During normal running, causes additional info to be written"
+						 " to WAL to enable hot standby mode on WAL standby nodes."),
+			NULL
+		},
+		&XLogRequestRecoveryConnections,
+		true, NULL, NULL
+	},
+
+	{
 		{"allow_system_table_mods", PGC_POSTMASTER, DEVELOPER_OPTIONS,
 			gettext_noop("Allows modifications of the structure of system tables."),
 			NULL,
@@ -1252,9 +1266,9 @@ static struct config_bool ConfigureNamesBool[] =
 
 	{
 		{"lo_compat_privileges", PGC_SUSET, COMPAT_OPTIONS_PREVIOUS,
-			gettext_noop("Enables backward compatibility in privilege checks on large objects"),
-			gettext_noop("When turned on, privilege checks on large objects perform "
-						 "with backward compatibility as 8.4.x or earlier releases.")
+			gettext_noop("Enables backward compatibility mode for privilege checks on large objects"),
+			gettext_noop("Skips privilege checks when reading or modifying large objects, "
+						 "for compatibility with PostgreSQL releases prior to 8.5.")
 		},
 		&lo_compat_privileges,
 		false, NULL, NULL
@@ -1370,6 +1384,8 @@ static struct config_int ConfigureNamesInt[] =
 	 * plus autovacuum_max_workers plus one (for the autovacuum launcher).
 	 *
 	 * Likewise we have to limit NBuffers to INT_MAX/2.
+	 *
+	 * See also CheckRequiredParameterValues() if this parameter changes
 	 */
 	{
 		{"max_connections", PGC_POSTMASTER, CONN_AUTH_SETTINGS,
@@ -1378,6 +1394,15 @@ static struct config_int ConfigureNamesInt[] =
 		},
 		&MaxConnections,
 		100, 1, INT_MAX / 4, assign_maxconnections, NULL
+	},
+
+	{
+		{"max_standby_delay", PGC_SIGHUP, WAL_SETTINGS,
+			gettext_noop("Sets the maximum delay to avoid conflict processing on Hot Standby servers."),
+			NULL
+		},
+		&MaxStandbyDelay,
+		30, -1, INT_MAX, NULL, NULL
 	},
 
 	{
@@ -1537,6 +1562,9 @@ static struct config_int ConfigureNamesInt[] =
 		1000, 25, INT_MAX, NULL, NULL
 	},
 
+	/*
+	 * See also CheckRequiredParameterValues() if this parameter changes
+	 */
 	{
 		{"max_prepared_transactions", PGC_POSTMASTER, RESOURCES,
 			gettext_noop("Sets the maximum number of simultaneously prepared transactions."),
@@ -1595,6 +1623,18 @@ static struct config_int ConfigureNamesInt[] =
 		150000000, 0, 2000000000, NULL, NULL
 	},
 
+	{
+		{"vacuum_defer_cleanup_age", PGC_USERSET, CLIENT_CONN_STATEMENT,
+			gettext_noop("Age by which VACUUM and HOT cleanup should be deferred, if any."),
+			NULL
+		},
+		&vacuum_defer_cleanup_age,
+		0, 0, 1000000, NULL, NULL
+	},
+
+	/*
+	 * See also CheckRequiredParameterValues() if this parameter changes
+	 */
 	{
 		{"max_locks_per_transaction", PGC_POSTMASTER, LOCK_MANAGEMENT,
 			gettext_noop("Sets the maximum number of locks per transaction."),
@@ -2715,6 +2755,16 @@ static struct config_enum ConfigureNamesEnum[] =
 		&SessionReplicationRole,
 		SESSION_REPLICATION_ROLE_ORIGIN, session_replication_role_options,
 		assign_session_replication_role, NULL
+	},
+
+	{
+		{"trace_recovery_messages", PGC_SUSET, LOGGING_WHEN,
+			gettext_noop("Sets the message levels that are logged during recovery."),
+			gettext_noop("Each level includes all the levels that follow it. The later"
+						 " the level, the fewer messages are sent.")
+		},
+		&trace_recovery_messages,
+		DEBUG1, server_message_level_options, NULL, NULL
 	},
 
 	{
@@ -7544,6 +7594,18 @@ assign_transaction_read_only(bool newval, bool doit, GucSource source)
 		if (source != PGC_S_OVERRIDE)
 			return false;
 	}
+
+	/* Can't go to r/w mode while recovery is still active */
+	if (newval == false && XactReadOnly && RecoveryInProgress())
+	{
+		ereport(GUC_complaint_elevel(source),
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("cannot set transaction read-write mode during recovery")));
+		/* source == PGC_S_OVERRIDE means do it anyway, eg at xact abort */
+		if (source != PGC_S_OVERRIDE)
+			return false;
+	}
+
 	return true;
 }
 
