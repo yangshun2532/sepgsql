@@ -36,7 +36,7 @@ echo "  repository: ${SEPGSQL_REPOSITORY}${SEPGSQL_BRANCH}"
 echo
 
 # -- exporting branches
-TREES="base ace_database ace_schema"
+TREES="base pgsec"
 for name in ${TREES}
 do
   echo "Exporting ${SEPGSQL_BRANCH}/${name} ..."
@@ -44,17 +44,12 @@ do
 done
 
 # -- generating patches
-echo "GEN: pgsql-ace-01-database-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch"
-diff -Nrpc base ace_database			\
-    > ${RPMSOURCE}/pgsql-ace-01-database-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch
-
-echo "GEN: pgsql-ace-02-schema-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch"
-diff -Nrpc ace_database ace_schema		\
-    > ${RPMSOURCE}/pgsql-ace-02-schema-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch
+echo "GEN: pgsql-01-ground-work-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch"
+diff -Nrpc base pgsec		\
+    > ${RPMSOURCE}/pgsql-01-ground-work-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch
 
 echo "---- LIST OF GENERATED PATCHES ----"
-echo "01) ${RPMSOURCE}/pgsql-ace-01-database-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch"
-echo "02) ${RPMSOURCE}/pgsql-ace-02-schema-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch"
+echo "01) ${RPMSOURCE}/pgsql-01-ground-work-${BASE_MAJOR}-r${SEPGSQL_REVISION}.patch"
 
 # ---- clean up
 rm -rf ${WORKDIR}
