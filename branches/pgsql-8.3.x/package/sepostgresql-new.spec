@@ -36,7 +36,7 @@ Requires(post): policycoreutils /sbin/chkconfig
 Requires(preun): /sbin/chkconfig /sbin/service
 Requires(postun): policycoreutils
 Requires: postgresql-server = %{version}
-Requires: policycoreutils >= 2.0.16 libselinux >= 2.0.43
+Requires: policycoreutils >= 2.0.16 libselinux >= 2.0.80
 Requires: selinux-policy >= 3.4.2
 Requires: tzdata logrotate
 
@@ -199,6 +199,12 @@ fi
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Fri Dec 25 2009 KaiGai Kohei <kaigai@kaigai.gr.jp> - 8.3.9-2515
+- upgrade base PostgreSQL v8.3.8->8.3.9
+
+* Thu Sep 10 2009 KaiGai Kohei <kaigai@kaigai.gr.jp> - 8.3.8-2300
+- upgrade base PostgreSQL v8.3.7->8.3.8
+
 * Tue Jun  9 2009 KaiGai Kohei <kaigai@kaigai.gr.jp> - 8.3.7-1990
 - backport features from v8.4devel, it also needs libselinux-2.0.80
 

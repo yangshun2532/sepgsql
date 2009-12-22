@@ -7,14 +7,6 @@
 # SE-PostgreSQL status extension
 %define selinux_policy_stores targeted mls
 
-# Check required policy version
-%define fedora9 %(rpm -E '%{dist}' | grep -cE '^\.fc[1-9]$')
-%if %{fedora9}
-%define required_policy_version    3.3.1
-%else
-%define required_policy_version    3.4.2
-%endif
-
 %%__sepgsql_extension__%%
 
 %{!?ssl:%define ssl 1}
@@ -37,10 +29,7 @@ Patch2: sepostgresql-pg_dump-%%__base_postgresql_version__%%-%%__sepgsql_major_v
 Patch3: sepostgresql-fedora-prefix.patch
 BuildRequires: perl glibc-devel bison flex readline-devel zlib-devel >= 1.0.4
 BuildRequires: checkpolicy libselinux-devel >= 2.0.43
-BuildRequires: selinux-policy >= %{required_policy_version}
-%if %{fedora9}
-BuildRequires: selinux-policy-devel
-%endif
+BuildRequires: selinux-policy >= 3.4.2
 %if %{ssl}
 BuildRequires: openssl-devel
 %endif
@@ -50,7 +39,7 @@ Requires(preun): /sbin/chkconfig /sbin/service
 Requires(postun): policycoreutils
 Requires: postgresql-server = %{version}
 Requires: policycoreutils >= 2.0.16 libselinux >= 2.0.43
-Requires: selinux-policy >= %{required_policy_version}
+Requires: selinux-policy >= 3.4.2
 Requires: tzdata logrotate
 
 %description
@@ -88,24 +77,20 @@ CXXFLAGS="${CXXFLAGS:-%optflags}" ; export CXXFLAGS
 
 # parallel build, if possible
 make %{?_smp_mflags}
-%if !%{fedora9}
 touch src/backend/security/sepgsql/policy/sepostgresql-devel.fc
 make -C src/backend/security/sepgsql/policy
-%endif
 
 %install
 rm -rf %{buildroot}
 
 make DESTDIR=%{buildroot} install
 
-%if !%{fedora9}
 for store in %{selinux_policy_stores}
 do
     install -d %{buildroot}%{_datadir}/selinux/${store}
     install -p -m 644 src/backend/security/sepgsql/policy/sepostgresql-devel.pp.${store} \
                %{buildroot}%{_datadir}/selinux/${store}/sepostgresql-devel.pp
 done
-%endif
 
 # avoid to conflict with native postgresql package
 mv %{buildroot}%{_bindir}  %{buildroot}%{_bindir}.orig
@@ -155,7 +140,6 @@ exit 0
 /sbin/chkconfig --add %{name}
 /sbin/ldconfig
 
-%if !%{fedora9}
 for store in %{selinux_policy_stores}
 do
     # clean up legacy policy module (now it is unnecessary)
@@ -165,7 +149,6 @@ do
             -i %{_datadir}/selinux/${store}/sepostgresql-devel.pp >& /dev/null || :
     fi
 done
-%endif
 
 # Fix up non-standard file contexts
 /sbin/fixfiles -R %{name} restore || :
@@ -214,14 +197,15 @@ fi
 %{_datadir}/sepgsql/conversion_create.sql
 %{_datadir}/sepgsql/information_schema.sql
 %{_datadir}/sepgsql/sql_features.txt
-%if !%{fedora9}
 %attr(644,root,root) %{_datadir}/selinux/*/sepostgresql-devel.pp
-%endif
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/data
 %attr(700,sepgsql,sepgsql) %dir %{_localstatedir}/lib/sepgsql/backups
 
 %changelog
+* Thu Sep 10 2009 KaiGai Kohei <kaigai@kaigai.gr.jp> - 8.3.8-2300
+- upgrade base PostgreSQL v8.3.7->8.3.8
+
 * Fri Apr 17 2009 KaiGai Kohei <kaigai@kaigai.gr.jp> - 8.3.7-1772
 - bugfix: /etc/init.d/sepostgresql initdb didn't work correctly
 
