@@ -49,6 +49,7 @@ enum SepgsqlClasses
 	SEPG_CLASS_DB_DATABASE,
 	SEPG_CLASS_DB_SCHEMA,
 	SEPG_CLASS_DB_TABLE,
+	SEPG_CLASS_DB_VIEW,
 	SEPG_CLASS_DB_SEQUENCE,
 	SEPG_CLASS_DB_PROCEDURE,
 	SEPG_CLASS_DB_COLUMN,
@@ -136,6 +137,14 @@ enum SepgsqlClasses
 #define SEPG_DB_SEQUENCE__NEXT_VALUE		(1<<7)
 #define SEPG_DB_SEQUENCE__SET_VALUE			(1<<8)
 
+#define SEPG_DB_VIEW__CREATE				(SEPG_DB_DATABASE__CREATE)
+#define SEPG_DB_VIEW__DROP					(SEPG_DB_DATABASE__DROP)
+#define SEPG_DB_VIEW__GETATTR				(SEPG_DB_DATABASE__GETATTR)
+#define SEPG_DB_VIEW__SETATTR				(SEPG_DB_DATABASE__SETATTR)
+#define SEPG_DB_VIEW__RELABELFROM			(SEPG_DB_DATABASE__RELABELFROM)
+#define SEPG_DB_VIEW__RELABELTO				(SEPG_DB_DATABASE__RELABELTO)
+#define SEPG_DB_VIEW__USAGE					(1<<6)
+
 #define SEPG_DB_PROCEDURE__CREATE			(SEPG_DB_DATABASE__CREATE)
 #define SEPG_DB_PROCEDURE__DROP				(SEPG_DB_DATABASE__DROP)
 #define SEPG_DB_PROCEDURE__GETATTR			(SEPG_DB_DATABASE__GETATTR)
@@ -191,6 +200,7 @@ typedef struct {
 extern void  sepgsqlInitialize(void);
 extern Size  sepgsqlShmemSize(void);
 extern bool  sepgsqlIsEnabled(void);
+extern bool	 sepgsqlIsEnabledBootstrap(void);
 extern bool  sepgsqlGetEnforce(void);
 extern char *sepgsqlShowMode(void);
 extern char *sepgsqlGetServerLabel(void);

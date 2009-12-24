@@ -7,15 +7,21 @@
  */
 #include "postgres.h"
 
+#include "access/hash.h"
+#include "access/xact.h"
+#include "catalog/pg_security.h"
 #include "lib/stringinfo.h"
 #include "libpq/libpq-be.h"
+#include "libpq/pqsignal.h"
 #include "miscadmin.h"
 #include "security/sepgsql.h"
 #include "storage/fd.h"
 #include "utils/builtins.h"
+#include "utils/memutils.h"
 
-#include <fnmatch.h>
+#include <unistd.h>
 #include <selinux/selinux.h>
+#include <selinux/avc.h>
 
 /*
  * selinux_catalog
@@ -148,7 +154,6 @@ static struct
 			{ "relabelto",		SEPG_DB_DATABASE__RELABELTO },
 			{ "access",			SEPG_DB_DATABASE__ACCESS },
 			{ "load_module",	SEPG_DB_DATABASE__LOAD_MODULE },
-			{ "superuser",		SEPG_DB_DATABASE__SUPERUSER },
 			{ NULL, 0UL },
 		}
 	},
@@ -224,7 +229,6 @@ static struct
 			{ "execute",		SEPG_DB_PROCEDURE__EXECUTE },
 			{ "entrypoint",		SEPG_DB_PROCEDURE__ENTRYPOINT },
 			{ "install",		SEPG_DB_PROCEDURE__INSTALL },
-			{ "untrusted",		SEPG_DB_PROCEDURE__UNTRUSTED },
 			{ NULL, 0UL },
 		}
 	},
@@ -316,7 +320,7 @@ typedef struct _avc_datum
 
 typedef struct _avc_page
 {
-	struct avc_page	   *next;
+	struct _avc_page	   *next;
 
 	List	   *slot[AVC_HASH_NUM_SLOTS];
 
@@ -402,7 +406,7 @@ sepgsqlIsEnabledBootstrap(void)
 	/*
 	 * If sepostgresql = off, it is always disabled.
 	 */
-	if (sepgsql_mode == SEPGSQL_MODE_DISABLED)
+	if (sepostgresql_mode == SEPGSQL_MODE_DISABLED)
 		return false;
 
 	/*
@@ -443,7 +447,7 @@ sepgsqlIsEnabled(void)
 bool
 sepgsqlGetEnforce(void)
 {
-	if (sepgsql_mode == SEPGSQL_MODE_DEFAULT)
+	if (sepostgresql_mode == SEPGSQL_MODE_DEFAULT)
 	{
 		bool	rc;
 
@@ -453,7 +457,7 @@ sepgsqlGetEnforce(void)
 
 		return rc;
 	}
-	else if (sepgsql_mode == SEPGSQL_MODE_ENFORCING)
+	else if (sepostgresql_mode == SEPGSQL_MODE_ENFORCING)
 		return true;
 
 	return false;
@@ -468,10 +472,10 @@ sepgsqlGetEnforce(void)
 char *
 sepgsqlShowMode(void)
 {
-	if (!sepgsql_is_enabled())
+	if (!sepgsqlIsEnabled())
 		return "disabled";
 
-	if (!sepgsql_get_enforce())
+	if (!sepgsqlGetEnforce())
 		return "permissive";
 
 	return "enforcing";
@@ -558,17 +562,17 @@ sepgsqlSetClientLabel(char *new_label)
 			if (strcmp(new_page->scontext, new_label) == 0)
 			{
 				current_page = new_page;
-				return;
+				return old_label;
 			}
 			new_page = new_page->next;
 		} while (new_page != current_page);
 	}
 
 	/* Not found, create a new avc_page */
-	length = sizeof(avc_page) + strlen(scontext);
+	length = sizeof(avc_page) + strlen(new_label);
 	new_page = MemoryContextAllocZero(AvcMemCtx, length);
 
-	strcpy(new_page->scontext, scontext);
+	strcpy(new_page->scontext, new_label);
 	for (i=0; i < AVC_HASH_NUM_SLOTS; i++)
 		new_page->slot[i] = NIL;
 
@@ -602,40 +606,6 @@ sepgsqlGetServerLabel(void)
 }
 
 /*
- * sepgsqlInitialize
- *
- * It sets up the privilege (security context) of the client and initializes
- * a few internal stuff.
- */
-void
-sepgsqlInitialize(void)
-{
-	char   *context;
-
-	if (!sepgsqlIsEnabled())
-		return;
-
-	/*
-	 * SE-PgSQL does not prevent anything in single-user mode.
-	 */
-	if (!MyProcPort)
-		sepostgresql_mode = SEPGSQL_MODE_INTERNAL;
-
-	sepgsqlShmemInit();
-
-	AvcMemCtx = AllocSetContextCreate(TopMemoryContext,
-									  "SE-PgSQL userspace AVC",
-									  ALLOCSET_DEFAULT_MINSIZE,
-									  ALLOCSET_DEFAULT_INITSIZE,
-									  ALLOCSET_DEFAULT_MAXSIZE);
-
-	/*
-	 * Set client's security context
-	 */
-	sepgsqlSetClientLabel(sepgsqlGetClientLabel());
-}
-
-/*
  * sepgsqlAuditLog
  *
  * It generates a security audit record. In the default, it writes out
@@ -658,7 +628,7 @@ static void
 sepgsqlAuditLog(bool denied, char *scontext, char *tcontext,
 				  uint16 tclass, uint32 audited, const char *audit_name)
 {
-	static int		auditfd = -2;
+	//static int		auditfd = -2;
 	StringInfoData	buf;
 	const char	   *tclass_name;
 	const char	   *perm_name;
@@ -668,8 +638,8 @@ sepgsqlAuditLog(bool denied, char *scontext, char *tcontext,
 	 * translation of security contexts to human readable format,
 	 * if sepgsql_mcstrans is turned on.
 	 */
-	scontext = sepgsql_mcstrans_out(scontext);
-	tcontext = sepgsql_mcstrans_out(tcontext);
+	scontext = sepgsqlTransSecLabelOut(scontext);
+	tcontext = sepgsqlTransSecLabelOut(tcontext);
 
 	/* lookup name of the object class */
 	tclass_name = selinux_catalog[tclass].class_name;
@@ -752,7 +722,7 @@ computePermsInternal(char *scontext, char *tcontext,
 	if (security_compute_av_flags_raw(scontext, tcontext,
 									  tclass_ex, 0, &avd_ex) < 0)
 		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
+				(errcode(ERRCODE_INTERNAL_ERROR),
 				 errmsg("SELinux could not compute av_decision: "
 						"scontext=%s tcontext=%s tclass=%s",
 						scontext, tcontext, tclass_name)));
@@ -794,7 +764,7 @@ computePermsInternal(char *scontext, char *tcontext,
 }
 
 /*
- * sepgsql_compute_perms
+ * sepgsqlComputePerms
  *
  * It makes access control decision communicating with SELinux.
  * If SELinux does not allow required permissions on a pair of the security
@@ -900,7 +870,7 @@ sepgsqlComputeCreate(char *scontext, char *tcontext, uint16 tclass)
 	if (security_compute_create_raw(scontext, tcontext,
 									tclass_ex, &ncontext))
 		ereport(ERROR,
-				(errcode(ERRCODE_SELINUX_ERROR),
+				(errcode(ERRCODE_INTERNAL_ERROR),
 				 errmsg("SELinux could not compute a new context: "
 						"scontext=%s tcontext=%s tclass=%s",
 						scontext, tcontext, tclass_name)));
@@ -1041,7 +1011,7 @@ sepgsqlAvcMakeEntry(avc_page *page, sepgsql_sid_t tsid, uint16 tclass, Oid nreli
 
 	cache->hash_key = hash_key;
 
-	cache->tclss = tclass;
+	cache->tclass = tclass;
 
 	cache->hot_cache = true;
 	cache->tcontext = tcontext;
@@ -1091,7 +1061,7 @@ sepgsqlAvcLookup(avc_page *page, sepgsql_sid_t tsid, uint16 tclass, Oid nrelid)
 	uint32		hash_key, index;
 	ListCell   *l;
 
-	hash_key = avc_hash_key(trelid, tsecid, tclass, nrelid);
+	hash_key = avc_hash_key(tsid.relid, tsid.secid, tclass, nrelid);
 	index = hash_key % AVC_HASH_NUM_SLOTS;
 
 	foreach (l, page->slot[index])
@@ -1135,7 +1105,7 @@ sepgsqlClientHasPerms(sepgsql_sid_t tsid,
 		: (required & cache->auditallow);
 	if (audited)
 	{
-		sepgsqlAvcAudit(!!denied,
+		sepgsqlAuditLog(!!denied,
 						current_page->scontext,
 						securityRawSecLabelOut(tsid.relid, tsid.secid),
 						cache->tclass, audited, audit_name);
@@ -1188,4 +1158,148 @@ sepgsqlClientCreateLabel(sepgsql_sid_t tsid, uint16 tclass)
     } while (!sepgsqlAvcCheckValid());
 
     return cache->ncontext;
+}
+
+/*
+ * SELinux state monitoring process
+ *
+ * This process is forked from postmaster to monitor the state of SELinux.
+ * SELinux can make a notifier message to userspace object manager via
+ * netlink socket. When it receives the message, it updates selinux_state
+ * structure assigned on shared memory region to make any instance reset
+ * its AVC soon.
+ */
+static int
+sepgsql_cb_log(int type, const char *fmt, ...)
+{
+	char *c, buffer[1024];
+	va_list ap;
+
+	va_start(ap, fmt);
+	vsnprintf(buffer, sizeof(buffer), fmt, ap);
+	va_end(ap);
+
+	c = strrchr(buffer, '\n');
+	if (c)
+		*c = '\0';
+
+	ereport(LOG,(errmsg("%s", buffer)));
+
+	return 0;
+}
+
+static int
+sepgsql_cb_setenforce(int enforce)
+{
+	/* switch enforcing/permissive */
+	LWLockAcquire(SepgsqlAvcLock, LW_EXCLUSIVE);
+	selinux_state->enforcing = (enforce ? true : false);
+	selinux_state->version++;
+	LWLockRelease(SepgsqlAvcLock);
+
+	return 0;
+}
+
+static int
+sepgsql_cb_policyload(int seqno)
+{
+	/* invalidate local avc */
+	LWLockAcquire(SepgsqlAvcLock, LW_EXCLUSIVE);
+	selinux_state->version++;
+	LWLockRelease(SepgsqlAvcLock);
+
+	return 0;
+}
+
+bool
+sepgsqlReceiverStart(void)
+{
+	return sepgsqlIsEnabled();
+}
+
+void
+sepgsqlReceiverMain(void)
+{
+	union selinux_callback cb;
+
+	Assert(sepgsqlIsEnabled());
+
+#ifdef HAVE_SETSID
+	if (setsid() < 0)
+		elog(FATAL, "setsid() failed: %m");
+#endif
+
+	/*
+	 * setup the signal handler
+	 */
+	pqinitmask();
+	pqsignal(SIGHUP, SIG_IGN);
+	pqsignal(SIGINT, SIG_IGN);
+	pqsignal(SIGTERM, exit);
+	pqsignal(SIGQUIT, exit);
+	pqsignal(SIGUSR1, SIG_IGN);
+	pqsignal(SIGUSR2, SIG_IGN);
+	pqsignal(SIGCHLD, SIG_DFL);
+	PG_SETMASK(&UnBlockSig);
+
+	/*
+	 * map shared memory segment
+	 */
+	sepgsqlShmemInit();
+
+	ereport(LOG, (errmsg("SELinux: netlink receiver (pid=%u)", getpid())));
+
+	/*
+	 * setup callback functions from avc_netlink_loop()
+	 */
+	cb.func_log = sepgsql_cb_log;
+	selinux_set_callback(SELINUX_CB_LOG, cb);
+	cb.func_setenforce = sepgsql_cb_setenforce;
+	selinux_set_callback(SELINUX_CB_SETENFORCE, cb);
+	cb.func_policyload = sepgsql_cb_policyload;
+	selinux_set_callback(SELINUX_CB_POLICYLOAD, cb);
+
+	/*
+	 * open netlink socket and wait for messages
+	 */
+	avc_netlink_open(1);
+
+	avc_netlink_loop();
+
+	exit(0);
+}
+
+/*
+ * sepgsqlInitialize
+ *
+ * It sets up the privilege (security context) of the client and initializes
+ * a few internal stuff.
+ */
+void
+sepgsqlInitialize(void)
+{
+	if (!sepgsqlIsEnabled())
+		return;
+
+	/*
+	 * SE-PgSQL does not prevent anything in single-user mode.
+	 */
+	if (!MyProcPort)
+		sepostgresql_mode = SEPGSQL_MODE_INTERNAL;
+
+	sepgsqlShmemInit();
+
+	AvcMemCtx = AllocSetContextCreate(TopMemoryContext,
+									  "SE-PgSQL userspace AVC",
+									  ALLOCSET_DEFAULT_MINSIZE,
+									  ALLOCSET_DEFAULT_INITSIZE,
+									  ALLOCSET_DEFAULT_MAXSIZE);
+
+	RegisterXactCallback(sepgsqlAvcResetOnAbort, NULL);
+	RegisterSubXactCallback(sepgsqlAvcResetOnSubAbort, NULL);
+
+	/*
+	 * Set client's security context
+	 */
+	sepgsqlSetClientLabel(sepgsqlGetClientLabel());
 }
