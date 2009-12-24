@@ -403,7 +403,9 @@ static TypeName *TableFuncTypeName(List *columns);
 %type <str>		OptTableSpace OptConsTableSpace OptTableSpaceOwner
 %type <list>	opt_check_option
 
-%type <defelt>	OptSecCxt SecCxtItem
+%type <node>	OptSecLabel SecLabelItem SecLabelToItem
+%type <list>	OptTableSecLabel TableSecLabelList
+%type <defelt>	TableSecLabelItem
 
 %type <target>	xml_attribute_el
 %type <list>	xml_attribute_list xml_attributes
@@ -440,7 +442,7 @@ static TypeName *TableFuncTypeName(List *columns);
 	CHARACTER CHARACTERISTICS CHECK CHECKPOINT CLASS CLOSE
 	CLUSTER COALESCE COLLATE COLUMN COMMENT COMMIT
 	COMMITTED CONCURRENTLY CONFIGURATION CONNECTION CONSTRAINT CONSTRAINTS
-	CONTENT_P CONTINUE_P CONVERSION_P COPY COST CREATE CREATEDB
+	CONTENT_P CONTEXT_P CONTINUE_P CONVERSION_P COPY COST CREATE CREATEDB
 	CREATEROLE CREATEUSER CROSS CSV CURRENT_P
 	CURRENT_CATALOG CURRENT_DATE CURRENT_ROLE CURRENT_SCHEMA
 	CURRENT_TIME CURRENT_TIMESTAMP CURRENT_USER CURSOR CYCLE
@@ -1046,7 +1048,7 @@ DropGroupStmt:
  *****************************************************************************/
 
 CreateSchemaStmt:
-			CREATE SCHEMA OptSchemaName AUTHORIZATION RoleId OptSecCxt OptSchemaEltList
+			CREATE SCHEMA OptSchemaName AUTHORIZATION RoleId OptSecLabel OptSchemaEltList
 				{
 					CreateSchemaStmt *n = makeNode(CreateSchemaStmt);
 					/* One can omit the schema name or the authorization id. */
@@ -1055,17 +1057,17 @@ CreateSchemaStmt:
 					else
 						n->schemaname = $5;
 					n->authid = $5;
-					n->secLabel = (Node *)$6;
+					n->secLabel = $6;
 					n->schemaElts = $7;
 					$$ = (Node *)n;
 				}
-			| CREATE SCHEMA ColId OptSecCxt OptSchemaEltList
+			| CREATE SCHEMA ColId OptSecLabel OptSchemaEltList
 				{
 					CreateSchemaStmt *n = makeNode(CreateSchemaStmt);
 					/* ...but not both */
 					n->schemaname = $3;
 					n->authid = NULL;
-					n->secLabel = (Node *)$4;
+					n->secLabel = $4;
 					n->schemaElts = $5;
 					$$ = (Node *)n;
 				}
@@ -2043,7 +2045,7 @@ opt_using:
  *****************************************************************************/
 
 CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
-			OptInherit OptWith OnCommitOption OptTableSpace OptSecCxt
+			OptInherit OptWith OnCommitOption OptTableSpace OptTableSecLabel
 				{
 					CreateStmt *n = makeNode(CreateStmt);
 					$4->istemp = $2;
@@ -2054,11 +2056,11 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->options = $9;
 					n->oncommit = $10;
 					n->tablespacename = $11;
-					n->secLabel = (Node *) $12;
+					n->secLabel = $12;
 					$$ = (Node *)n;
 				}
 		| CREATE OptTemp TABLE qualified_name OF qualified_name
-			'(' OptTableElementList ')' OptWith OnCommitOption OptTableSpace OptSecCxt
+			'(' OptTableElementList ')' OptWith OnCommitOption OptTableSpace OptTableSecLabel
 				{
 					/* SQL99 CREATE TABLE OF <UDT> (cols) seems to be satisfied
 					 * by our inheritance capabilities. Let's try it...
@@ -2072,7 +2074,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->options = $10;
 					n->oncommit = $11;
 					n->tablespacename = $12;
-					n->secLabel = (Node *) $13;
+					n->secLabel = $13;
 					$$ = (Node *)n;
 				}
 		;
@@ -2115,14 +2117,14 @@ TableElement:
 			| TableConstraint					{ $$ = $1; }
 		;
 
-columnDef:	ColId Typename ColQualList OptSecCxt
+columnDef:	ColId Typename ColQualList
 				{
 					ColumnDef *n = makeNode(ColumnDef);
 					n->colname = $1;
 					n->typename = $2;
 					n->constraints = $3;
 					n->is_local = true;
-					n->secLabel = (Node *) $4;
+					n->secLabel = NULL;
 					$$ = (Node *)n;
 				}
 		;
@@ -2594,13 +2596,13 @@ opt_with_data:
  *****************************************************************************/
 
 CreateSeqStmt:
-			CREATE OptTemp SEQUENCE qualified_name OptSeqOptList OptSecCxt
+			CREATE OptTemp SEQUENCE qualified_name OptSeqOptList OptSecLabel
 				{
 					CreateSeqStmt *n = makeNode(CreateSeqStmt);
 					$4->istemp = $2;
 					n->sequence = $4;
 					n->options = $5;
-					n->secLabel = (Node *)$6;
+					n->secLabel = $6;
 					$$ = (Node *)n;
 				}
 		;
@@ -4903,9 +4905,9 @@ createfunc_opt_item:
 				{
 					$$ = makeDefElem("window", (Node *)makeInteger(TRUE));
 				}
-			| SecCxtItem
+			| SecLabelItem
 				{
-					$$ = $1;
+					$$ = makeDefElem("security_context", $1);
 				}
 			| common_func_opt_item
 				{
@@ -5623,74 +5625,99 @@ AlterOwnerStmt: ALTER AGGREGATE func_name aggr_args OWNER TO RoleId
 
 /*****************************************************************************
  *
- * ALTER THING name SECURITY_CONTEXT [=] <newlabel>
+ * ALTER THING name SECURITY CONTEXT TO <newlabel>
  *
  *****************************************************************************/
 
-AlterSecLabelStmt:	ALTER DATABASE database_name SecCxtItem
+AlterSecLabelStmt:	ALTER DATABASE database_name SecLabelToItem
 				{
 					AlterSecLabelStmt *n = makeNode(AlterSecLabelStmt);
 					n->objectType = OBJECT_DATABASE;
 					n->object = list_make1(makeString($3));
-					n->secLabel = (Node *)$4;
+					n->secLabel = $4;
 					$$ = (Node *) n;
 				}
-			| ALTER SCHEMA name SecCxtItem
+			| ALTER SCHEMA name SecLabelToItem
 				{
 					AlterSecLabelStmt *n = makeNode(AlterSecLabelStmt);
 					n->objectType = OBJECT_SCHEMA;
 					n->object = list_make1(makeString($3));
-					n->secLabel = (Node *)$4;
+					n->secLabel = $4;
 					$$ = (Node *) n;
 				}
-			| ALTER TABLE relation_expr SecCxtItem
+			| ALTER TABLE relation_expr SecLabelToItem
 				{
 					AlterSecLabelStmt *n = makeNode(AlterSecLabelStmt);
 					n->objectType = OBJECT_TABLE;
 					n->relation = $3;
-					n->secLabel = (Node *)$4;
+					n->secLabel = $4;
 					$$ = (Node *) n;
 				}
-			| ALTER TABLE relation_expr ALTER opt_column ColId SecCxtItem
+			| ALTER TABLE relation_expr ALTER opt_column ColId SecLabelToItem
 				{
 					AlterSecLabelStmt *n = makeNode(AlterSecLabelStmt);
 					n->objectType = OBJECT_COLUMN;
 					n->relation = $3;
 					n->subname = $6;
-					n->secLabel = (Node *)$7;
+					n->secLabel = $7;
 					$$ = (Node *) n;
 				}
-			| ALTER SEQUENCE relation_expr SecCxtItem
+			| ALTER SEQUENCE relation_expr SecLabelToItem
 				{
 					AlterSecLabelStmt *n = makeNode(AlterSecLabelStmt);
 					n->objectType = OBJECT_SEQUENCE;
 					n->relation = $3;
-					n->secLabel = (Node *)$4;
+					n->secLabel = $4;
 					$$ = (Node *) n;
 				}
-			| ALTER FUNCTION function_with_argtypes SecCxtItem
+			| ALTER FUNCTION function_with_argtypes SecLabelToItem
 				{
 					AlterSecLabelStmt *n = makeNode(AlterSecLabelStmt);
 					n->objectType = OBJECT_FUNCTION;
 					n->object = $3->funcname;
 					n->objarg = $3->funcargs;
-					n->secLabel = (Node *)$4;
+					n->secLabel = $4;
+					$$ = (Node *) n;
+				}
+			| ALTER LARGE_P OBJECT_P Iconst SecLabelToItem
+				{
+					AlterSecLabelStmt *n = makeNode(AlterSecLabelStmt);
+					n->objectType = OBJECT_LARGEOBJECT;
+					n->object = list_make1(makeInteger($4));
+					n->secLabel = $5;
 					$$ = (Node *) n;
 				}
 		;
 
-OptSecCxt: 	SecCxtItem				{ $$ = $1; }
-			| /* EMPTY */			{ $$ = NULL; }
+OptTableSecLabel:	SECURITY CONTEXT_P '(' TableSecLabelList ')'	{ $$ = $4; }
+			| /* EMPTY */											{ $$ = NIL; }
 		;
 
-SecCxtItem:	IDENT opt_equal Sconst
+TableSecLabelList:	TableSecLabelItem					{ $$ = list_make1($1); }
+			| TableSecLabelList ',' TableSecLabelItem	{ $$ = lappend($1, $3); }
+		;
+
+TableSecLabelItem:	Sconst
+						{ $$ = makeDefElem(NULL, (Node *)makeString($1)); }
+			| ColId '=' Sconst
+						{ $$ = makeDefElem($1, (Node *)makeString($3)); }
+		;
+
+OptSecLabel:	SecLabelItem		{ $$ = $1; }
+			|	/* EMPTY */			{ $$ = NULL; }
+		;
+
+SecLabelItem:	SECURITY CONTEXT_P '(' Sconst ')'
 				{
-					if (strcmp("security_context", $1) != 0)
-						yyerror("syntax error");
-					$$ = makeDefElem($1, (Node *) makeString($3));
+					$$ = (Node *) makeString($4);
 				}
 		;
 
+SecLabelToItem:	SECURITY CONTEXT_P TO Sconst
+				{
+					$$ = (Node *) makeString($4);
+				}
+		;
 
 /*****************************************************************************
  *
@@ -6133,9 +6160,9 @@ createdb_opt_item:
 				{
 					$$ = makeDefElem("owner", NULL);
 				}
-			| SecCxtItem
+			| SecLabelItem
 				{
-					$$ = $1;
+					$$ = makeDefElem("security_context", $1);
 				}
 		;
 
@@ -10263,6 +10290,7 @@ unreserved_keyword:
 			| CONNECTION
 			| CONSTRAINTS
 			| CONTENT_P
+			| CONTEXT_P
 			| CONTINUE_P
 			| CONVERSION_P
 			| COPY

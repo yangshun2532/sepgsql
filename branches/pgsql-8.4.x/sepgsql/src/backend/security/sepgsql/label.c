@@ -405,12 +405,12 @@ void
 sepgsqlPostBootstrapingMode(void)
 {
 	Form_pg_class	classForm;
-	Relation	rel;
-	ScanKeyData	skey;
-	SysScanDesc	scan;
-	HeapTuple	tuple;
-	char	   *scontext;
-	char	   *seclabels[8];
+	Relation		rel;
+	ScanKeyData		skey;
+	HeapScanDesc	scan;
+	HeapTuple		tuple;
+	char		   *scontext;
+	char		   *seclabels[8];
 
 	/*
 	 * sepgsqlIsEnabled() is not available because it always returns
