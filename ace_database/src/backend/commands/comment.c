@@ -49,6 +49,7 @@
 #include "parser/parse_func.h"
 #include "parser/parse_oper.h"
 #include "parser/parse_type.h"
+#include "security/ace.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -701,9 +702,7 @@ CommentDatabase(List *qualname, char *comment)
 	}
 
 	/* Check object security */
-	if (!pg_database_ownercheck(oid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
-					   database);
+	check_database_comment(oid);
 
 	/* Call CreateSharedComments() to create/drop the comments */
 	CreateSharedComments(oid, DatabaseRelationId, comment);

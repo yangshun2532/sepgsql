@@ -43,6 +43,7 @@
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "postmaster/bgwriter.h"
+#include "security/ace.h"
 #include "storage/bufmgr.h"
 #include "storage/fd.h"
 #include "storage/lmgr.h"
@@ -81,7 +82,6 @@ static bool get_db_info(const char *name, LOCKMODE lockmode,
 			int *encodingP, bool *dbIsTemplateP, bool *dbAllowConnP,
 			Oid *dbLastSysOidP, TransactionId *dbFrozenXidP,
 			Oid *dbTablespace, char **dbCollate, char **dbCtype);
-static bool have_createdb_privilege(void);
 static void remove_dbtablespaces(Oid db_id);
 static bool check_db_file_conflict(Oid db_id);
 static int	errdetail_busy_db(int notherbackends, int npreparedxacts);
@@ -105,7 +105,7 @@ createdb(const CreatedbStmt *stmt)
 	Oid			src_lastsysoid;
 	TransactionId src_frozenxid;
 	Oid			src_deftablespace;
-	volatile Oid dst_deftablespace;
+	volatile Oid dst_deftablespace = InvalidOid;
 	Relation	pg_database_rel;
 	HeapTuple	tuple;
 	Datum		new_record[Natts_pg_database];
@@ -252,26 +252,24 @@ createdb(const CreatedbStmt *stmt)
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("invalid connection limit: %d", dbconnlimit)));
 	}
+	if (dtablespacename && dtablespacename->arg)
+	{
+		char	   *tablespacename;
+
+		tablespacename = strVal(dtablespacename->arg);
+		dst_deftablespace = get_tablespace_oid(tablespacename);
+		if (!OidIsValid(dst_deftablespace))
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_OBJECT),
+					 errmsg("tablespace \"%s\" does not exist",
+							tablespacename)));
+	}
 
 	/* obtain OID of proposed owner */
 	if (dbowner)
 		datdba = get_roleid_checked(dbowner);
 	else
 		datdba = GetUserId();
-
-	/*
-	 * To create a database, must have createdb privilege and must be able to
-	 * become the target role (this does not imply that the target role itself
-	 * must have createdb privilege).  The latter provision guards against
-	 * "giveaway" attacks.	Note that a superuser will always have both of
-	 * these privileges a fortiori.
-	 */
-	if (!have_createdb_privilege())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied to create database")));
-
-	check_is_member_of_role(GetUserId(), datdba);
 
 	/*
 	 * Lookup database (template) to be cloned, and obtain share lock on it.
@@ -295,18 +293,8 @@ createdb(const CreatedbStmt *stmt)
 				 errmsg("template database \"%s\" does not exist",
 						dbtemplate)));
 
-	/*
-	 * Permission check: to copy a DB that's not marked datistemplate, you
-	 * must be superuser or the owner thereof.
-	 */
-	if (!src_istemplate)
-	{
-		if (!pg_database_ownercheck(src_dboid, GetUserId()))
-			ereport(ERROR,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("permission denied to copy database \"%s\"",
-							dbtemplate)));
-	}
+	/* Permission check to create a new database */
+	check_database_create(dbname, src_dboid, datdba, dst_deftablespace);
 
 	/* If encoding or locales are defaulted, use source's setting */
 	if (encoding < 0)
@@ -423,25 +411,8 @@ createdb(const CreatedbStmt *stmt)
 	}
 
 	/* Resolve default tablespace for new database */
-	if (dtablespacename && dtablespacename->arg)
+	if (OidIsValid(dst_deftablespace))
 	{
-		char	   *tablespacename;
-		AclResult	aclresult;
-
-		tablespacename = strVal(dtablespacename->arg);
-		dst_deftablespace = get_tablespace_oid(tablespacename);
-		if (!OidIsValid(dst_deftablespace))
-			ereport(ERROR,
-					(errcode(ERRCODE_UNDEFINED_OBJECT),
-					 errmsg("tablespace \"%s\" does not exist",
-							tablespacename)));
-		/* check permissions */
-		aclresult = pg_tablespace_aclcheck(dst_deftablespace, GetUserId(),
-										   ACL_CREATE);
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, ACL_KIND_TABLESPACE,
-						   tablespacename);
-
 		/* pg_global must never be the default tablespace */
 		if (dst_deftablespace == GLOBALTABLESPACE_OID)
 			ereport(ERROR,
@@ -473,7 +444,7 @@ createdb(const CreatedbStmt *stmt)
 				ereport(ERROR,
 						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 						 errmsg("cannot assign new default tablespace \"%s\"",
-								tablespacename),
+								get_tablespace_name(dst_deftablespace)),
 						 errdetail("There is a conflict because database \"%s\" already has some tables in this tablespace.",
 								   dbtemplate)));
 			pfree(srcpath);
@@ -773,9 +744,7 @@ dropdb(const char *dbname, bool missing_ok)
 	/*
 	 * Permission checks
 	 */
-	if (!pg_database_ownercheck(db_id, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
-					   dbname);
+	check_database_drop(db_id, false);
 
 	/*
 	 * Disallow dropping a DB that is marked istemplate.  This is just to
@@ -906,16 +875,8 @@ RenameDatabase(const char *oldname, const char *newname)
 				(errcode(ERRCODE_UNDEFINED_DATABASE),
 				 errmsg("database \"%s\" does not exist", oldname)));
 
-	/* must be owner */
-	if (!pg_database_ownercheck(db_id, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
-					   oldname);
-
-	/* must have createdb rights */
-	if (!have_createdb_privilege())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied to rename database")));
+	/* Permission check to rename the database */
+	check_database_alter_rename(db_id, newname);
 
 	/*
 	 * Make sure the new name doesn't exist.  See notes for same error in
@@ -986,7 +947,6 @@ movedb(const char *dbname, const char *tblspcname)
 	bool		new_record_repl[Natts_pg_database];
 	ScanKeyData scankey;
 	SysScanDesc sysscan;
-	AclResult	aclresult;
 	char	   *src_dbpath;
 	char	   *dst_dbpath;
 	DIR		   *dstdir;
@@ -1017,13 +977,6 @@ movedb(const char *dbname, const char *tblspcname)
 							   AccessExclusiveLock);
 
 	/*
-	 * Permission checks
-	 */
-	if (!pg_database_ownercheck(db_id, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
-					   dbname);
-
-	/*
 	 * Obviously can't move the tables of my own database
 	 */
 	if (db_id == MyDatabaseId)
@@ -1043,11 +996,7 @@ movedb(const char *dbname, const char *tblspcname)
 	/*
 	 * Permission checks
 	 */
-	aclresult = pg_tablespace_aclcheck(dst_tblspcoid, GetUserId(),
-									   ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_TABLESPACE,
-					   tblspcname);
+	check_database_alter_tablespace(db_id, dst_tblspcoid);
 
 	/*
 	 * pg_global must never be the default tablespace
@@ -1369,9 +1318,10 @@ AlterDatabase(AlterDatabaseStmt *stmt, bool isTopLevel)
 				(errcode(ERRCODE_UNDEFINED_DATABASE),
 				 errmsg("database \"%s\" does not exist", stmt->dbname)));
 
-	if (!pg_database_ownercheck(HeapTupleGetOid(tuple), GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
-					   stmt->dbname);
+	/*
+	 * Permission checks
+	 */
+	check_database_alter(HeapTupleGetOid(tuple));
 
 	/*
 	 * Build an updated tuple, perusing the information just obtained
@@ -1419,9 +1369,8 @@ AlterDatabaseSet(AlterDatabaseSetStmt *stmt)
 	 */
 	shdepLockAndCheckObject(DatabaseRelationId, datid);
 
-	if (!pg_database_ownercheck(datid, GetUserId()))
-  		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
-  					   stmt->dbname);
+	/* Permission checks */
+	check_database_alter(datid);
 
 	AlterSetting(datid, InvalidOid, stmt->setstmt);
   
@@ -1476,27 +1425,8 @@ AlterDatabaseOwner(const char *dbname, Oid newOwnerId)
 		bool		isNull;
 		HeapTuple	newtuple;
 
-		/* Otherwise, must be owner of the existing object */
-		if (!pg_database_ownercheck(HeapTupleGetOid(tuple), GetUserId()))
-			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
-						   dbname);
-
-		/* Must be able to become new owner */
-		check_is_member_of_role(GetUserId(), newOwnerId);
-
-		/*
-		 * must have createdb rights
-		 *
-		 * NOTE: This is different from other alter-owner checks in that the
-		 * current user is checked for createdb privileges instead of the
-		 * destination owner.  This is consistent with the CREATE case for
-		 * databases.  Because superusers will always have this right, we need
-		 * no special case for them.
-		 */
-		if (!have_createdb_privilege())
-			ereport(ERROR,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				   errmsg("permission denied to change owner of database")));
+		/* Permission checks */
+		check_database_alter_owner(HeapTupleGetOid(tuple), newOwnerId);
 
 		memset(repl_null, false, sizeof(repl_null));
 		memset(repl_repl, false, sizeof(repl_repl));
@@ -1663,28 +1593,6 @@ get_db_info(const char *name, LOCKMODE lockmode,
 
 	heap_close(relation, AccessShareLock);
 
-	return result;
-}
-
-/* Check if current user has createdb privileges */
-static bool
-have_createdb_privilege(void)
-{
-	bool		result = false;
-	HeapTuple	utup;
-
-	/* Superusers can always do everything */
-	if (superuser())
-		return true;
-
-	utup = SearchSysCache(AUTHOID,
-						  ObjectIdGetDatum(GetUserId()),
-						  0, 0, 0);
-	if (HeapTupleIsValid(utup))
-	{
-		result = ((Form_pg_authid) GETSTRUCT(utup))->rolcreatedb;
-		ReleaseSysCache(utup);
-	}
 	return result;
 }
 
