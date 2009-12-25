@@ -2711,6 +2711,11 @@ ExecGrant_Namespace(InternalGrant *istmt)
 									 0, NULL);
 
 		/*
+		 * Permission checks by enhanced security providers
+		 */
+		check_schema_grant(nspid);
+
+		/*
 		 * Generate new ACL.
 		 *
 		 * We need the members of both old and new ACLs so we can correct the

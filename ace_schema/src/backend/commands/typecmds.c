@@ -2716,6 +2716,7 @@ AlterTypeNamespace(List *names, const char *newschema)
 	Oid			typeOid;
 	Oid			nspOid;
 	Oid			elemOid;
+	AclResult	aclresult;
 
 	/* Make a TypeName so we can use standard type lookup machinery */
 	typename = makeTypeNameFromNameList(names);
@@ -2726,8 +2727,13 @@ AlterTypeNamespace(List *names, const char *newschema)
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_TYPE,
 					   format_type_be(typeOid));
 
-	/* get schema OID and check its permissions */
+	/* get schema OID */
 	nspOid = LookupCreationNamespace(newschema);
+
+	/* check permissions on schema */
+	aclresult = pg_namespace_aclcheck(nspOid, GetUserId(), ACL_CREATE);
+	if (aclresult != ACLCHECK_OK)
+		aclcheck_error(aclresult, ACL_KIND_NAMESPACE, newschema);
 
 	/* don't allow direct alteration of array types */
 	elemOid = get_element_type(typeOid);

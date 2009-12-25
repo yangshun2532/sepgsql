@@ -1874,6 +1874,7 @@ AlterFunctionNamespace(List *name, List *argtypes, bool isagg,
 	HeapTuple	tup;
 	Relation	procRel;
 	Form_pg_proc proc;
+	AclResult	aclresult;
 
 	procRel = heap_open(ProcedureRelationId, RowExclusiveLock);
 
@@ -1899,6 +1900,11 @@ AlterFunctionNamespace(List *name, List *argtypes, bool isagg,
 
 	/* get schema OID and check its permissions */
 	nspOid = LookupCreationNamespace(newschema);
+
+	/* check permissions on schema */
+	aclresult = pg_namespace_aclcheck(nspOid, GetUserId(), ACL_CREATE);
+	if (aclresult != ACLCHECK_OK)
+		aclcheck_error(aclresult, ACL_KIND_NAMESPACE, newschema);
 
 	if (oldNspOid == nspOid)
 		ereport(ERROR,

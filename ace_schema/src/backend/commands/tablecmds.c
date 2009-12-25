@@ -7712,6 +7712,7 @@ AlterTableNamespace(RangeVar *relation, const char *newschema,
 	Oid			oldNspOid;
 	Oid			nspOid;
 	Relation	classRel;
+	AclResult	aclresult;
 
 	rel = relation_openrv(relation, AccessExclusiveLock);
 
@@ -7790,6 +7791,11 @@ AlterTableNamespace(RangeVar *relation, const char *newschema,
 
 	/* get schema OID and check its permissions */
 	nspOid = LookupCreationNamespace(newschema);
+
+	/* check permissions on schema */
+	aclresult = pg_namespace_aclcheck(nspOid, GetUserId(), ACL_CREATE);
+	if (aclresult != ACLCHECK_OK)
+		aclcheck_error(aclresult, ACL_KIND_NAMESPACE, newschema);
 
 	if (oldNspOid == nspOid)
 		ereport(ERROR,
