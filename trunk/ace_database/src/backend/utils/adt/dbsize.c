@@ -21,6 +21,7 @@
 #include "commands/dbcommands.h"
 #include "commands/tablespace.h"
 #include "miscadmin.h"
+#include "security/ace.h"
 #include "storage/fd.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
@@ -79,13 +80,9 @@ calculate_database_size(Oid dbOid)
 	struct dirent *direntry;
 	char		dirpath[MAXPGPATH];
 	char		pathname[MAXPGPATH];
-	AclResult	aclresult;
 
-	/* User must have connect privilege for target database */
-	aclresult = pg_database_aclcheck(dbOid, GetUserId(), ACL_CONNECT);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_DATABASE,
-					   get_database_name(dbOid));
+	/* Permission checks */
+	check_database_getattr(dbOid);
 
 	/* Shared storage in pg_global is not counted */
 

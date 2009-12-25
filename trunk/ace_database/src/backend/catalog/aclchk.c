@@ -46,6 +46,7 @@
 #include "foreign/foreign.h"
 #include "miscadmin.h"
 #include "parser/parse_func.h"
+#include "security/ace.h"
 #include "utils/acl.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
@@ -1974,6 +1975,11 @@ ExecGrant_Database(InternalGrant *istmt)
 									 datId, grantorId, ACL_KIND_DATABASE,
 									 NameStr(pg_database_tuple->datname),
 									 0, NULL);
+
+		/*
+		 * Permission checks by enhanced security providers
+		 */
+		check_database_grant(datId);
 
 		/*
 		 * Generate new ACL.
