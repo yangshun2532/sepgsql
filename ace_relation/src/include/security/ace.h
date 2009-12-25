@@ -9,6 +9,8 @@
 #ifndef SECURITY_ACE_H
 #define SECURITY_ACE_H
 
+#include "nodes/parsenodes.h"
+#include "storage/lock.h"
 #include "utils/acl.h"
 
 /*
@@ -61,5 +63,70 @@ extern bool
 check_schema_search(Oid nspOid, bool abort);
 extern void
 check_schema_comment(Oid nspOid);
+
+/*
+ * ace_relation.c - hooks related to relation
+ */
+extern bool
+check_relation_perms(Oid relOid, Oid roleId, AclMode requiredPerms,
+					 Bitmapset *selCols, Bitmapset *modCols, bool abort);
+extern void
+check_relation_create(const char *relName, char relkind, TupleDesc tupDesc,
+					  Oid relNsp, Oid relTblspc, List *colList, bool createAs);
+extern void
+check_relation_alter(Oid relOid);
+extern void
+check_relation_alter_rename(Oid relOid, const char *newName);
+extern void
+check_relation_alter_schema(Oid relOid, Oid newNsp);
+extern void
+check_relation_alter_tablespace(Oid relOid, Oid newTblspc);
+extern void
+check_relation_alter_owner(Oid relOid, Oid newOwner);
+extern void
+check_relation_drop(Oid relOid, bool cascade);
+extern void
+chech_relation_getattr(Oid relOid);
+extern void
+check_relation_grant(Oid relOid);
+extern void
+check_relation_comment(Oid relOid);
+extern void
+check_relation_inheritance(Oid parentOid, Oid childOid);
+extern void
+check_relation_cluster(Oid relOid, bool abort);
+extern void
+check_relation_truncate(Relation rel);
+extern void
+check_relation_reference(Relation rel, int16 *attnums, int natts);
+extern void
+check_relation_lock(Relation rel, LOCKMODE lockmode);
+extern bool
+check_relation_vacuum(Relation rel);
+// XXX - index permission shall be here
+extern void
+check_relation_reindex(Oid relOid);
+extern void
+check_view_replace(Oid relOid);
+extern void
+check_sequence_get_value(Oid seqOid);
+extern void
+check_sequence_next_value(Oid seqOid);
+extern void
+check_sequence_set_value(Oid seqOid);
+
+/*
+ * ace_attribute.c - hooks related to attribute
+ */
+extern void
+check_attribute_create(Oid relOid, ColumnDef *cdef);
+extern void
+check_attribute_alter(Oid relOid, const char *colName);
+extern void
+check_attribute_drop(Oid relOid, const char *colName, bool cascade);
+extern void
+check_attribute_grant(Oid relOid, AttrNumber attnum);
+extern void
+check_attribute_comment(Oid relOid, const char *colName);
 
 #endif	/* SECURITY_ACE_H */

@@ -71,7 +71,6 @@ static void ExecutePlan(EState *estate, PlanState *planstate,
 			ScanDirection direction,
 			DestReceiver *dest);
 static void ExecCheckRTPerms(List *rangeTable);
-static void ExecCheckRTEPerms(RangeTblEntry *rte);
 static void ExecCheckXactReadOnly(PlannedStmt *plannedstmt);
 static void EvalPlanQualStart(EPQState *epqstate, EState *parentestate,
 							  Plan *planTree);
@@ -412,156 +411,38 @@ ExecCheckRTPerms(List *rangeTable)
 
 	foreach(l, rangeTable)
 	{
-		ExecCheckRTEPerms((RangeTblEntry *) lfirst(l));
-	}
-}
+		RangeTblEntry  *rte = (RangeTblEntry *)lfirst(l);
+		Oid		userId;
 
-/*
- * ExecCheckRTEPerms
- *		Check access permissions for a single RTE.
- */
-static void
-ExecCheckRTEPerms(RangeTblEntry *rte)
-{
-	AclMode		requiredPerms;
-	AclMode		relPerms;
-	AclMode		remainingPerms;
-	Oid			relOid;
-	Oid			userid;
-	Bitmapset  *tmpset;
-	int			col;
-
-	/*
-	 * Only plain-relation RTEs need to be checked here.  Function RTEs are
-	 * checked by init_fcache when the function is prepared for execution.
-	 * Join, subquery, and special RTEs need no checks.
-	 */
-	if (rte->rtekind != RTE_RELATION)
-		return;
-
-	/*
-	 * No work if requiredPerms is empty.
-	 */
-	requiredPerms = rte->requiredPerms;
-	if (requiredPerms == 0)
-		return;
-
-	relOid = rte->relid;
-
-	/*
-	 * userid to check as: current user unless we have a setuid indication.
-	 *
-	 * Note: GetUserId() is presently fast enough that there's no harm in
-	 * calling it separately for each RTE.	If that stops being true, we could
-	 * call it once in ExecCheckRTPerms and pass the userid down from there.
-	 * But for now, no need for the extra clutter.
-	 */
-	userid = rte->checkAsUser ? rte->checkAsUser : GetUserId();
-
-	/*
-	 * We must have *all* the requiredPerms bits, but some of the bits can be
-	 * satisfied from column-level rather than relation-level permissions.
-	 * First, remove any bits that are satisfied by relation permissions.
-	 */
-	relPerms = pg_class_aclmask(relOid, userid, requiredPerms, ACLMASK_ALL);
-	remainingPerms = requiredPerms & ~relPerms;
-	if (remainingPerms != 0)
-	{
 		/*
-		 * If we lack any permissions that exist only as relation permissions,
-		 * we can fail straight away.
+		 * Only plain-relation RTEs need to be checked here.  Function RTEs are
+		 * checked by init_fcache when the function is prepared for execution.
+		 * Join, subquery, and special RTEs need no checks.
 		 */
-		if (remainingPerms & ~(ACL_SELECT | ACL_INSERT | ACL_UPDATE))
-			aclcheck_error(ACLCHECK_NO_PRIV, ACL_KIND_CLASS,
-						   get_rel_name(relOid));
+		if (rte->rtekind != RTE_RELATION)
+			continue;
 
 		/*
-		 * Check to see if we have the needed privileges at column level.
+		 * No work if requiredPerms is empty.
+		 */
+		if (rte->requiredPerms == 0)
+			continue;
+
+		/*
+		 * userid to check as: current user unless we have a setuid indication.
 		 *
-		 * Note: failures just report a table-level error; it would be nicer
-		 * to report a column-level error if we have some but not all of the
-		 * column privileges.
+		 * Note: GetUserId() is presently fast enough that there's no harm in
+		 * calling it separately for each RTE.	If that stops being true, we could
+		 * call it once in ExecCheckRTPerms and pass the userid down from there.
+		 * But for now, no need for the extra clutter.
 		 */
-		if (remainingPerms & ACL_SELECT)
-		{
-			/*
-			 * When the query doesn't explicitly reference any columns (for
-			 * example, SELECT COUNT(*) FROM table), allow the query if we
-			 * have SELECT on any column of the rel, as per SQL spec.
-			 */
-			if (bms_is_empty(rte->selectedCols))
-			{
-				if (pg_attribute_aclcheck_all(relOid, userid, ACL_SELECT,
-											  ACLMASK_ANY) != ACLCHECK_OK)
-					aclcheck_error(ACLCHECK_NO_PRIV, ACL_KIND_CLASS,
-								   get_rel_name(relOid));
-			}
-
-			tmpset = bms_copy(rte->selectedCols);
-			while ((col = bms_first_member(tmpset)) >= 0)
-			{
-				/* remove the column number offset */
-				col += FirstLowInvalidHeapAttributeNumber;
-				if (col == InvalidAttrNumber)
-				{
-					/* Whole-row reference, must have priv on all cols */
-					if (pg_attribute_aclcheck_all(relOid, userid, ACL_SELECT,
-												  ACLMASK_ALL) != ACLCHECK_OK)
-						aclcheck_error(ACLCHECK_NO_PRIV, ACL_KIND_CLASS,
-									   get_rel_name(relOid));
-				}
-				else
-				{
-					if (pg_attribute_aclcheck(relOid, col, userid, ACL_SELECT)
-						!= ACLCHECK_OK)
-						aclcheck_error(ACLCHECK_NO_PRIV, ACL_KIND_CLASS,
-									   get_rel_name(relOid));
-				}
-			}
-			bms_free(tmpset);
-		}
+		userId = rte->checkAsUser ? rte->checkAsUser : GetUserId();
 
 		/*
-		 * Basically the same for the mod columns, with either INSERT or
-		 * UPDATE privilege as specified by remainingPerms.
+		 * Check permissions
 		 */
-		remainingPerms &= ~ACL_SELECT;
-		if (remainingPerms != 0)
-		{
-			/*
-			 * When the query doesn't explicitly change any columns, allow the
-			 * query if we have permission on any column of the rel.  This is
-			 * to handle SELECT FOR UPDATE as well as possible corner cases in
-			 * INSERT and UPDATE.
-			 */
-			if (bms_is_empty(rte->modifiedCols))
-			{
-				if (pg_attribute_aclcheck_all(relOid, userid, remainingPerms,
-											  ACLMASK_ANY) != ACLCHECK_OK)
-					aclcheck_error(ACLCHECK_NO_PRIV, ACL_KIND_CLASS,
-								   get_rel_name(relOid));
-			}
-
-			tmpset = bms_copy(rte->modifiedCols);
-			while ((col = bms_first_member(tmpset)) >= 0)
-			{
-				/* remove the column number offset */
-				col += FirstLowInvalidHeapAttributeNumber;
-				if (col == InvalidAttrNumber)
-				{
-					/* whole-row reference can't happen here */
-					elog(ERROR, "whole-row update is not implemented");
-				}
-				else
-				{
-					if (pg_attribute_aclcheck(relOid, col, userid, remainingPerms)
-						!= ACLCHECK_OK)
-						aclcheck_error(ACLCHECK_NO_PRIV, ACL_KIND_CLASS,
-									   get_rel_name(relOid));
-				}
-			}
-			bms_free(tmpset);
-		}
+		check_relation_perms(rte->relid, userId, rte->requiredPerms,
+							 rte->selectedCols, rte->modifiedCols, true);
 	}
 }
 
@@ -2067,7 +1948,6 @@ OpenIntoRel(QueryDesc *queryDesc)
 	Oid			namespaceId;
 	Oid			tablespaceId;
 	Datum		reloptions;
-	AclResult	aclresult;
 	Oid			intoRelationId;
 	TupleDesc	tupdesc;
 	DR_intorel *myState;
@@ -2089,26 +1969,10 @@ OpenIntoRel(QueryDesc *queryDesc)
 				 errmsg("ON COMMIT can only be used on temporary tables")));
 
 	/*
-	 * Security check: disallow creating temp tables from security-restricted
-	 * code.  This is needed because calling code might not expect untrusted
-	 * tables to appear in pg_temp at the front of its search path.
-	 */
-	if (into->rel->istemp && InSecurityRestrictedOperation())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("cannot create temporary table within security-restricted operation")));
-
-	/*
-	 * Find namespace to create in, check its permissions
+	 * Find namespace to create in
 	 */
 	intoName = into->rel->relname;
 	namespaceId = RangeVarGetCreationNamespace(into->rel);
-
-	aclresult = pg_namespace_aclcheck(namespaceId, GetUserId(),
-									  ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   get_namespace_name(namespaceId));
 
 	/*
 	 * Select tablespace to use.  If not specified, use default tablespace
@@ -2129,19 +1993,6 @@ OpenIntoRel(QueryDesc *queryDesc)
 		/* note InvalidOid is OK in this case */
 	}
 
-	/* Check permissions except when using the database's default space */
-	if (OidIsValid(tablespaceId) && tablespaceId != MyDatabaseTableSpace)
-	{
-		AclResult	aclresult;
-
-		aclresult = pg_tablespace_aclcheck(tablespaceId, GetUserId(),
-										   ACL_CREATE);
-
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, ACL_KIND_TABLESPACE,
-						   get_tablespace_name(tablespaceId));
-	}
-
 	/* Parse and validate any reloptions */
 	reloptions = transformRelOptions((Datum) 0,
 									 into->options,
@@ -2150,6 +2001,13 @@ OpenIntoRel(QueryDesc *queryDesc)
 									 true,
 									 false);
 	(void) heap_reloptions(RELKIND_RELATION, reloptions, true);
+
+	/*
+	 * Check permission to create a new relation
+	 */
+	check_relation_create(intoName, RELKIND_RELATION, queryDesc->tupDesc,
+						  namespaceId, tablespaceId, NIL,
+						  into->rel->istemp, true);
 
 	/* Copy the tupdesc because heap_create_with_catalog modifies it */
 	tupdesc = CreateTupleDescCopy(queryDesc->tupDesc);

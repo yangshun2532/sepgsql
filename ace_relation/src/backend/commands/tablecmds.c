@@ -379,32 +379,9 @@ DefineRelation(CreateStmt *stmt, char relkind)
 				 errmsg("ON COMMIT can only be used on temporary tables")));
 
 	/*
-	 * Security check: disallow creating temp tables from security-restricted
-	 * code.  This is needed because calling code might not expect untrusted
-	 * tables to appear in pg_temp at the front of its search path.
-	 */
-	if (stmt->relation->istemp && InSecurityRestrictedOperation())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("cannot create temporary table within security-restricted operation")));
-
-	/*
 	 * Look up the namespace in which we are supposed to create the relation.
-	 * Check we have permission to create there. Skip check if bootstrapping,
-	 * since permissions machinery may not be working yet.
 	 */
 	namespaceId = RangeVarGetCreationNamespace(stmt->relation);
-
-	if (!IsBootstrapProcessingMode())
-	{
-		AclResult	aclresult;
-
-		aclresult = pg_namespace_aclcheck(namespaceId, GetUserId(),
-										  ACL_CREATE);
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-						   get_namespace_name(namespaceId));
-	}
 
 	/*
 	 * Select tablespace to use.  If not specified, use default tablespace
@@ -423,18 +400,6 @@ DefineRelation(CreateStmt *stmt, char relkind)
 	{
 		tablespaceId = GetDefaultTablespace(stmt->relation->istemp);
 		/* note InvalidOid is OK in this case */
-	}
-
-	/* Check permissions except when using database's default */
-	if (OidIsValid(tablespaceId) && tablespaceId != MyDatabaseTableSpace)
-	{
-		AclResult	aclresult;
-
-		aclresult = pg_tablespace_aclcheck(tablespaceId, GetUserId(),
-										   ACL_CREATE);
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, ACL_KIND_TABLESPACE,
-						   get_tablespace_name(tablespaceId));
 	}
 
 	/*
@@ -462,6 +427,13 @@ DefineRelation(CreateStmt *stmt, char relkind)
 
 	localHasOids = interpretOidsOption(stmt->options);
 	descriptor->tdhasoid = (localHasOids || parentOidCount > 0);
+
+	/*
+	 * Check permission to create a new relation
+	 */
+	check_relation_create(relname, relkind, descriptor,
+						  namespaceId, tablespaceId, schema,
+						  stmt->relation->istemp, false);
 
 	/*
 	 * Find columns with default values and prepare for insertion of the
