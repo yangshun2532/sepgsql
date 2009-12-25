@@ -19,7 +19,7 @@
  * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- *	$PostgreSQL: pgsql/src/backend/parser/parse_utilcmd.c,v 2.33 2009/12/20 18:28:14 tgl Exp $
+ *	$PostgreSQL: pgsql/src/backend/parser/parse_utilcmd.c,v 2.35 2009/12/23 02:35:22 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -48,6 +48,7 @@
 #include "parser/parse_clause.h"
 #include "parser/parse_expr.h"
 #include "parser/parse_relation.h"
+#include "parser/parse_target.h"
 #include "parser/parse_type.h"
 #include "parser/parse_utilcmd.h"
 #include "parser/parser.h"
@@ -745,14 +746,12 @@ transformInhRelation(ParseState *pstate, CreateStmtContext *cxt,
 			/* Copy comment on index */
 			if (inhRelation->options & CREATE_TABLE_LIKE_COMMENTS)
 			{
-				Form_pg_attribute *attrs;
-				CommentStmt	   *stmt;
-				int				colno;
-
 				comment = GetComment(parent_index_oid, RelationRelationId, 0);
-				
+
 				if (comment != NULL)
 				{
+					CommentStmt	   *stmt;
+
 					/*
 					 * We have to assign the index a name now, so that we
 					 * can reference it in CommentStmt.
@@ -766,41 +765,6 @@ transformInhRelation(ParseState *pstate, CreateStmtContext *cxt,
 					stmt->objname =
 						list_make2(makeString(cxt->relation->schemaname),
 								   makeString(index_stmt->idxname));
-					stmt->objargs = NIL;
-					stmt->comment = comment;
-
-					cxt->alist = lappend(cxt->alist, stmt);
-				}
-
-				/* Copy comments on index's columns */
-				attrs = RelationGetDescr(parent_index)->attrs;
-				for (colno = 1;
-					 colno <= RelationGetNumberOfAttributes(parent_index);
-					 colno++)
-				{
-					char	   *attname;
-
-					comment = GetComment(parent_index_oid, RelationRelationId,
-										 colno);
-					if (comment == NULL)
-						continue;
-
-					/*
-					 * We have to assign the index a name now, so that we
-					 * can reference it in CommentStmt.
-					 */
-					if (index_stmt->idxname == NULL)
-						index_stmt->idxname = chooseIndexName(cxt->relation,
-															  index_stmt);
-
-					attname = NameStr(attrs[colno - 1]->attname);
-
-					stmt = makeNode(CommentStmt);
-					stmt->objtype = OBJECT_COLUMN;
-					stmt->objname =
-						list_make3(makeString(cxt->relation->schemaname),
-								   makeString(index_stmt->idxname),
-								   makeString(attname));
 					stmt->objargs = NIL;
 					stmt->comment = comment;
 
@@ -826,34 +790,24 @@ transformInhRelation(ParseState *pstate, CreateStmtContext *cxt,
 /*
  * chooseIndexName
  *
- * Set name for unnamed index. See also the same logic in DefineIndex.
+ * Compute name for an index.  This must match code in indexcmds.c.
+ *
+ * XXX this is inherently broken because the indexes aren't created
+ * immediately, so we fail to resolve conflicts when the same name is
+ * derived for multiple indexes.  However, that's a reasonably uncommon
+ * situation, so we'll live with it for now.
  */
 static char *
 chooseIndexName(const RangeVar *relation, IndexStmt *index_stmt)
 {
-	Oid	namespaceId;
-	
+	Oid			namespaceId;
+	List	   *colnames;
+
 	namespaceId = RangeVarGetCreationNamespace(relation);
-	if (index_stmt->primary)
-	{
-		/* no need for column list with pkey */
-		return ChooseRelationName(relation->relname, NULL, 
-								  "pkey", namespaceId);
-	}
-	else if (index_stmt->excludeOpNames != NIL)
-	{
-		IndexElem  *iparam = (IndexElem *) linitial(index_stmt->indexParams);
-
-		return ChooseRelationName(relation->relname, iparam->name,
-								  "exclusion", namespaceId);
-	}
-	else
-	{
-		IndexElem  *iparam = (IndexElem *) linitial(index_stmt->indexParams);
-
-		return ChooseRelationName(relation->relname, iparam->name,
-								  "key", namespaceId);
-	}
+	colnames = ChooseIndexColumnNames(index_stmt->indexParams);
+	return ChooseIndexName(relation->relname, namespaceId,
+						   colnames, index_stmt->excludeOpNames,
+						   index_stmt->primary, index_stmt->isconstraint);
 }
 
 /*
@@ -865,6 +819,7 @@ generateClonedIndexStmt(CreateStmtContext *cxt, Relation source_idx,
 						AttrNumber *attmap)
 {
 	Oid			source_relid = RelationGetRelid(source_idx);
+	Form_pg_attribute *attrs = RelationGetDescr(source_idx)->attrs;
 	HeapTuple	ht_idxrel;
 	HeapTuple	ht_idx;
 	Form_pg_class idxrelrec;
@@ -1059,6 +1014,9 @@ generateClonedIndexStmt(CreateStmtContext *cxt, Relation source_idx,
 
 			keycoltype = exprType(indexkey);
 		}
+
+		/* Copy the original index column name */
+		iparam->indexcolname = pstrdup(NameStr(attrs[keyno]->attname));
 
 		/* Add the operator class name, if non-default */
 		iparam->opclass = get_opclass(indclass->values[keyno], keycoltype);
@@ -1453,6 +1411,7 @@ transformIndexConstraint(Constraint *constraint, CreateStmtContext *cxt)
 		iparam = makeNode(IndexElem);
 		iparam->name = pstrdup(key);
 		iparam->expr = NULL;
+		iparam->indexcolname = NULL;
 		iparam->opclass = NIL;
 		iparam->ordering = SORTBY_DEFAULT;
 		iparam->nulls_ordering = SORTBY_NULLS_DEFAULT;
@@ -1581,6 +1540,11 @@ transformIndexStmt(IndexStmt *stmt, const char *queryString)
 
 		if (ielem->expr)
 		{
+			/* Extract preliminary index col name before transforming expr */
+			if (ielem->indexcolname == NULL)
+				ielem->indexcolname = FigureIndexColname(ielem->expr);
+
+			/* Now do parse transformation of the expression */
 			ielem->expr = transformExpr(pstate, ielem->expr);
 
 			/*
