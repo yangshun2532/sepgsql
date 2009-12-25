@@ -44,4 +44,22 @@ check_database_connect(Oid datOid);
 extern void
 check_database_reindex(Oid datOid);
 
+/*
+ * ace_schema.c - hooks related to schema
+ */
+extern void
+check_schema_create(const char *nspName, Oid nspOwner, bool isTemp);
+extern void
+check_schema_alter_rename(Oid nspOid, const char *newName);
+extern void
+check_schema_alter_owner(Oid nspOid, Oid newOwner);
+extern void
+check_schema_drop(Oid nspOid, bool cascade);
+extern void
+check_schema_grant(Oid nspOid);
+extern bool
+check_schema_search(Oid nspOid, bool abort);
+extern void
+check_schema_comment(Oid nspOid);
+
 #endif	/* SECURITY_ACE_H */

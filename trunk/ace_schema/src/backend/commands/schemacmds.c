@@ -25,6 +25,7 @@
 #include "commands/schemacmds.h"
 #include "miscadmin.h"
 #include "parser/parse_utilcmd.h"
+#include "security/ace.h"
 #include "tcop/utility.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
@@ -61,19 +62,8 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 	else
 		owner_uid = saved_uid;
 
-	/*
-	 * To create a schema, must have schema-create privilege on the current
-	 * database and must be able to become the target role (this does not
-	 * imply that the target role itself must have create-schema privilege).
-	 * The latter provision guards against "giveaway" attacks.	Note that a
-	 * superuser will always have both of these privileges a fortiori.
-	 */
-	aclresult = pg_database_aclcheck(MyDatabaseId, saved_uid, ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_DATABASE,
-					   get_database_name(MyDatabaseId));
-
-	check_is_member_of_role(saved_uid, owner_uid);
+	/* Permission check to create a new schema */
+	check_schema_create(schemaName, owner_uid, false);
 
 	/* Additional check to protect reserved schema names */
 	if (!allowSystemTableMods && IsReservedName(schemaName))
@@ -201,9 +191,7 @@ RemoveSchemas(DropStmt *drop)
 		}
 
 		/* Permission check */
-		if (!pg_namespace_ownercheck(namespaceId, GetUserId()))
-			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_NAMESPACE,
-						   namespaceName);
+		check_schema_drop(namespaceId, false);
 
 		object.classId = NamespaceRelationId;
 		object.objectId = namespaceId;
@@ -276,16 +264,8 @@ RenameSchema(const char *oldname, const char *newname)
 				(errcode(ERRCODE_DUPLICATE_SCHEMA),
 				 errmsg("schema \"%s\" already exists", newname)));
 
-	/* must be owner */
-	if (!pg_namespace_ownercheck(HeapTupleGetOid(tup), GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_NAMESPACE,
-					   oldname);
-
-	/* must have CREATE privilege on database */
-	aclresult = pg_database_aclcheck(MyDatabaseId, GetUserId(), ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_DATABASE,
-					   get_database_name(MyDatabaseId));
+	/* permission check to rename the schema */
+	check_schema_alter_rename(HeapTupleGetOid(tup), newname);
 
 	if (!allowSystemTableMods && IsReservedName(newname))
 		ereport(ERROR,
@@ -373,30 +353,9 @@ AlterSchemaOwner_internal(HeapTuple tup, Relation rel, Oid newOwnerId)
 		Datum		aclDatum;
 		bool		isNull;
 		HeapTuple	newtuple;
-		AclResult	aclresult;
 
-		/* Otherwise, must be owner of the existing object */
-		if (!pg_namespace_ownercheck(HeapTupleGetOid(tup), GetUserId()))
-			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_NAMESPACE,
-						   NameStr(nspForm->nspname));
-
-		/* Must be able to become new owner */
-		check_is_member_of_role(GetUserId(), newOwnerId);
-
-		/*
-		 * must have create-schema rights
-		 *
-		 * NOTE: This is different from other alter-owner checks in that the
-		 * current user is checked for create privileges instead of the
-		 * destination owner.  This is consistent with the CREATE case for
-		 * schemas.  Because superusers will always have this right, we need
-		 * no special case for them.
-		 */
-		aclresult = pg_database_aclcheck(MyDatabaseId, GetUserId(),
-										 ACL_CREATE);
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, ACL_KIND_DATABASE,
-						   get_database_name(MyDatabaseId));
+		/* Permission check to alter owner of the schema */
+		check_schema_alter_owner(HeapTupleGetOid(tup), newOwnerId);
 
 		memset(repl_null, false, sizeof(repl_null));
 		memset(repl_repl, false, sizeof(repl_repl));
