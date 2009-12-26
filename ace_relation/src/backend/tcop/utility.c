@@ -98,7 +98,6 @@ CheckRelationOwnership(RangeVar *rel, bool noCatalogs)
 	ReleaseSysCache(tuple);
 }
 
-
 /*
  * CommandIsReadOnly: is an executable query read-only?
  *
