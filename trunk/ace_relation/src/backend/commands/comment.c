@@ -545,9 +545,7 @@ CommentRelation(int objtype, List *relname, char *comment)
 	relation = relation_openrv(tgtrel, AccessShareLock);
 
 	/* Check object security */
-	if (!pg_class_ownercheck(RelationGetRelid(relation), GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-					   RelationGetRelationName(relation));
+	check_relation_comment(RelationGetRelid(relation));
 
 	/* Next, verify that the relation type matches the intent */
 
@@ -623,10 +621,7 @@ CommentAttribute(List *qualname, char *comment)
 	relation = relation_openrv(rel, AccessShareLock);
 
 	/* Check object security */
-
-	if (!pg_class_ownercheck(RelationGetRelid(relation), GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-					   RelationGetRelationName(relation));
+	check_attribute_comment(RelationGetRelid(relation), attrname);
 
 	/*
 	 * Allow comments only on columns of tables, views, and composite types

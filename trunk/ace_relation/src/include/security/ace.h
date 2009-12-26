@@ -12,6 +12,7 @@
 #include "nodes/parsenodes.h"
 #include "storage/lock.h"
 #include "utils/acl.h"
+#include "utils/rel.h"
 
 /*
  * ace_misc.c - miscellaneous security hook routines
@@ -71,8 +72,9 @@ extern bool
 check_relation_perms(Oid relOid, Oid roleId, AclMode requiredPerms,
 					 Bitmapset *selCols, Bitmapset *modCols, bool abort);
 extern void
-check_relation_create(const char *relName, char relkind, TupleDesc tupDesc,
-					  Oid relNsp, Oid relTblspc, List *colList, bool createAs);
+check_relation_create(const char *relName, char relkind,
+					  TupleDesc tupDesc, Oid relNsp, Oid relTblspc,
+					  List *colList, bool isTemp, bool createAs);
 extern void
 check_relation_alter(Oid relOid);
 extern void
@@ -93,7 +95,7 @@ extern void
 check_relation_comment(Oid relOid);
 extern void
 check_relation_inheritance(Oid parentOid, Oid childOid);
-extern void
+extern bool
 check_relation_cluster(Oid relOid, bool abort);
 extern void
 check_relation_truncate(Relation rel);
@@ -103,11 +105,14 @@ extern void
 check_relation_lock(Relation rel, LOCKMODE lockmode);
 extern bool
 check_relation_vacuum(Relation rel);
-// XXX - index permission shall be here
 extern void
 check_relation_reindex(Oid relOid);
 extern void
 check_view_replace(Oid relOid);
+extern void
+check_index_create(const char *indName, Oid indNsp, Oid indTblspc);
+extern void
+check_index_reindex(Oid indOid);
 extern void
 check_sequence_get_value(Oid seqOid);
 extern void
