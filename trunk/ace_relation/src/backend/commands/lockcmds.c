@@ -20,8 +20,8 @@
 #include "commands/lockcmds.h"
 #include "miscadmin.h"
 #include "parser/parse_clause.h"
+#include "security/ace.h"
 #include "storage/lmgr.h"
-#include "utils/acl.h"
 #include "utils/lsyscache.h"
 
 static void LockTableRecurse(Oid reloid, RangeVar *rv,
@@ -74,7 +74,6 @@ LockTableRecurse(Oid reloid, RangeVar *rv,
 				 LOCKMODE lockmode, bool nowait, bool recurse)
 {
 	Relation	rel;
-	AclResult	aclresult;
 
 	/*
 	 * Acquire the lock.  We must do this first to protect against concurrent
@@ -132,16 +131,8 @@ LockTableRecurse(Oid reloid, RangeVar *rv,
 		return;
 	}
 
-	/* Verify adequate privilege */
-	if (lockmode == AccessShareLock)
-		aclresult = pg_class_aclcheck(reloid, GetUserId(),
-									  ACL_SELECT);
-	else
-		aclresult = pg_class_aclcheck(reloid, GetUserId(),
-									  ACL_UPDATE | ACL_DELETE | ACL_TRUNCATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_CLASS,
-					   RelationGetRelationName(rel));
+	/* Permission check to lock tables */
+	check_relation_lock(rel, lockmode);
 
 	/* Currently, we only allow plain tables to be locked */
 	if (rel->rd_rel->relkind != RELKIND_RELATION)

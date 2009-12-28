@@ -39,6 +39,7 @@
 #include "miscadmin.h"
 #include "storage/fd.h"
 #include "utils/fmgroids.h"
+#include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/tqual.h"
 
@@ -201,6 +202,19 @@ bool
 IsSystemClass(Form_pg_class reltuple)
 {
 	Oid			relnamespace = reltuple->relnamespace;
+
+	return IsSystemNamespace(relnamespace) ||
+		IsToastNamespace(relnamespace);
+}
+
+/*
+ * IsSystemRelationId
+ *		Like the above, but takes a relation OID as argument.
+ */
+bool
+IsSystemRelationId(Oid relOid)
+{
+	Oid			relnamespace = get_rel_namespace(relOid);
 
 	return IsSystemNamespace(relnamespace) ||
 		IsToastNamespace(relnamespace);

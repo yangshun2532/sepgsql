@@ -28,7 +28,7 @@
 #include "rewrite/rewriteDefine.h"
 #include "rewrite/rewriteManip.h"
 #include "rewrite/rewriteSupport.h"
-#include "utils/acl.h"
+#include "security/ace.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
@@ -163,9 +163,7 @@ DefineVirtualRelation(const RangeVar *relation, List *tlist, bool replace)
 					 errmsg("\"%s\" is not a view",
 							RelationGetRelationName(rel))));
 
-		if (!pg_class_ownercheck(viewOid, GetUserId()))
-			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-						   RelationGetRelationName(rel));
+		check_view_replace(viewOid);
 
 		/* Also check it's not in use already */
 		CheckTableNotInUse(rel, "CREATE OR REPLACE VIEW");

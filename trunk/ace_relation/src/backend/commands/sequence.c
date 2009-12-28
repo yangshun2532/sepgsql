@@ -324,11 +324,9 @@ AlterSequence(AlterSeqStmt *stmt)
 	/* find sequence */
 	relid = RangeVarGetRelid(stmt->sequence, false);
 
-	/* allow ALTER to sequence owner only */
+	/* permission checks to alter specified sequence */
 	/* if you change this, see also callers of AlterSequenceInternal! */
-	if (!pg_class_ownercheck(relid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-					   stmt->sequence->relname);
+	check_relation_alter(relid);
 
 	/* do the work */
 	AlterSequenceInternal(relid, stmt->options);

@@ -38,6 +38,8 @@ extern bool IsReservedName(const char *name);
 
 extern bool IsSharedRelation(Oid relationId);
 
+extern bool IsSystemRelationId(Oid relationId);
+
 extern Oid	GetNewOid(Relation relation);
 extern Oid GetNewOidWithIndex(Relation relation, Oid indexId,
 				   AttrNumber oidcolumn);

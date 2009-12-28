@@ -248,7 +248,6 @@ static int transformFkeyGetPrimaryKey(Relation pkrel, Oid *indexOid,
 static Oid transformFkeyCheckAttrs(Relation pkrel,
 						int numattrs, int16 *attnums,
 						Oid *opclasses);
-static void checkFkeyPermissions(Relation rel, int16 *attnums, int natts);
 static void validateForeignKeyConstraint(Constraint *fkconstraint,
 							 Relation rel, Relation pkrel,
 							 Oid pkindOid, Oid constraintOid);
@@ -263,8 +262,8 @@ static void ATExecCmd(List **wqueue, AlteredTableInfo *tab, Relation rel,
 static void ATRewriteTables(List **wqueue);
 static void ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap);
 static AlteredTableInfo *ATGetQueueEntry(List **wqueue, Relation rel);
-static void ATSimplePermissions(Relation rel, bool allowView);
-static void ATSimplePermissionsRelationOrIndex(Relation rel);
+static void ATSimplePermissions(Relation rel, const char *colName, bool allowView);
+static void ATSimplePermissionsRelationOrIndex(Relation rel, const char *colName);
 static void ATSimpleRecursion(List **wqueue, Relation rel,
 				  AlterTableCmd *cmd, bool recurse);
 static void ATOneLevelRecursion(List **wqueue, Relation rel,
@@ -714,11 +713,8 @@ RemoveRelations(DropStmt *drop)
 		if (classform->relkind != relkind)
 			DropErrorMsgWrongType(rel->relname, classform->relkind, relkind);
 
-		/* Allow DROP to either table owner or schema owner */
-		if (!pg_class_ownercheck(relOid, GetUserId()) &&
-			!pg_namespace_ownercheck(classform->relnamespace, GetUserId()))
-			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-						   rel->relname);
+		/* Permission check to drop the table */
+		check_relation_drop(relOid, false);
 
 		if (!allowSystemTableMods && IsSystemClass(classform))
 			ereport(ERROR,
@@ -879,9 +875,7 @@ ExecuteTruncate(TruncateStmt *stmt)
 				seq_rel = relation_open(seq_relid, AccessShareLock);
 
 				/* This check must match AlterSequence! */
-				if (!pg_class_ownercheck(seq_relid, GetUserId()))
-					aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-								   RelationGetRelationName(seq_rel));
+				check_relation_alter(seq_relid);
 
 				seq_relids = lappend_oid(seq_relids, seq_relid);
 
@@ -1037,8 +1031,6 @@ ExecuteTruncate(TruncateStmt *stmt)
 static void
 truncate_check_rel(Relation rel)
 {
-	AclResult	aclresult;
-
 	/* Only allow truncate on regular tables */
 	if (rel->rd_rel->relkind != RELKIND_RELATION)
 		ereport(ERROR,
@@ -1047,11 +1039,7 @@ truncate_check_rel(Relation rel)
 						RelationGetRelationName(rel))));
 
 	/* Permissions checks */
-	aclresult = pg_class_aclcheck(RelationGetRelid(rel), GetUserId(),
-								  ACL_TRUNCATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_CLASS,
-					   RelationGetRelationName(rel));
+	check_relation_truncate(rel);
 
 	if (!allowSystemTableMods && IsSystemRelation(rel))
 		ereport(ERROR,
@@ -1248,13 +1236,8 @@ MergeAttributes(List *schema, List *supers, bool istemp,
 					 errmsg("cannot inherit from temporary relation \"%s\"",
 							parent->relname)));
 
-		/*
-		 * We should have an UNDER permission flag for this, but for now,
-		 * demand that creator of a child table own the parent.
-		 */
-		if (!pg_class_ownercheck(RelationGetRelid(relation), GetUserId()))
-			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-						   RelationGetRelationName(relation));
+		/* Permission checks to create inherited relation */
+		check_relation_inherit(RelationGetRelid(relation), InvalidOid);
 
 		/*
 		 * Reject duplications in the list of parents.
@@ -1899,14 +1882,12 @@ renameatt(Oid myrelid,
 	targetrelation = relation_open(myrelid, AccessExclusiveLock);
 
 	/*
-	 * permissions checking.  this would normally be done in utility.c, but
-	 * this particular routine is recursive.
+	 * permissions checking. this check should be here for recursive renaming.
 	 *
 	 * normally, only the owner of a class can change its schema.
 	 */
-	if (!pg_class_ownercheck(myrelid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-					   RelationGetRelationName(targetrelation));
+	check_attribute_alter(myrelid, oldattname);
+
 	if (!allowSystemTableMods && IsSystemRelation(targetrelation))
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
@@ -2029,6 +2010,15 @@ RenameRelation(Oid myrelid, const char *newrelname, ObjectType reltype)
 	 * which we will NOT release until end of transaction.
 	 */
 	targetrelation = relation_open(myrelid, AccessExclusiveLock);
+
+	/* Permission checks to rename the target relation */
+	check_relation_alter_rename(myrelid, newrelname);
+
+	if (!allowSystemTableMods && IsSystemRelation(targetrelation))
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("permission denied: \"%s\" is a system catalog",
+						RelationGetRelationName(targetrelation))));
 
 	namespaceId = RelationGetNamespace(targetrelation);
 	relkind = targetrelation->rd_rel->relkind;
@@ -2357,14 +2347,14 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 	switch (cmd->subtype)
 	{
 		case AT_AddColumn:		/* ADD COLUMN */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, NULL, false);
 			/* Performs own recursion */
 			ATPrepAddColumn(wqueue, rel, recurse, cmd);
 			pass = AT_PASS_ADD_COL;
 			break;
 		case AT_AddColumnToView:		/* add column via CREATE OR REPLACE
 										 * VIEW */
-			ATSimplePermissions(rel, true);
+			ATSimplePermissions(rel, NULL, true);
 			/* Performs own recursion */
 			ATPrepAddColumn(wqueue, rel, recurse, cmd);
 			pass = AT_PASS_ADD_COL;
@@ -2377,19 +2367,19 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			 * substitutes default values into INSERTs before it expands
 			 * rules.
 			 */
-			ATSimplePermissions(rel, true);
+			ATSimplePermissions(rel, cmd->name, true);
 			ATSimpleRecursion(wqueue, rel, cmd, recurse);
 			/* No command-specific prep needed */
 			pass = cmd->def ? AT_PASS_ADD_CONSTR : AT_PASS_DROP;
 			break;
 		case AT_DropNotNull:	/* ALTER COLUMN DROP NOT NULL */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, cmd->name, false);
 			ATSimpleRecursion(wqueue, rel, cmd, recurse);
 			/* No command-specific prep needed */
 			pass = AT_PASS_DROP;
 			break;
 		case AT_SetNotNull:		/* ALTER COLUMN SET NOT NULL */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, cmd->name, false);
 			ATSimpleRecursion(wqueue, rel, cmd, recurse);
 			/* No command-specific prep needed */
 			pass = AT_PASS_ADD_CONSTR;
@@ -2407,13 +2397,13 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			pass = AT_PASS_COL_ATTRS;
 			break;
 		case AT_SetStorage:		/* ALTER COLUMN SET STORAGE */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, cmd->name, false);
 			ATSimpleRecursion(wqueue, rel, cmd, recurse);
 			/* No command-specific prep needed */
 			pass = AT_PASS_COL_ATTRS;
 			break;
 		case AT_DropColumn:		/* DROP COLUMN */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, NULL, false);
 			/* Recursion occurs during execution phase */
 			/* No command-specific prep needed except saving recurse flag */
 			if (recurse)
@@ -2421,13 +2411,13 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			pass = AT_PASS_DROP;
 			break;
 		case AT_AddIndex:		/* ADD INDEX */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, NULL, false);
 			/* This command never recurses */
 			/* No command-specific prep needed */
 			pass = AT_PASS_ADD_INDEX;
 			break;
 		case AT_AddConstraint:	/* ADD CONSTRAINT */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, NULL, false);
 			/* Recursion occurs during execution phase */
 			/* No command-specific prep needed except saving recurse flag */
 			if (recurse)
@@ -2435,7 +2425,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			pass = AT_PASS_ADD_CONSTR;
 			break;
 		case AT_DropConstraint:	/* DROP CONSTRAINT */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, NULL, false);
 			/* Recursion occurs during execution phase */
 			/* No command-specific prep needed except saving recurse flag */
 			if (recurse)
@@ -2443,7 +2433,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			pass = AT_PASS_DROP;
 			break;
 		case AT_AlterColumnType:		/* ALTER COLUMN TYPE */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, cmd->name, false);
 			/* Performs own recursion */
 			ATPrepAlterColumnType(wqueue, tab, rel, recurse, recursing, cmd);
 			pass = AT_PASS_ALTER_TYPE;
@@ -2455,20 +2445,20 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			break;
 		case AT_ClusterOn:		/* CLUSTER ON */
 		case AT_DropCluster:	/* SET WITHOUT CLUSTER */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, NULL, false);
 			/* These commands never recurse */
 			/* No command-specific prep needed */
 			pass = AT_PASS_MISC;
 			break;
 		case AT_AddOids:		/* SET WITH OIDS */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, NULL, false);
 			/* Performs own recursion */
 			if (!rel->rd_rel->relhasoids || recursing)
 				ATPrepAddOids(wqueue, rel, recurse, cmd);
 			pass = AT_PASS_ADD_COL;
 			break;
 		case AT_DropOids:		/* SET WITHOUT OIDS */
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, "oid", false);
 			/* Performs own recursion */
 			if (rel->rd_rel->relhasoids)
 			{
@@ -2482,14 +2472,14 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			pass = AT_PASS_DROP;
 			break;
 		case AT_SetTableSpace:	/* SET TABLESPACE */
-			ATSimplePermissionsRelationOrIndex(rel);
+			/* Performs own permission checks */
 			/* This command never recurses */
 			ATPrepSetTableSpace(tab, rel, cmd->name);
 			pass = AT_PASS_MISC;	/* doesn't actually matter */
 			break;
 		case AT_SetRelOptions:	/* SET (...) */
 		case AT_ResetRelOptions:		/* RESET (...) */
-			ATSimplePermissionsRelationOrIndex(rel);
+			ATSimplePermissionsRelationOrIndex(rel, NULL);
 			/* This command never recurses */
 			/* No command-specific prep needed */
 			pass = AT_PASS_MISC;
@@ -2508,7 +2498,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 		case AT_DisableRule:
 		case AT_AddInherit:		/* INHERIT / NO INHERIT */
 		case AT_DropInherit:
-			ATSimplePermissions(rel, false);
+			ATSimplePermissions(rel, NULL, false);
 			/* These commands never recurse */
 			/* No command-specific prep needed */
 			pass = AT_PASS_MISC;
@@ -3257,11 +3247,12 @@ ATGetQueueEntry(List **wqueue, Relation rel)
  * ATSimplePermissions
  *
  * - Ensure that it is a relation (or possibly a view)
- * - Ensure this user is the owner
+ * - Ensure that user has privileges to alter properties of the relation
+ *   or attribute.
  * - Ensure that it is not a system table
  */
 static void
-ATSimplePermissions(Relation rel, bool allowView)
+ATSimplePermissions(Relation rel, const char *colName, bool allowView)
 {
 	if (rel->rd_rel->relkind != RELKIND_RELATION)
 	{
@@ -3281,9 +3272,10 @@ ATSimplePermissions(Relation rel, bool allowView)
 	}
 
 	/* Permissions checks */
-	if (!pg_class_ownercheck(RelationGetRelid(rel), GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-					   RelationGetRelationName(rel));
+	if (!colName)
+		check_relation_alter(RelationGetRelid(rel));
+	else
+		check_attribute_alter(RelationGetRelid(rel), colName);
 
 	if (!allowSystemTableMods && IsSystemRelation(rel))
 		ereport(ERROR,
@@ -3296,11 +3288,12 @@ ATSimplePermissions(Relation rel, bool allowView)
  * ATSimplePermissionsRelationOrIndex
  *
  * - Ensure that it is a relation or an index
- * - Ensure this user is the owner
+ * - Ensure that user has privileges to alter properties of the relation
+ *   or attribute.
  * - Ensure that it is not a system table
  */
 static void
-ATSimplePermissionsRelationOrIndex(Relation rel)
+ATSimplePermissionsRelationOrIndex(Relation rel, const char *colName)
 {
 	if (rel->rd_rel->relkind != RELKIND_RELATION &&
 		rel->rd_rel->relkind != RELKIND_INDEX)
@@ -3310,9 +3303,10 @@ ATSimplePermissionsRelationOrIndex(Relation rel)
 						RelationGetRelationName(rel))));
 
 	/* Permissions checks */
-	if (!pg_class_ownercheck(RelationGetRelid(rel), GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-					   RelationGetRelationName(rel));
+	if (!colName)
+		check_relation_alter(RelationGetRelid(rel));
+	else
+		check_attribute_alter(RelationGetRelid(rel), colName);
 
 	if (!allowSystemTableMods && IsSystemRelation(rel))
 		ereport(ERROR,
@@ -4063,9 +4057,7 @@ ATPrepSetStatistics(Relation rel, const char *colName, Node *newValue)
 						RelationGetRelationName(rel))));
 
 	/* Permissions checks */
-	if (!pg_class_ownercheck(RelationGetRelid(rel), GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-					   RelationGetRelationName(rel));
+	check_attribute_alter(RelationGetRelid(rel), colName);
 }
 
 static void
@@ -4147,9 +4139,7 @@ ATPrepSetDistinct(Relation rel, const char *colName, Node *newValue)
 						RelationGetRelationName(rel))));
 
 	/* Permissions checks */
-	if (!pg_class_ownercheck(RelationGetRelid(rel), GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-					   RelationGetRelationName(rel));
+	check_attribute_alter(RelationGetRelid(rel), colName);
 }
 
 static void
@@ -4310,7 +4300,7 @@ ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
 
 	/* At top level, permission check was done in ATPrepCmd, else do it */
 	if (recursing)
-		ATSimplePermissions(rel, false);
+		ATSimplePermissions(rel, NULL, false);
 
 	/*
 	 * get the number of the attribute
@@ -4612,7 +4602,7 @@ ATAddCheckConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 
 	/* At top level, permission check was done in ATPrepCmd, else do it */
 	if (recursing)
-		ATSimplePermissions(rel, false);
+		ATSimplePermissions(rel,NULL,  false);
 
 	/*
 	 * Call AddRelationNewConstraints to do the work, making sure it works on
@@ -4808,8 +4798,8 @@ ATAddForeignKeyConstraint(AlteredTableInfo *tab, Relation rel,
 	/*
 	 * Now we can check permissions.
 	 */
-	checkFkeyPermissions(pkrel, pkattnum, numpks);
-	checkFkeyPermissions(rel, fkattnum, numfks);
+	check_relation_reference(pkrel, pkattnum, numpks);
+	check_relation_reference(rel, fkattnum, numfks);
 
 	/*
 	 * Look up the equality operators to use in the constraint.
@@ -5266,30 +5256,6 @@ transformFkeyCheckAttrs(Relation pkrel,
 	return indexoid;
 }
 
-/* Permissions checks for ADD FOREIGN KEY */
-static void
-checkFkeyPermissions(Relation rel, int16 *attnums, int natts)
-{
-	Oid			roleid = GetUserId();
-	AclResult	aclresult;
-	int			i;
-
-	/* Okay if we have relation-level REFERENCES permission */
-	aclresult = pg_class_aclcheck(RelationGetRelid(rel), roleid,
-								  ACL_REFERENCES);
-	if (aclresult == ACLCHECK_OK)
-		return;
-	/* Else we must have REFERENCES on each column */
-	for (i = 0; i < natts; i++)
-	{
-		aclresult = pg_attribute_aclcheck(RelationGetRelid(rel), attnums[i],
-										  roleid, ACL_REFERENCES);
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, ACL_KIND_CLASS,
-						   RelationGetRelationName(rel));
-	}
-}
-
 /*
  * Scan the existing rows in a table to verify they meet a proposed FK
  * constraint.
@@ -5563,7 +5529,7 @@ ATExecDropConstraint(Relation rel, const char *constrName,
 
 	/* At top level, permission check was done in ATPrepCmd, else do it */
 	if (recursing)
-		ATSimplePermissions(rel, false);
+		ATSimplePermissions(rel, NULL, false);
 
 	conrel = heap_open(ConstraintRelationId, RowExclusiveLock);
 
@@ -6487,29 +6453,7 @@ ATExecChangeOwner(Oid relationOid, Oid newOwnerId, bool recursing)
 
 		/* skip permission checks when recursing to index or toast table */
 		if (!recursing)
-		{
-			/* Superusers can always do it */
-			if (!superuser())
-			{
-				Oid			namespaceOid = tuple_class->relnamespace;
-				AclResult	aclresult;
-
-				/* Otherwise, must be owner of the existing object */
-				if (!pg_class_ownercheck(relationOid, GetUserId()))
-					aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-								   RelationGetRelationName(target_rel));
-
-				/* Must be able to become new owner */
-				check_is_member_of_role(GetUserId(), newOwnerId);
-
-				/* New owner must have CREATE privilege on namespace */
-				aclresult = pg_namespace_aclcheck(namespaceOid, newOwnerId,
-												  ACL_CREATE);
-				if (aclresult != ACLCHECK_OK)
-					aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-								   get_namespace_name(namespaceOid));
-			}
-		}
+			check_relation_alter_owner(relationOid, newOwnerId);
 
 		memset(repl_null, false, sizeof(repl_null));
 		memset(repl_repl, false, sizeof(repl_repl));
@@ -6708,7 +6652,14 @@ static void
 ATPrepSetTableSpace(AlteredTableInfo *tab, Relation rel, char *tablespacename)
 {
 	Oid			tablespaceId;
-	AclResult	aclresult;
+
+	/* Sanity checks */
+	if (rel->rd_rel->relkind != RELKIND_RELATION &&
+		rel->rd_rel->relkind != RELKIND_INDEX)
+		ereport(ERROR,
+				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+				 errmsg("\"%s\" is not a table or index",
+						RelationGetRelationName(rel))));
 
 	/* Check that the tablespace exists */
 	tablespaceId = get_tablespace_oid(tablespacename);
@@ -6718,9 +6669,13 @@ ATPrepSetTableSpace(AlteredTableInfo *tab, Relation rel, char *tablespacename)
 				 errmsg("tablespace \"%s\" does not exist", tablespacename)));
 
 	/* Check its permissions */
-	aclresult = pg_tablespace_aclcheck(tablespaceId, GetUserId(), ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_TABLESPACE, tablespacename);
+	check_relation_alter_tablespace(RelationGetRelid(rel), tablespaceId);
+
+	if (!allowSystemTableMods && IsSystemRelation(rel))
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("permission denied: \"%s\" is a system catalog",
+						RelationGetRelationName(rel))));
 
 	/* Save info for Phase 3 to do the real work */
 	if (OidIsValid(tab->newTableSpace))
@@ -7113,7 +7068,8 @@ ATExecAddInherit(Relation child_rel, RangeVar *parent)
 	 * Must be owner of both parent and child -- child was checked by
 	 * ATSimplePermissions call in ATPrepCmd
 	 */
-	ATSimplePermissions(parent_rel, false);
+	check_relation_inherit(RelationGetRelid(parent_rel),
+						   RelationGetRelid(child_rel));
 
 	/* Permanent rels cannot inherit from temporary ones */
 	if (parent_rel->rd_istemp && !child_rel->rd_istemp)
@@ -7685,7 +7641,6 @@ AlterTableNamespace(RangeVar *relation, const char *newschema,
 	Oid			oldNspOid;
 	Oid			nspOid;
 	Relation	classRel;
-	AclResult	aclresult;
 
 	rel = relation_openrv(relation, AccessExclusiveLock);
 
@@ -7765,10 +7720,14 @@ AlterTableNamespace(RangeVar *relation, const char *newschema,
 	/* get schema OID and check its permissions */
 	nspOid = LookupCreationNamespace(newschema);
 
-	/* check permissions on schema */
-	aclresult = pg_namespace_aclcheck(nspOid, GetUserId(), ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_NAMESPACE, newschema);
+	/* check permissions */
+	check_relation_alter_schema(relid, nspOid);
+
+	if (!allowSystemTableMods && IsSystemRelation(rel))
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("permission denied: \"%s\" is a system catalog",
+						RelationGetRelationName(rel))));
 
 	if (oldNspOid == nspOid)
 		ereport(ERROR,

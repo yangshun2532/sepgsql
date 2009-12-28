@@ -387,7 +387,7 @@ check_relation_drop(Oid relOid, bool cascade)
  * relOid : OID of the relation to be referenced
  */
 void
-chech_relation_getattr(Oid relOid)
+check_relation_getattr(Oid relOid)
 {
 	AclResult	aclresult;
 
@@ -431,14 +431,22 @@ check_relation_comment(Oid relOid)
 /*
  * check_relation_inheritance
  *
- * It checks privileges to 
+ * It checks privileges to set up inheritance relationship
  *
  * parentOid : OID of the parent relation
- * childOid  : OID of the child relation
+ * childOid : OID of the child relation, or InvalidOid when CREATE TABLE
  */
 void
-check_relation_inheritance(Oid parentOid, Oid childOid)
-{}
+check_relation_inherit(Oid parentOid, Oid childOid)
+{
+	/*
+	 * We should have an UNDER permission flag for this, but for now,
+	 * demand that creator of a child table own the parent.
+	 */
+	if (!pg_class_ownercheck(parentOid, GetUserId()))
+		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
+					   get_rel_name(parentOid));
+}
 
 /*
  * check_relation_cluster
@@ -485,20 +493,38 @@ check_relation_truncate(Relation rel)
  *
  * It checks privileges to set up FK constraint between two relations.
  *
- *
- *
- *
+ * rel : The FK/PK Relation to be referenced
+ * attnums : An array of attribute numbers to be constrained
+ * natts : Length of the attnums array
  */
 void
 check_relation_reference(Relation rel, int16 *attnums, int natts)
-{}
+{
+	Oid			roleId = GetUserId();
+	Oid			relOid = RelationGetRelid(rel);
+	AclResult	aclresult;
+	int			i;
+
+	/* Okay if we have relation-level REFERENCES permission */
+	aclresult = pg_class_aclcheck(relOid, roleId, ACL_REFERENCES);
+	if (aclresult != ACLCHECK_OK)
+	{
+		/* Else we must have REFERENCES on each column */
+		aclresult = pg_attribute_aclcheck(relOid, attnums[i], roleId,
+										  ACL_REFERENCES);
+		if (aclresult != ACLCHECK_OK)
+			aclcheck_error(aclresult, ACL_KIND_CLASS,
+						   RelationGetRelationName(rel));
+	}
+}
 
 /*
  * check_relation_lock
  *
+ * It checks privileges to lock a certain table explicitly.
  *
- *
- *
+ * rel : The target Relation to be locked
+ * lockmode : The required lockmode
  */
 void
 check_relation_lock(Relation rel, LOCKMODE lockmode)
@@ -522,19 +548,23 @@ check_relation_lock(Relation rel, LOCKMODE lockmode)
  *
  * It checks privileges to run vacuum process on a certain relation
  *
- * rel : Relation to 
- *
- *
+ * rel : Relation to be vacuumed
  */
 bool
 check_relation_vacuum(Relation rel)
 {
-	if (pg_class_ownercheck(RelationGetRelid(rel), GetUserId()) ||
-		(pg_database_ownercheck(MyDatabaseId, GetUserId()) &&
-		 !rel->rd_rel->relisshared))
-		return true;
+	bool	shared = rel->rd_rel->relisshared;
 
-	return false;
+	/*
+	 * We allow the user to vacuum a table if he is superuser, the table
+	 * owner, or the database owner (but in the latter case, only if it's not
+	 * a shared relation).	pg_class_ownercheck includes the superuser case.
+	 */
+	if (!(pg_class_ownercheck(RelationGetRelid(rel), GetUserId()) ||
+		  (pg_database_ownercheck(MyDatabaseId, GetUserId()) && !shared)))
+		return false;
+
+	return true;
 }
 
 /*
@@ -557,11 +587,9 @@ check_relation_reindex(Oid relOid)
 /*
  * check_view_replace
  *
+ * It checks privilege to replace definitions of an existing virtual relation.
  *
- *
- *
- *
- *
+ * viewOid : OID of the view to be replaced
  */
 void
 check_view_replace(Oid viewOid)
