@@ -88,13 +88,13 @@ check_relation_alter_owner(Oid relOid, Oid newOwner);
 extern void
 check_relation_drop(Oid relOid, bool cascade);
 extern void
-chech_relation_getattr(Oid relOid);
+check_relation_getattr(Oid relOid);
 extern void
 check_relation_grant(Oid relOid);
 extern void
 check_relation_comment(Oid relOid);
 extern void
-check_relation_inheritance(Oid parentOid, Oid childOid);
+check_relation_inherit(Oid parentOid, Oid childOid);
 extern bool
 check_relation_cluster(Oid relOid, bool abort);
 extern void

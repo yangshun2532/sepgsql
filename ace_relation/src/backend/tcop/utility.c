@@ -53,8 +53,9 @@
 #include "storage/fd.h"
 #include "tcop/pquery.h"
 #include "tcop/utility.h"
-#include "utils/acl.h"
+#include "security/ace.h"
 #include "utils/guc.h"
+#include "utils/lsyscache.h"
 #include "utils/syscache.h"
 
 
@@ -828,12 +829,21 @@ standard_ProcessUtility(Node *parsetree,
 		case T_IndexStmt:		/* CREATE INDEX */
 			{
 				IndexStmt  *stmt = (IndexStmt *) parsetree;
+				Oid			relOid;
 
 				if (stmt->concurrent)
 					PreventTransactionChain(isTopLevel,
 											"CREATE INDEX CONCURRENTLY");
 
-				CheckRelationOwnership(stmt->relation, true);
+				/* Permission checks */
+				relOid = RangeVarGetRelid(stmt->relation, false);
+				check_relation_alter(relOid);
+
+				if (!allowSystemTableMods && IsSystemRelationId(relOid))
+					ereport(ERROR,
+							(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+							 errmsg("permission denied: \"%s\" is a system catalog",
+									get_rel_name(relOid))));
 
 				/* Run parse analysis ... */
 				stmt = transformIndexStmt(stmt, queryString);

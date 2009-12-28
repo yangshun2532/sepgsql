@@ -196,23 +196,6 @@ DefineIndex(RangeVar *heapRelation,
 				 errmsg("cannot create indexes on temporary tables of other sessions")));
 
 	/*
-	 * Verify we (still) have CREATE rights in the rel's namespace.
-	 * (Presumably we did when the rel was created, but maybe not anymore.)
-	 * Skip check if caller doesn't want it.  Also skip check if
-	 * bootstrapping, since permissions machinery may not be working yet.
-	 */
-	if (check_rights && !IsBootstrapProcessingMode())
-	{
-		AclResult	aclresult;
-
-		aclresult = pg_namespace_aclcheck(namespaceId, GetUserId(),
-										  ACL_CREATE);
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-						   get_namespace_name(namespaceId));
-	}
-
-	/*
 	 * Select tablespace to use.  If not specified, use default tablespace
 	 * (which may in turn default to database's default).
 	 */
@@ -231,17 +214,12 @@ DefineIndex(RangeVar *heapRelation,
 		/* note InvalidOid is OK in this case */
 	}
 
-	/* Check permissions except when using database's default */
-	if (OidIsValid(tablespaceId) && tablespaceId != MyDatabaseTableSpace)
-	{
-		AclResult	aclresult;
-
-		aclresult = pg_tablespace_aclcheck(tablespaceId, GetUserId(),
-										   ACL_CREATE);
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, ACL_KIND_TABLESPACE,
-						   get_tablespace_name(tablespaceId));
-	}
+	/*
+	 * Check permissions to create a new index
+	 */
+	check_index_create(indexRelationName,
+					   check_rights ? namespaceId : InvalidOid,
+					   tablespaceId);
 
 	/*
 	 * Force shared indexes into the pg_global tablespace.	This is a bit of a
@@ -1578,9 +1556,7 @@ ReindexIndex(RangeVar *indexRelation)
 						indexRelation->relname)));
 
 	/* Check permissions */
-	if (!pg_class_ownercheck(indOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-					   indexRelation->relname);
+	check_index_reindex(indOid);
 
 	ReleaseSysCache(tuple);
 
@@ -1612,9 +1588,7 @@ ReindexTable(RangeVar *relation)
 						relation->relname)));
 
 	/* Check permissions */
-	if (!pg_class_ownercheck(heapOid, GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-					   relation->relname);
+	check_relation_reindex(heapOid);
 
 	/* Can't reindex shared tables except in standalone mode */
 	if (((Form_pg_class) GETSTRUCT(tuple))->relisshared && IsUnderPostmaster)
