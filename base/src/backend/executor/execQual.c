@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/executor/execQual.c,v 1.256 2009/12/14 02:15:49 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/executor/execQual.c,v 1.258 2010/01/01 23:03:09 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -2038,15 +2038,10 @@ ExecMakeTableFunctionResult(ExprState *funcexpr,
 				tmptup.t_len = HeapTupleHeaderGetDatumLength(td);
 				tmptup.t_data = td;
 
-				oldcontext = MemoryContextSwitchTo(econtext->ecxt_per_query_memory);
 				tuplestore_puttuple(tupstore, &tmptup);
 			}
 			else
-			{
-				oldcontext = MemoryContextSwitchTo(econtext->ecxt_per_query_memory);
 				tuplestore_putvalues(tupstore, tupdesc, &result, &fcinfo.isnull);
-			}
-			MemoryContextSwitchTo(oldcontext);
 
 			/*
 			 * Are we done?
@@ -3480,7 +3475,7 @@ ExecEvalNullTest(NullTestState *nstate,
 	if (isDone && *isDone == ExprEndResult)
 		return result;			/* nothing to check */
 
-	if (nstate->argisrow && !(*isNull))
+	if (ntest->argisrow && !(*isNull))
 	{
 		HeapTupleHeader tuple;
 		Oid			tupType;
@@ -4709,7 +4704,6 @@ ExecInitExpr(Expr *node, PlanState *parent)
 
 				nstate->xprstate.evalfunc = (ExprStateEvalFunc) ExecEvalNullTest;
 				nstate->arg = ExecInitExpr(ntest->arg, parent);
-				nstate->argisrow = type_is_rowtype(exprType((Node *) ntest->arg));
 				nstate->argdesc = NULL;
 				state = (ExprState *) nstate;
 			}
