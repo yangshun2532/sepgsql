@@ -10,7 +10,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/optimizer/plan/createplan.c,v 1.267 2009/11/15 02:45:35 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/optimizer/plan/createplan.c,v 1.269 2010/01/01 21:53:49 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -73,7 +73,6 @@ static MergeJoin *create_mergejoin_plan(PlannerInfo *root, MergePath *best_path,
 static HashJoin *create_hashjoin_plan(PlannerInfo *root, HashPath *best_path,
 					 Plan *outer_plan, Plan *inner_plan);
 static List *fix_indexqual_references(List *indexquals, IndexPath *index_path);
-static Node *fix_indexqual_operand(Node *node, IndexOptInfo *index);
 static List *get_switched_clauses(List *clauses, Relids outerrelids);
 static List *order_qual_clauses(PlannerInfo *root, List *clauses);
 static void copy_path_costsize(Plan *dest, Path *src);
@@ -115,6 +114,7 @@ static HashJoin *make_hashjoin(List *tlist,
 static Hash *make_hash(Plan *lefttree,
 		  Oid skewTable,
 		  AttrNumber skewColumn,
+		  bool skewInherit,
 		  Oid skewColType,
 		  int32 skewColTypmod);
 static MergeJoin *make_mergejoin(List *tlist,
@@ -1898,6 +1898,7 @@ create_hashjoin_plan(PlannerInfo *root,
 	List	   *hashclauses;
 	Oid			skewTable = InvalidOid;
 	AttrNumber	skewColumn = InvalidAttrNumber;
+	bool		skewInherit = false;
 	Oid			skewColType = InvalidOid;
 	int32		skewColTypmod = -1;
 	HashJoin   *join_plan;
@@ -1969,6 +1970,7 @@ create_hashjoin_plan(PlannerInfo *root,
 			{
 				skewTable = rte->relid;
 				skewColumn = var->varattno;
+				skewInherit = rte->inh;
 				skewColType = var->vartype;
 				skewColTypmod = var->vartypmod;
 			}
@@ -1981,6 +1983,7 @@ create_hashjoin_plan(PlannerInfo *root,
 	hash_plan = make_hash(inner_plan,
 						  skewTable,
 						  skewColumn,
+						  skewInherit,
 						  skewColType,
 						  skewColTypmod);
 	join_plan = make_hashjoin(tlist,
@@ -2113,7 +2116,6 @@ fix_indexqual_references(List *indexquals, IndexPath *index_path)
 		{
 			NullTest   *nt = (NullTest *) clause;
 
-			Assert(nt->nulltesttype == IS_NULL);
 			nt->arg = (Expr *) fix_indexqual_operand((Node *) nt->arg,
 													 index);
 		}
@@ -2127,7 +2129,13 @@ fix_indexqual_references(List *indexquals, IndexPath *index_path)
 	return fixed_indexquals;
 }
 
-static Node *
+/*
+ * fix_indexqual_operand
+ *	  Convert an indexqual expression to a Var referencing the index column.
+ *
+ * This is exported because planagg.c needs it.
+ */
+Node *
 fix_indexqual_operand(Node *node, IndexOptInfo *index)
 {
 	/*
@@ -2794,6 +2802,7 @@ static Hash *
 make_hash(Plan *lefttree,
 		  Oid skewTable,
 		  AttrNumber skewColumn,
+		  bool skewInherit,
 		  Oid skewColType,
 		  int32 skewColTypmod)
 {
@@ -2814,6 +2823,7 @@ make_hash(Plan *lefttree,
 
 	node->skewTable = skewTable;
 	node->skewColumn = skewColumn;
+	node->skewInherit = skewInherit;
 	node->skewColType = skewColType;
 	node->skewColTypmod = skewColTypmod;
 
