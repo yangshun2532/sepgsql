@@ -1,7 +1,7 @@
 /**********************************************************************
  * plperl.c - perl as a procedural language for PostgreSQL
  *
- *	  $PostgreSQL: pgsql/src/pl/plperl/plperl.c,v 1.155 2009/11/29 21:02:16 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/pl/plperl/plperl.c,v 1.157 2009/12/31 19:41:37 tgl Exp $
  *
  **********************************************************************/
 
@@ -95,7 +95,7 @@ typedef struct plperl_call_data
  **********************************************************************/
 typedef struct plperl_query_desc
 {
-	char		qname[sizeof(long) * 2 + 1];
+	char		qname[20];
 	void	   *plan;
 	int			nargs;
 	Oid		   *argtypes;
@@ -2107,11 +2107,7 @@ plperl_return_next(SV *sv)
 
 		tuple = plperl_build_tuple_result((HV *) SvRV(sv),
 										  current_call_data->attinmeta);
-
-		/* Make sure to store the tuple in a long-lived memory context */
-		MemoryContextSwitchTo(rsi->econtext->ecxt_per_query_memory);
 		tuplestore_puttuple(current_call_data->tuple_store, tuple);
-		MemoryContextSwitchTo(old_cxt);
 	}
 	else
 	{
@@ -2141,14 +2137,12 @@ plperl_return_next(SV *sv)
 			isNull = true;
 		}
 
-		/* Make sure to store the tuple in a long-lived memory context */
-		MemoryContextSwitchTo(rsi->econtext->ecxt_per_query_memory);
 		tuplestore_putvalues(current_call_data->tuple_store,
 							 current_call_data->ret_tdesc,
 							 &ret, &isNull);
-		MemoryContextSwitchTo(old_cxt);
 	}
 
+	MemoryContextSwitchTo(old_cxt);
 	MemoryContextReset(current_call_data->tmp_cxt);
 }
 
@@ -2343,7 +2337,7 @@ plperl_spi_prepare(char *query, int argc, SV **argv)
 	 ************************************************************/
 	qdesc = (plperl_query_desc *) malloc(sizeof(plperl_query_desc));
 	MemSet(qdesc, 0, sizeof(plperl_query_desc));
-	snprintf(qdesc->qname, sizeof(qdesc->qname), "%lx", (long) qdesc);
+	snprintf(qdesc->qname, sizeof(qdesc->qname), "%p", qdesc);
 	qdesc->nargs = argc;
 	qdesc->argtypes = (Oid *) malloc(argc * sizeof(Oid));
 	qdesc->arginfuncs = (FmgrInfo *) malloc(argc * sizeof(FmgrInfo));
