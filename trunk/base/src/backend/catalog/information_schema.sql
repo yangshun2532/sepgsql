@@ -4,7 +4,7 @@
  *
  * Copyright (c) 2003-2009, PostgreSQL Global Development Group
  *
- * $PostgreSQL: pgsql/src/backend/catalog/information_schema.sql,v 1.60 2009/12/07 05:22:21 tgl Exp $
+ * $PostgreSQL: pgsql/src/backend/catalog/information_schema.sql,v 1.62 2009/12/31 14:41:23 petere Exp $
  */
 
 /*
@@ -1852,13 +1852,27 @@ GRANT SELECT ON tables TO PUBLIC;
 
 CREATE VIEW triggered_update_columns AS
     SELECT CAST(current_database() AS sql_identifier) AS trigger_catalog,
-           CAST(null AS sql_identifier) AS trigger_schema,
-           CAST(null AS sql_identifier) AS trigger_name,
+           CAST(n.nspname AS sql_identifier) AS trigger_schema,
+           CAST(t.tgname AS sql_identifier) AS trigger_name,
            CAST(current_database() AS sql_identifier) AS event_object_catalog,
-           CAST(null AS sql_identifier) AS event_object_schema,
-           CAST(null AS sql_identifier) AS event_object_table,
-           CAST(null AS sql_identifier) AS event_object_column
-    WHERE false;
+           CAST(n.nspname AS sql_identifier) AS event_object_schema,
+           CAST(c.relname AS sql_identifier) AS event_object_table,
+           CAST(a.attname AS sql_identifier) AS event_object_column
+
+    FROM pg_namespace n, pg_class c, pg_trigger t,
+         (SELECT tgoid, (ta0.tgat).x AS tgattnum, (ta0.tgat).n AS tgattpos
+          FROM (SELECT oid AS tgoid, information_schema._pg_expandarray(tgattr) AS tgat FROM pg_trigger) AS ta0) AS ta,
+         pg_attribute a
+
+    WHERE n.oid = c.relnamespace
+          AND c.oid = t.tgrelid
+          AND t.oid = ta.tgoid
+          AND (a.attrelid, a.attnum) = (t.tgrelid, ta.tgattnum)
+          AND NOT t.tgisconstraint
+          AND (NOT pg_is_other_temp_schema(n.oid))
+          AND (pg_has_role(c.relowner, 'USAGE')
+               -- SELECT privilege omitted, per SQL standard
+               OR has_column_privilege(c.oid, a.attnum, 'INSERT, UPDATE, REFERENCES') );
 
 GRANT SELECT ON triggered_update_columns TO PUBLIC;
 
@@ -1909,7 +1923,12 @@ CREATE VIEW triggers AS
            CAST(n.nspname AS sql_identifier) AS event_object_schema,
            CAST(c.relname AS sql_identifier) AS event_object_table,
            CAST(null AS cardinal_number) AS action_order,
-           CAST(null AS character_data) AS action_condition,
+           -- XXX strange hacks follow
+           CAST(
+             CASE WHEN pg_has_role(c.relowner, 'USAGE')
+               THEN (SELECT m[1] FROM regexp_matches(pg_get_triggerdef(t.oid), E'.{35,} WHEN \\((.+)\\) EXECUTE PROCEDURE') AS rm(m) LIMIT 1)
+               ELSE null END
+             AS character_data) AS action_condition,
            CAST(
              substring(pg_get_triggerdef(t.oid) from
                        position('EXECUTE PROCEDURE' in substring(pg_get_triggerdef(t.oid) from 48)) + 47)

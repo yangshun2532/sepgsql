@@ -15,7 +15,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/adt/selfuncs.c,v 1.263 2009/10/21 20:38:58 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/adt/selfuncs.c,v 1.265 2010/01/01 21:53:49 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -4046,20 +4046,13 @@ examine_variable(PlannerInfo *root, Node *node, int varRelid,
 				!vardata->freefunc)
 				elog(ERROR, "no function provided to release variable stats with");
 		}
-		else if (rte->inh)
-		{
-			/*
-			 * XXX This means the Var represents a column of an append
-			 * relation. Later add code to look at the member relations and
-			 * try to derive some kind of combined statistics?
-			 */
-		}
 		else if (rte->rtekind == RTE_RELATION)
 		{
-			vardata->statsTuple = SearchSysCache(STATRELATT,
+			vardata->statsTuple = SearchSysCache(STATRELATTINH,
 												 ObjectIdGetDatum(rte->relid),
 												 Int16GetDatum(var->varattno),
-												 0, 0);
+												 BoolGetDatum(rte->inh),
+												 0);
 			vardata->freefunc = ReleaseSysCache;
 		}
 		else
@@ -4196,10 +4189,11 @@ examine_variable(PlannerInfo *root, Node *node, int varRelid,
 						else if (index->indpred == NIL)
 						{
 							vardata->statsTuple =
-								SearchSysCache(STATRELATT,
+								SearchSysCache(STATRELATTINH,
 										   ObjectIdGetDatum(index->indexoid),
 											   Int16GetDatum(pos + 1),
-											   0, 0);
+											   BoolGetDatum(false),
+											   0);
 							vardata->freefunc = ReleaseSysCache;
 						}
 						if (vardata->statsTuple)
@@ -5620,7 +5614,7 @@ btcostestimate(PG_FUNCTION_ARGS)
 	int			indexcol;
 	bool		eqQualHere;
 	bool		found_saop;
-	bool		found_null_op;
+	bool		found_is_null_op;
 	double		num_sa_scans;
 	ListCell   *l;
 
@@ -5645,7 +5639,7 @@ btcostestimate(PG_FUNCTION_ARGS)
 	indexcol = 0;
 	eqQualHere = false;
 	found_saop = false;
-	found_null_op = false;
+	found_is_null_op = false;
 	num_sa_scans = 1;
 	foreach(l, indexQuals)
 	{
@@ -5686,12 +5680,14 @@ btcostestimate(PG_FUNCTION_ARGS)
 		{
 			NullTest   *nt = (NullTest *) clause;
 
-			Assert(nt->nulltesttype == IS_NULL);
 			leftop = (Node *) nt->arg;
 			rightop = NULL;
 			clause_op = InvalidOid;
-			found_null_op = true;
-			is_null_op = true;
+			if (nt->nulltesttype == IS_NULL)
+			{
+				found_is_null_op = true;
+				is_null_op = true;
+			}
 		}
 		else
 		{
@@ -5731,18 +5727,18 @@ btcostestimate(PG_FUNCTION_ARGS)
 			}
 		}
 		/* check for equality operator */
-		if (is_null_op)
-		{
-			/* IS NULL is like = for purposes of selectivity determination */
-			eqQualHere = true;
-		}
-		else
+		if (OidIsValid(clause_op))
 		{
 			op_strategy = get_op_opfamily_strategy(clause_op,
 												   index->opfamily[indexcol]);
 			Assert(op_strategy != 0);	/* not a member of opfamily?? */
 			if (op_strategy == BTEqualStrategyNumber)
 				eqQualHere = true;
+		}
+		else if (is_null_op)
+		{
+			/* IS NULL is like = for purposes of selectivity determination */
+			eqQualHere = true;
 		}
 		/* count up number of SA scans induced by indexBoundQuals only */
 		if (IsA(clause, ScalarArrayOpExpr))
@@ -5766,7 +5762,7 @@ btcostestimate(PG_FUNCTION_ARGS)
 		indexcol == index->ncolumns - 1 &&
 		eqQualHere &&
 		!found_saop &&
-		!found_null_op)
+		!found_is_null_op)
 		numIndexTuples = 1.0;
 	else
 	{
@@ -5830,10 +5826,11 @@ btcostestimate(PG_FUNCTION_ARGS)
 		}
 		else
 		{
-			vardata.statsTuple = SearchSysCache(STATRELATT,
+			vardata.statsTuple = SearchSysCache(STATRELATTINH,
 												ObjectIdGetDatum(relid),
 												Int16GetDatum(colnum),
-												0, 0);
+												BoolGetDatum(rte->inh),
+												0);
 			vardata.freefunc = ReleaseSysCache;
 		}
 	}
@@ -5856,10 +5853,11 @@ btcostestimate(PG_FUNCTION_ARGS)
 		}
 		else
 		{
-			vardata.statsTuple = SearchSysCache(STATRELATT,
+			vardata.statsTuple = SearchSysCache(STATRELATTINH,
 												ObjectIdGetDatum(relid),
 												Int16GetDatum(colnum),
-												0, 0);
+												BoolGetDatum(false),
+												0);
 			vardata.freefunc = ReleaseSysCache;
 		}
 	}
