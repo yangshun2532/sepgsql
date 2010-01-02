@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/catalog/pg_type.c,v 1.128 2009/12/24 22:09:23 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/catalog/pg_type.c,v 1.130 2009/12/28 18:49:05 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */

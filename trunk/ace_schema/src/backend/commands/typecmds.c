@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/commands/typecmds.c,v 1.141 2009/12/24 22:09:23 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/commands/typecmds.c,v 1.144 2009/12/28 18:49:05 momjian Exp $
  *
  * DESCRIPTION
  *	  The "DefineFoo" routines take the parse tree and pick out the
@@ -1161,7 +1161,7 @@ DefineEnum(CreateEnumStmt *stmt)
 				   false);		/* Type NOT NULL */
 
 	/* Enter the enum's values into pg_enum */
-	EnumValuesCreate(enumTypeOid, stmt->vals);
+	EnumValuesCreate(enumTypeOid, stmt->vals, InvalidOid);
 
 	/*
 	 * Create the array type that goes with it.
