@@ -15,7 +15,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/nodes/copyfuncs.c,v 1.455 2009/12/23 02:35:20 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/nodes/copyfuncs.c,v 1.457 2010/01/01 23:03:09 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -763,6 +763,7 @@ _copyHash(Hash *from)
 	 */
 	COPY_SCALAR_FIELD(skewTable);
 	COPY_SCALAR_FIELD(skewColumn);
+	COPY_SCALAR_FIELD(skewInherit);
 	COPY_SCALAR_FIELD(skewColType);
 	COPY_SCALAR_FIELD(skewColTypmod);
 
@@ -1505,6 +1506,7 @@ _copyNullTest(NullTest *from)
 
 	COPY_NODE_FIELD(arg);
 	COPY_SCALAR_FIELD(nulltesttype);
+	COPY_SCALAR_FIELD(argisrow);
 
 	return newnode;
 }

@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/nodes/outfuncs.c,v 1.376 2009/12/23 02:35:21 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/nodes/outfuncs.c,v 1.378 2010/01/01 23:03:10 tgl Exp $
  *
  * NOTES
  *	  Every node type that can appear in stored rules' parsetrees *must*
@@ -693,6 +693,7 @@ _outHash(StringInfo str, Hash *node)
 
 	WRITE_OID_FIELD(skewTable);
 	WRITE_INT_FIELD(skewColumn);
+	WRITE_BOOL_FIELD(skewInherit);
 	WRITE_OID_FIELD(skewColType);
 	WRITE_INT_FIELD(skewColTypmod);
 }
@@ -1228,6 +1229,7 @@ _outNullTest(StringInfo str, NullTest *node)
 
 	WRITE_NODE_FIELD(arg);
 	WRITE_ENUM_FIELD(nulltesttype, NullTestType);
+	WRITE_BOOL_FIELD(argisrow);
 }
 
 static void
