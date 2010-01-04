@@ -510,11 +510,14 @@ check_relation_reference(Relation rel, int16 *attnums, int natts)
 	if (aclresult != ACLCHECK_OK)
 	{
 		/* Else we must have REFERENCES on each column */
-		aclresult = pg_attribute_aclcheck(relOid, attnums[i], roleId,
-										  ACL_REFERENCES);
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, ACL_KIND_CLASS,
-						   RelationGetRelationName(rel));
+		for (i=0; i < natts; i++)
+		{
+			aclresult = pg_attribute_aclcheck(relOid, attnums[i], roleId,
+											  ACL_REFERENCES);
+			if (aclresult != ACLCHECK_OK)
+				aclcheck_error(aclresult, ACL_KIND_CLASS,
+							   RelationGetRelationName(rel));
+		}
 	}
 }
 
