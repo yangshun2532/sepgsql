@@ -59,7 +59,7 @@ static bool match_prosrc_to_literal(const char *prosrc, const char *literal,
 Oid
 ProcedureCreate(const char *procedureName,
 				Oid procNamespace,
-				bool replace,
+				Oid procReplaced,
 				bool returnsSet,
 				Oid returnType,
 				Oid languageObjectId,
@@ -351,14 +351,12 @@ ProcedureCreate(const char *procedureName,
 		Datum		proargnames;
 		bool		isnull;
 
-		if (!replace)
+		if (!OidIsValid(procReplaced) ||
+			procReplaced != HeapTupleGetOid(oldtup))
 			ereport(ERROR,
 					(errcode(ERRCODE_DUPLICATE_FUNCTION),
 			errmsg("function \"%s\" already exists with same argument types",
 				   procedureName)));
-		if (!pg_proc_ownercheck(HeapTupleGetOid(oldtup), proowner))
-			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PROC,
-						   procedureName);
 
 		/*
 		 * Not okay to change the return type of the existing proc, since

@@ -39,7 +39,7 @@
 #include "parser/parse_func.h"
 #include "rewrite/rewriteManip.h"
 #include "tcop/tcopprot.h"
-#include "utils/acl.h"
+#include "security/ace.h"
 #include "utils/builtins.h"
 #include "utils/datum.h"
 #include "utils/lsyscache.h"
@@ -3692,7 +3692,6 @@ inline_function(Oid funcid, Oid result_type, List *args,
 	 * properties.	(The nargs check is just paranoia.)
 	 */
 	if (funcform->prolang != SQLlanguageId ||
-		funcform->prosecdef ||
 		funcform->proretset ||
 		!heap_attisnull(func_tuple, Anum_pg_proc_proconfig) ||
 		funcform->pronargs != list_length(args))
@@ -3702,8 +3701,8 @@ inline_function(Oid funcid, Oid result_type, List *args,
 	if (list_member_oid(context->active_fns, funcid))
 		return NULL;
 
-	/* Check permission to call function (fail later, if not) */
-	if (pg_proc_aclcheck(funcid, GetUserId(), ACL_EXECUTE) != ACLCHECK_OK)
+	/* Check permission to inline the function (fail later, if not) */
+	if (!check_proc_canbe_inlined(func_tuple))
 		return NULL;
 
 	/*
@@ -4140,10 +4139,6 @@ inline_set_returning_function(PlannerInfo *root, RangeTblEntry *rte)
 		contain_subplans((Node *) fexpr->args))
 		return NULL;
 
-	/* Check permission to call function (fail later, if not) */
-	if (pg_proc_aclcheck(func_oid, GetUserId(), ACL_EXECUTE) != ACLCHECK_OK)
-		return NULL;
-
 	/*
 	 * OK, let's take a look at the function's pg_proc entry.
 	 */
@@ -4155,6 +4150,8 @@ inline_set_returning_function(PlannerInfo *root, RangeTblEntry *rte)
 	funcform = (Form_pg_proc) GETSTRUCT(func_tuple);
 
 	/*
+	 * Check permission to inline the function (fail later, if not).
+	 *
 	 * Forget it if the function is not SQL-language or has other showstopper
 	 * properties.	In particular it mustn't be declared STRICT, since we
 	 * couldn't enforce that.  It also mustn't be VOLATILE, because that is
@@ -4162,10 +4159,10 @@ inline_set_returning_function(PlannerInfo *root, RangeTblEntry *rte)
 	 * sharing the snapshot of the calling query.  (Rechecking proretset is
 	 * just paranoia.)
 	 */
-	if (funcform->prolang != SQLlanguageId ||
+	if (!check_proc_canbe_inlined(func_tuple) ||
+		funcform->prolang != SQLlanguageId ||
 		funcform->proisstrict ||
 		funcform->provolatile == PROVOLATILE_VOLATILE ||
-		funcform->prosecdef ||
 		!funcform->proretset ||
 		!heap_attisnull(func_tuple, Anum_pg_proc_proconfig))
 	{

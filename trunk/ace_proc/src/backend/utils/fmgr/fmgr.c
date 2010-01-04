@@ -24,6 +24,7 @@
 #include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
 #include "pgstat.h"
+#include "security/ace.h"
 #include "utils/builtins.h"
 #include "utils/fmgrtab.h"
 #include "utils/guc.h"
@@ -231,7 +232,7 @@ fmgr_info_cxt_security(Oid functionId, FmgrInfo *finfo, MemoryContext mcxt,
 	 * interesting function and have the right things happen.
 	 */
 	if (!ignore_security &&
-		(procedureStruct->prosecdef ||
+		(check_proc_canbe_setcred(procedureTuple) ||
 		 !heap_attisnull(procedureTuple, Anum_pg_proc_proconfig)))
 	{
 		finfo->fn_addr = fmgr_security_definer;

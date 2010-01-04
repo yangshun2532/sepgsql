@@ -134,4 +134,35 @@ check_attribute_grant(Oid relOid, AttrNumber attnum);
 extern void
 check_attribute_comment(Oid relOid, const char *colName);
 
+/*
+ * ace_proc.c - hooks related to proc and aggregate
+ */
+extern void
+check_proc_create(const char *proName, Oid replaced, Oid nspOid, Oid langOid);
+extern void
+check_proc_alter(Oid proOid);
+extern void
+check_proc_alter_rename(Oid proOid, const char *newName);
+extern void
+check_proc_alter_schema(Oid proOid, Oid newNsp);
+extern void
+check_proc_alter_owner(Oid proOid, Oid newOwner);
+extern void
+check_proc_drop(Oid proOid, bool cascade);
+extern void
+check_proc_grant(Oid proOid);
+extern void
+check_proc_comment(Oid proOid);
+extern void
+check_proc_execute(Oid proOid);
+extern bool
+check_proc_canbe_inlined(HeapTuple proTup);
+extern bool
+check_proc_canbe_setcred(HeapTuple proTup);
+extern void
+check_aggregate_create(const char *aggName, Oid nspOid,
+					   Oid transfn, Oid finalfn);
+extern void
+check_aggregate_execute(Oid aggOid);
+
 #endif	/* SECURITY_ACE_H */

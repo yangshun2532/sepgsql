@@ -27,7 +27,7 @@
 #include "parser/parse_coerce.h"
 #include "parser/parse_func.h"
 #include "parser/parse_oper.h"
-#include "utils/acl.h"
+#include "security/ace.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
@@ -164,6 +164,11 @@ AggregateCreate(const char *aggName,
 	Assert(OidIsValid(finaltype));
 
 	/*
+	 * Permission checks to define a new aggregate function
+	 */
+	check_aggregate_create(aggName, aggNamespace, transfn, finalfn);
+
+	/*
 	 * If finaltype (i.e. aggregate return type) is polymorphic, inputs must
 	 * be polymorphic also, else parser will fail to deduce result type.
 	 * (Note: given the previous test on transtype and inputs, this cannot
@@ -209,7 +214,7 @@ AggregateCreate(const char *aggName,
 
 	procOid = ProcedureCreate(aggName,
 							  aggNamespace,
-							  false,	/* no replacement */
+							  InvalidOid,	/* no replacement */
 							  false,	/* doesn't return a set */
 							  finaltype,		/* returnType */
 							  INTERNALlanguageId,		/* languageObjectId */
@@ -311,7 +316,6 @@ lookup_agg_function(List *fnName,
 	int			nvargs;
 	Oid		   *true_oid_array;
 	FuncDetailCode fdresult;
-	AclResult	aclresult;
 	int			i;
 
 	/*
@@ -365,11 +369,6 @@ lookup_agg_function(List *fnName,
 					 func_signature_string(fnName, nargs,
 										   NIL, true_oid_array))));
 	}
-
-	/* Check aggregate creator has permission to call the function */
-	aclresult = pg_proc_aclcheck(fnOid, GetUserId(), ACL_EXECUTE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_PROC, get_func_name(fnOid));
 
 	return fnOid;
 }
