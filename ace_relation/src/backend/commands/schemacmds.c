@@ -50,7 +50,6 @@ CreateSchemaCommand(CreateSchemaStmt *stmt, const char *queryString)
 	Oid			owner_uid;
 	Oid			saved_uid;
 	int			save_sec_context;
-	AclResult	aclresult;
 
 	GetUserIdAndSecContext(&saved_uid, &save_sec_context);
 
@@ -243,7 +242,6 @@ RenameSchema(const char *oldname, const char *newname)
 {
 	HeapTuple	tup;
 	Relation	rel;
-	AclResult	aclresult;
 
 	rel = heap_open(NamespaceRelationId, RowExclusiveLock);
 
