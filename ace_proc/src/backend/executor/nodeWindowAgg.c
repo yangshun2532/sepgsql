@@ -43,7 +43,7 @@
 #include "optimizer/clauses.h"
 #include "parser/parse_agg.h"
 #include "parser/parse_coerce.h"
-#include "utils/acl.h"
+#include "security/ace.h"
 #include "utils/builtins.h"
 #include "utils/datum.h"
 #include "utils/lsyscache.h"
@@ -1189,7 +1189,6 @@ ExecInitWindowAgg(WindowAgg *node, EState *estate, int eflags)
 		WindowFuncExprState *wfuncstate = (WindowFuncExprState *) lfirst(l);
 		WindowFunc *wfunc = (WindowFunc *) wfuncstate->xprstate.expr;
 		WindowStatePerFunc perfuncstate;
-		AclResult	aclresult;
 		int			i;
 
 		if (wfunc->winref != node->winref)		/* planner screwed up? */
@@ -1217,11 +1216,10 @@ ExecInitWindowAgg(WindowAgg *node, EState *estate, int eflags)
 		wfuncstate->wfuncno = wfuncno;
 
 		/* Check permission to call window function */
-		aclresult = pg_proc_aclcheck(wfunc->winfnoid, GetUserId(),
-									 ACL_EXECUTE);
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, ACL_KIND_PROC,
-						   get_func_name(wfunc->winfnoid));
+		if (wfunc->winagg)
+			check_aggregate_execute(wfunc->winfnoid);
+		else
+			check_proc_execute(wfunc->winfnoid);
 
 		/* Fill in the perfuncstate data */
 		perfuncstate->wfuncstate = wfuncstate;
@@ -1352,7 +1350,6 @@ initialize_peragg(WindowAggState *winstate, WindowFunc *wfunc,
 	HeapTuple	aggTuple;
 	Form_pg_aggregate aggform;
 	Oid			aggtranstype;
-	AclResult	aclresult;
 	Oid			transfn_oid,
 				finalfn_oid;
 	Expr	   *transfnexpr,
@@ -1384,35 +1381,6 @@ initialize_peragg(WindowAggState *winstate, WindowFunc *wfunc,
 
 	peraggstate->transfn_oid = transfn_oid = aggform->aggtransfn;
 	peraggstate->finalfn_oid = finalfn_oid = aggform->aggfinalfn;
-
-	/* Check that aggregate owner has permission to call component fns */
-	{
-		HeapTuple	procTuple;
-		Oid			aggOwner;
-
-		procTuple = SearchSysCache(PROCOID,
-								   ObjectIdGetDatum(wfunc->winfnoid),
-								   0, 0, 0);
-		if (!HeapTupleIsValid(procTuple))
-			elog(ERROR, "cache lookup failed for function %u",
-				 wfunc->winfnoid);
-		aggOwner = ((Form_pg_proc) GETSTRUCT(procTuple))->proowner;
-		ReleaseSysCache(procTuple);
-
-		aclresult = pg_proc_aclcheck(transfn_oid, aggOwner,
-									 ACL_EXECUTE);
-		if (aclresult != ACLCHECK_OK)
-			aclcheck_error(aclresult, ACL_KIND_PROC,
-						   get_func_name(transfn_oid));
-		if (OidIsValid(finalfn_oid))
-		{
-			aclresult = pg_proc_aclcheck(finalfn_oid, aggOwner,
-										 ACL_EXECUTE);
-			if (aclresult != ACLCHECK_OK)
-				aclcheck_error(aclresult, ACL_KIND_PROC,
-							   get_func_name(finalfn_oid));
-		}
-	}
 
 	/* resolve actual type of transition state, if polymorphic */
 	aggtranstype = aggform->aggtranstype;

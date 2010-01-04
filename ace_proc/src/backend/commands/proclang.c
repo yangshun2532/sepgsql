@@ -135,7 +135,7 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 		{
 			handlerOid = ProcedureCreate(pltemplate->tmplhandler,
 										 PG_CATALOG_NAMESPACE,
-										 false, /* replace */
+										 InvalidOid, /* no replace */
 										 false, /* returnsSet */
 										 LANGUAGE_HANDLEROID,
 										 ClanguageId,
@@ -170,7 +170,7 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 			{
 				inlineOid = ProcedureCreate(pltemplate->tmplinline,
 											PG_CATALOG_NAMESPACE,
-											false, /* replace */
+											InvalidOid, /* no replace */
 											false, /* returnsSet */
 											VOIDOID,
 											ClanguageId,
@@ -208,7 +208,7 @@ CreateProceduralLanguage(CreatePLangStmt *stmt)
 			{
 				valOid = ProcedureCreate(pltemplate->tmplvalidator,
 										 PG_CATALOG_NAMESPACE,
-										 false, /* replace */
+										 InvalidOid, /* no replace */
 										 false, /* returnsSet */
 										 VOIDOID,
 										 ClanguageId,

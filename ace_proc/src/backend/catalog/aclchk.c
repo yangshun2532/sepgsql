@@ -2343,6 +2343,10 @@ ExecGrant_Function(InternalGrant *istmt)
 									 funcId, grantorId, ACL_KIND_PROC,
 									 NameStr(pg_proc_tuple->proname),
 									 0, NULL);
+		/*
+		 * Check permission by enhanced security provider
+		 */
+		check_proc_grant(funcId);
 
 		/*
 		 * Generate new ACL.

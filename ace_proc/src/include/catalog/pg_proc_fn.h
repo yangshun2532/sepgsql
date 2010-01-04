@@ -18,7 +18,7 @@
 
 extern Oid ProcedureCreate(const char *procedureName,
 				Oid procNamespace,
-				bool replace,
+				Oid procReplaced,
 				bool returnsSet,
 				Oid returnType,
 				Oid languageObjectId,
