@@ -8,6 +8,7 @@
  */
 #include "postgres.h"
 
+#include "commands/dbcommands.h"
 #include "miscadmin.h"
 #include "security/ace.h"
 #include "utils/lsyscache.h"
