@@ -63,10 +63,10 @@
  *	when using the SysV semaphore code.
  *
  *
- * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- *	  $PostgreSQL: pgsql/src/include/storage/s_lock.h,v 1.168 2009/12/31 19:41:36 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/include/storage/s_lock.h,v 1.170 2010/01/04 17:10:24 mha Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -836,12 +836,23 @@ typedef LONG slock_t;
 
 #define SPIN_DELAY() spin_delay()
 
+/* If using Visual C++ on Win64, inline assembly is unavailable.
+ * Use a __nop instrinsic instead of rep nop.
+ */
+#if defined(_WIN64)
+static __forceinline void
+spin_delay(void)
+{
+	__nop();
+}
+#else
 static __forceinline void
 spin_delay(void)
 {
 	/* See comment for gcc code. Same code, MASM syntax */
 	__asm rep nop;
 }
+#endif
 
 #endif
 

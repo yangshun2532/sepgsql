@@ -3,10 +3,10 @@
  * lsyscache.h
  *	  Convenience routines for common queries in the system catalog cache.
  *
- * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/utils/lsyscache.h,v 1.129 2009/08/10 05:46:50 tgl Exp $
+ * $PostgreSQL: pgsql/src/include/utils/lsyscache.h,v 1.131 2010/01/04 02:44:40 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -129,6 +129,7 @@ extern int32 get_attavgwidth(Oid relid, AttrNumber attnum);
 extern bool get_attstatsslot(HeapTuple statstuple,
 				 Oid atttype, int32 atttypmod,
 				 int reqkind, Oid reqop,
+				 Oid *actualop,
 				 Datum **values, int *nvalues,
 				 float4 **numbers, int *nnumbers);
 extern void free_attstatsslot(Oid atttype,
