@@ -3,11 +3,11 @@
  * ts_selfuncs.c
  *	  Selectivity estimation functions for text search operators.
  *
- * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/tsearch/ts_selfuncs.c,v 1.5 2009/07/16 06:33:44 petere Exp $
+ *	  $PostgreSQL: pgsql/src/backend/tsearch/ts_selfuncs.c,v 1.7 2010/01/04 02:44:39 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -170,6 +170,7 @@ tsquerysel(VariableStatData *vardata, Datum constval)
 		if (get_attstatsslot(vardata->statsTuple,
 							 TEXTOID, -1,
 							 STATISTIC_KIND_MCELEM, InvalidOid,
+							 NULL,
 							 &values, &nvalues,
 							 &numbers, &nnumbers))
 		{
