@@ -14,11 +14,11 @@
  *
  * Author: Andreas Pflug <pgadmin@pse-consulting.de>
  *
- * Copyright (c) 2004-2009, PostgreSQL Global Development Group
+ * Copyright (c) 2004-2010, PostgreSQL Global Development Group
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/postmaster/syslogger.c,v 1.53 2009/11/19 02:45:33 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/postmaster/syslogger.c,v 1.55 2010/01/02 16:57:51 momjian Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -573,7 +573,7 @@ SysLogger_Start(void)
 				 * chunking protocol.
 				 */
 				fflush(stderr);
-				fd = _open_osfhandle((long) syslogPipe[1],
+				fd = _open_osfhandle((intptr_t) syslogPipe[1],
 									 _O_APPEND | _O_BINARY);
 				if (dup2(fd, _fileno(stderr)) < 0)
 					ereport(FATAL,
