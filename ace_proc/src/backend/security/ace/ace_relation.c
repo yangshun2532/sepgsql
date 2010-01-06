@@ -171,7 +171,7 @@ check_relation_perms(Oid relOid, Oid userId, AclMode requiredPerms,
 }
 
 /*
- * check_relation_perms
+ * check_relation_create
  *
  * It enables security providers to check permission to create a new
  * relation.
@@ -192,26 +192,13 @@ check_relation_perms(Oid relOid, Oid userId, AclMode requiredPerms,
  * relNsp  : OID of the namespace to create in
  * relTblspc : OID of the tablespace, if exist
  * colList : List of ColumnDef, if exist
- * isTemp  : True, if the new table is temporary
- * createAs : Trus, if CREATE TABLE AS/SELECT INTO
+ * createAs : True, if CREATE TABLE AS/SELECT INTO
  */
 void
-check_relation_create(const char *relName, char relkind,
-					  TupleDesc tupDesc, Oid relNsp, Oid relTblspc,
-					  List *colList, bool isTemp, bool createAs)
+check_relation_create(const char *relName, char relkind, TupleDesc tupDesc,
+					  Oid relNsp, Oid relTblspc, List *colList, bool createAs)
 {
 	AclResult	aclresult;
-
-	/*
-	 * Security check: disallow creating temp tables from security-restricted
-	 * code.  This is needed because calling code might not expect untrusted
-	 * tables to appear in pg_temp at the front of its search path.
-	 */
-	if (isTemp && InSecurityRestrictedOperation())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("cannot create temporary table within "
-						"security-restricted operation")));
 
 	/*
 	 * Check we have permission to create there. Skip check if bootstrapping,
