@@ -1970,6 +1970,16 @@ OpenIntoRel(QueryDesc *queryDesc)
 				 errmsg("ON COMMIT can only be used on temporary tables")));
 
 	/*
+	 * Security check: disallow creating temp tables from security-restricted
+	 * code.  This is needed because calling code might not expect untrusted
+	 * tables to appear in pg_temp at the front of its search path.
+	 */
+	if (into->rel->istemp && InSecurityRestrictedOperation())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("cannot create temporary table within security-restricted operation")));
+
+	/*
 	 * Find namespace to create in
 	 */
 	intoName = into->rel->relname;
@@ -2007,8 +2017,7 @@ OpenIntoRel(QueryDesc *queryDesc)
 	 * Check permission to create a new relation
 	 */
 	check_relation_create(intoName, RELKIND_RELATION, queryDesc->tupDesc,
-						  namespaceId, tablespaceId, NIL,
-						  into->rel->istemp, true);
+						  namespaceId, tablespaceId, NIL, true);
 
 	/* Copy the tupdesc because heap_create_with_catalog modifies it */
 	tupdesc = CreateTupleDescCopy(queryDesc->tupDesc);

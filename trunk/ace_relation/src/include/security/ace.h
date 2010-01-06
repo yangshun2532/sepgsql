@@ -72,9 +72,8 @@ extern bool
 check_relation_perms(Oid relOid, Oid roleId, AclMode requiredPerms,
 					 Bitmapset *selCols, Bitmapset *modCols, bool abort);
 extern void
-check_relation_create(const char *relName, char relkind,
-					  TupleDesc tupDesc, Oid relNsp, Oid relTblspc,
-					  List *colList, bool isTemp, bool createAs);
+check_relation_create(const char *relName, char relkind, TupleDesc tupDesc,
+					  Oid relNsp, Oid relTblspc, List *colList, bool createAs);
 extern void
 check_relation_alter(Oid relOid);
 extern void
