@@ -4,6 +4,7 @@
 # ---- parametors ----
 CVSTAG="HEAD"
 SVNBRANCH="/trunk"
+SUBTREES="ace_database ace_schema ace_relation ace_proc"
 
 SEPGSQL_REPOSITORY=`(cd \`dirname $0\`/..; pwd)`
 echo $SEPGSQL_REPOSITORY
@@ -59,14 +60,21 @@ echo "$0 done, check diff and following commands"
 echo
 echo "cd ${SEPGSQL_REPOSITORY}${SVNBRANCH}"
 echo "svn diff ./base"
-echo "svn commit -m 'CVS pull -r ${CVSTAG} at `env LANG=C date`' ./base && \\"
+echo "svn commit -m 'CVS pull -r ${CVSTAG} at `env LANG=C date`' ./base"
 echo "svn update"
 echo
-echo "svn merge -c `expr ${SVNREV} + 1` ./base ./ace_database && \\"
-echo "svn commit -m 'merge updates of ${SVNBRANCH}/base into ${SVNBRANCH}/ace_database at r`expr ${SVNREV} + 1`' ./ace_database && \\"
-echo "svn update"
-echo
-echo "svn merge -c `expr ${SVNREV} + 2` ./ace_database ./ace_schema  && \\"
-echo "svn commit -m 'merge updates of ${SVNBRANCH}/ace_database into ${SVNBRANCH}/ace_schema at r`expr ${SVNREV} + 2`' ./ace_schema && \\"
-echo "svn update"
-echo
+
+test -z "$SUBTREES" && exit 0
+
+LAST_TREE="base"
+COUNT=1
+for CUR_TREE in $SUBTREES
+do
+    echo "svn merge -c `expr ${SVNREV} + ${COUNT}` ./${LAST_TREE} ./${CUR_TREE}"
+    echo "svn diff ./${CUR_TREE}"
+    echo "svn commit -m 'merge updates of ${SVNBRANCH}/${LAST_TREE} into ${SVNBRANCH}/${CUR_TREE} at r`expr ${SVNREV} + ${COUNT}`'" ./${CUR_TREE}
+    echo "svn update ./${CUR_TREE}"
+    echo
+    LAST_TREE=$CUR_TREE
+    COUNT=`expr $COUNT + 1`
+done
