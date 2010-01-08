@@ -43,7 +43,8 @@ role_has_createdb(void)
 /*
  * check_database_create
  *
- * It enables security providers to check permission to create a new database.
+ * It checks privileges to create a new database with the given parameters.
+ * If violated, it shall raise an error.
  *
  * datName : Name of the new database
  * srcDatOid : OID of the source database (may be template database)
@@ -113,9 +114,9 @@ check_database_create(const char *datName,
 /*
  * check_database_alter
  *
- * It enables security providers to check permission to alter properties
- * of a certain database, except for its name, ownership and default
- * tablespace.
+ * It checks privileges to alter properties of a certain database, except
+ * for its name, ownership and default tablespace.
+ * If violated, it shall raise an error.
  *
  * datOid : OID of the database to be altered
  */
@@ -132,8 +133,8 @@ check_database_alter(Oid datOid)
 /*
  * check_database_alter_rename
  *
- * It enables security providers to check permission to alter
- * name of a certain database
+ * It checks privileges to alter name of a certain database.
+ * If violated, it shall raise an error.
  *
  * datOid : OID of the database to be altered
  * newName : The new database name 
@@ -156,8 +157,8 @@ check_database_alter_rename(Oid datOid, const char *newName)
 /*
  * check_database_alter_owner
  *
- * It enables security providers to check permission to alter
- * ownership of a certain database.
+ * It checks privileges to alter ownership of a certain database.
+ * If violated, it shall raise an error.
  *
  * datOid : OID of the database to be altered
  * newOwner : OID of the new database owner
@@ -191,8 +192,8 @@ check_database_alter_owner(Oid datOid, Oid newOwner)
 /*
  * check_database_alter_tablespace
  *
- * It enables security providers to check permission to alter
- * default tablespace of a certain database
+ * It checks privileges to alter tablespace of a certain database.
+ * If violated, it shall raise an error.
  *
  * datOid : OID of the database to be altered
  * newTblspc : OID of the new default tablespace
@@ -218,8 +219,8 @@ check_database_alter_tablespace(Oid datOid, Oid newTblspc)
 /*
  * check_database_drop 
  *
- * It enables security providers to check permission to drop a certain
- * database.
+ * It checks privileges to drop a certain database.
+ * If violated, it shall raise an error.
  *
  * datOid : OID of the database to be dropped
  * cascade : True, if cascaded deletion. Currently, it should never happen.
@@ -236,8 +237,8 @@ check_database_drop(Oid datOid, bool cascade)
 /*
  * check_database_getattr
  *
- * It enables security providers to check permission to get attribute
- * of a certain database.
+ * It checks privileges to get attribute of a certain database.
+ * If violated, it shall raise an error.
  *
  * datOid : OID of the database to be referenced
  */
@@ -256,24 +257,25 @@ check_database_getattr(Oid datOid)
 /*
  * check_database_grant
  *
- * It enables security providers to check permission to grant/revoke
- * the default PG permissions on a certain database.
+ * It checks privileges to grant/revoke the default PG permissions
+ * on a certain database.
  * The caller (aclchk.c) handles the default PG privileges well,
  * so rest of enhanced security providers can apply its checks here.
+ * If violated, it shall raise an error.
  *
  * datOid : OID of the database to be granted/revoked
  */
 void
 check_database_grant(Oid datOid)
 {
-	/* do nothing here */
+	/* right now, no enhanced security providers */
 }
 
 /*
  * check_database_comment
  *
- * It enables security providers to check permission to comment
- * on a certain database.
+ * It checks privileges to comment on a certain database.
+ * If violated, it shall raise an error.
  *
  * datOid : OID of the database to be commented
  */
@@ -288,10 +290,10 @@ check_database_comment(Oid datOid)
 /*
  * check_database_connect
  *
- * It enables to security providers to check permissions to connect
- * to a certain database during initialization of server instance.
- * In this hook, security providers has to raise an FATAL, not ERROR,
- * when access control violations.
+ * It checks privileges to connect to a certain database under the
+ * initialization of a server instance.
+ * In this hook, security providers shall raise a FATAL error, not
+ * an ERROR, if violated.
  *
  * datOid : OID of the database to be connected
  */
@@ -310,8 +312,9 @@ check_database_connect(Oid datOid)
 /*
  * check_database_reindex
  *
- * It enables security providers to check permissions to reindex
- * all the tables within a certain database.
+ * It checks privileges to reindex all the tables within a certain
+ * database.
+ * If violated, it shall raise an error.
  *
  * datOid : OID of the database to be reindexed
  */
