@@ -114,8 +114,8 @@ check_database_create(const char *datName,
 /*
  * check_database_alter
  *
- * It checks privileges to alter properties of a certain database, except
- * for its name, ownership and default tablespace.
+ * It checks privileges to alter properties of the specified database,
+ * except for its name, ownership and default tablespace.
  * If violated, it shall raise an error.
  *
  * datOid : OID of the database to be altered
@@ -133,7 +133,7 @@ check_database_alter(Oid datOid)
 /*
  * check_database_alter_rename
  *
- * It checks privileges to alter name of a certain database.
+ * It checks privileges to alter name of the specified database.
  * If violated, it shall raise an error.
  *
  * datOid : OID of the database to be altered
@@ -157,7 +157,7 @@ check_database_alter_rename(Oid datOid, const char *newName)
 /*
  * check_database_alter_owner
  *
- * It checks privileges to alter ownership of a certain database.
+ * It checks privileges to alter ownership of the specified database.
  * If violated, it shall raise an error.
  *
  * datOid : OID of the database to be altered
@@ -192,7 +192,7 @@ check_database_alter_owner(Oid datOid, Oid newOwner)
 /*
  * check_database_alter_tablespace
  *
- * It checks privileges to alter tablespace of a certain database.
+ * It checks privileges to alter tablespace of the specified database.
  * If violated, it shall raise an error.
  *
  * datOid : OID of the database to be altered
@@ -219,7 +219,7 @@ check_database_alter_tablespace(Oid datOid, Oid newTblspc)
 /*
  * check_database_drop 
  *
- * It checks privileges to drop a certain database.
+ * It checks privileges to drop the specified database.
  * If violated, it shall raise an error.
  *
  * datOid : OID of the database to be dropped
@@ -237,7 +237,7 @@ check_database_drop(Oid datOid, bool cascade)
 /*
  * check_database_getattr
  *
- * It checks privileges to get attribute of a certain database.
+ * It checks privileges to get attribute of the specified database.
  * If violated, it shall raise an error.
  *
  * datOid : OID of the database to be referenced
@@ -258,7 +258,7 @@ check_database_getattr(Oid datOid)
  * check_database_grant
  *
  * It checks privileges to grant/revoke the default PG permissions
- * on a certain database.
+ * on the specified database.
  * The caller (aclchk.c) handles the default PG privileges well,
  * so rest of enhanced security providers can apply its checks here.
  * If violated, it shall raise an error.
@@ -274,7 +274,7 @@ check_database_grant(Oid datOid)
 /*
  * check_database_comment
  *
- * It checks privileges to comment on a certain database.
+ * It checks privileges to comment on the specified database.
  * If violated, it shall raise an error.
  *
  * datOid : OID of the database to be commented
@@ -290,7 +290,7 @@ check_database_comment(Oid datOid)
 /*
  * check_database_connect
  *
- * It checks privileges to connect to a certain database under the
+ * It checks privileges to connect to the specified database under the
  * initialization of a server instance.
  * In this hook, security providers shall raise a FATAL error, not
  * an ERROR, if violated.
@@ -312,7 +312,7 @@ check_database_connect(Oid datOid)
 /*
  * check_database_reindex
  *
- * It checks privileges to reindex all the tables within a certain
+ * It checks privileges to reindex all the tables within the specified
  * database.
  * If violated, it shall raise an error.
  *
