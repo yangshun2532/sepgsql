@@ -18,7 +18,7 @@
 /*
  * check_relation_perms
  *
- * It enables security providers to check permission to access a certain
+ * It enables security providers to check permission to access the specified
  * relation and columns using regular dml statements and etc.
  *
  * relOid : OID of the relation to be accessed
@@ -173,18 +173,13 @@ check_relation_perms(Oid relOid, Oid userId, AclMode requiredPerms,
 /*
  * check_relation_create
  *
- * It enables security providers to check permission to create a new
- * relation.
+ * It checks privilege to create a new relation.
+ * If violated, it shall raise an error.
  *
- * Note that it is not checked on the following cases, although it
- * creates a new relation in actually:
- * - Boot_CreateStmt handling in bootparse
- *   No need to check permission in bootstraping mode
+ * Note that this hook is not invoked in the below cases:
+ * - Boot_CreateStmt handling in bootparse.y
  * - create_toast_table()
- *   TOAST relation is pure internal stuff, no need to check permission
  * - make_new_heap()
- *   This relation is pure internal stuff to cluster the contents, and
- *   it shall be dropped soon. 
  *
  * relName : Name of the new relation
  * relkind : Relkind of the new relation
@@ -225,7 +220,9 @@ check_relation_create(const char *relName, char relkind, TupleDesc tupDesc,
 /*
  * check_relation_alter
  *
- * It checks privileges to alter properties of the relation.
+ * It checks privileges to alter properties of the specified relation,
+ * except for its name, schema, ownership and default tablespace.
+ * If violated, it shall raise an error.
  *
  * relOid : OID of the relation to be altered
  */
@@ -241,7 +238,8 @@ check_relation_alter(Oid relOid)
 /*
  * check_relation_alter
  *
- * It checks privileges to rename the given relation.
+ * It checks privileges to alter name of the specified relation.
+ * If viiolated, it shall raise an error.
  *
  * relOid : OID of the relation to be altered
  * newName : New name of the relation to be set
@@ -267,7 +265,8 @@ check_relation_alter_rename(Oid relOid, const char *newName)
 /*
  * check_relation_alter_schema
  *
- * It checks privileges to set a new schema of the relation
+ * It checks privileges to alter schema of the specified relation.
+ * If violated, it shall raise an error.
  *
  * relOid : OID of the relation to be altered
  * newNsp : OID of the new namespace to be set
@@ -291,7 +290,9 @@ check_relation_alter_schema(Oid relOid, Oid newNsp)
 /*
  * check_relation_alter_tablespace
  *
- * It checks privileges to alter properties of the relation.
+ * It checks privileges to alter default tablespace of the specified
+ * relation.
+ * If violated, it shall raise an error.
  *
  * relOid : OID of the relation to be altered
  * newTblspc : OID of the new tablespace to be set
@@ -315,7 +316,8 @@ check_relation_alter_tablespace(Oid relOid, Oid newTblspc)
 /*
  * check_relation_alter
  *
- * It checks privileges to alter properties of the relation.
+ * It checks privileges to alter ownership of the specified relation.
+ * If violated, it shall raise an error.
  *
  * relOid : OID of the relation to be altered
  */
@@ -348,7 +350,8 @@ check_relation_alter_owner(Oid relOid, Oid newOwner)
 /*
  * check_relation_drop
  *
- * It checks privileges to drop a certain relation
+ * It checks privileges to drop the specified relation.
+ * If violated, it shall raise an error.
  *
  * relOid  : OID of the relation to be dropped
  * cascade : True, if it was called due to the cascaded deletion
@@ -369,7 +372,8 @@ check_relation_drop(Oid relOid, bool cascade)
 /*
  * check_relation_getattr
  *
- * It checks privileges to reference properties of relation
+ * It checks privileges to reference properties of the specified relation.
+ * If violated, it shall raise an error.
  *
  * relOid : OID of the relation to be referenced
  */
@@ -387,23 +391,25 @@ check_relation_getattr(Oid relOid)
 /*
  * check_relation_grant
  *
- * It checks privileges to grant/revoke the default PG permissions on
- * a certain relation.
+ * It checks privileges to grant/revoke the default PG permissions
+ * on the specified relation.
  * The caller (aclchk.c) handles the default PG privileges well,
  * so rest of enhanced security providers can apply its checks here.
+ * If violated, it shall raise an error.
  *
  * relOid : OID of the relation to be granted/revoked
  */
 void
 check_relation_grant(Oid relOid)
 {
-	/* do nothing */
+	/* right now, no enhanced security providers */
 }
 
 /*
  * check_relation_comment
  *
- * It checks privileges to comment on a certain relation
+ * It checks privileges to comment on the specified relation.
+ * If violated, it shall raise an error.
  *
  * relOid : OID of the relation to be commented on
  */
@@ -418,7 +424,9 @@ check_relation_comment(Oid relOid)
 /*
  * check_relation_inheritance
  *
- * It checks privileges to set up inheritance relationship
+ * It checks privileges to set up inheritance tree between two
+ * relations.
+ * If violated, it shall raise an error.
  *
  * parentOid : OID of the parent relation
  * childOid : OID of the child relation, or InvalidOid when CREATE TABLE
@@ -438,7 +446,9 @@ check_relation_inherit(Oid parentOid, Oid childOid)
 /*
  * check_relation_cluster
  *
- * It checks privileges to clusterize 
+ * It checks privileges to clusterize the specified relation.
+ * If violated, it shall raise an error, or return false when `abort'
+ * is not true.
  *
  * relOid : OID of the relation to be clustered
  * abort  : True, if caller want to raise an error on violation
@@ -459,7 +469,9 @@ check_relation_cluster(Oid relOid, bool abort)
 /*
  * check_relation_truncate
  *
- * It checks privileges to truncate contents of a certain relation.
+ * It checks privileges to truncate all the contents of the specified
+ * relation.
+ * If violated, it raises an error.
  *
  * rel : The target Relation to be truncated
  */
@@ -478,7 +490,9 @@ check_relation_truncate(Relation rel)
 /*
  * check_relation_reference
  *
- * It checks privileges to set up FK constraint between two relations.
+ * It checks privileges to set up foreign key constraints on the specified
+ * relation and columns.
+ * If violated, it raises an error.
  *
  * rel : The FK/PK Relation to be referenced
  * attnums : An array of attribute numbers to be constrained
@@ -511,7 +525,8 @@ check_relation_reference(Relation rel, int16 *attnums, int natts)
 /*
  * check_relation_lock
  *
- * It checks privileges to lock a certain table explicitly.
+ * It checks privileges to lock the specified relation explicitly.
+ * If violated, it shall raise an error.
  *
  * rel : The target Relation to be locked
  * lockmode : The required lockmode
@@ -536,7 +551,8 @@ check_relation_lock(Relation rel, LOCKMODE lockmode)
 /*
  * check_relation_vacuum
  *
- * It checks privileges to run vacuum process on a certain relation
+ * It checks privileges to run vacuum process on the specified relation.
+ * If violated, it shall return `false'.
  *
  * rel : Relation to be vacuumed
  */
@@ -560,9 +576,10 @@ check_relation_vacuum(Relation rel)
 /*
  * check_relation_reindex
  *
- * It checks privileges to rebuild all the indexes defined on a certain
+ * It checks privileges to rebuild all the indexes defined on the specified
  * table using REINDEX statement.
- * Note that it is not called on REINDEX DATABASE or INDEX
+ * Note that this hook is not called on REINDEX DATABASE or INDEX
+ * If violated, it shall raise an error.
  *
  * relOid : OID of the index to be rebuilt
  */
@@ -577,7 +594,8 @@ check_relation_reindex(Oid relOid)
 /*
  * check_view_replace
  *
- * It checks privilege to replace definitions of an existing virtual relation.
+ * It checks privilege to replace definitions of the specified VIEW.
+ * If violated, it shall raise an error.
  *
  * viewOid : OID of the view to be replaced
  */
@@ -595,6 +613,8 @@ check_view_replace(Oid viewOid)
  * check_index_create
  *
  * It checks privilege to create a new index.
+ * If violated, it shall raise an error.
+ *
  * Note that check_relation_alter() on the relation to be indexed is already
  * called to check privilege to alter properties of the relation.
  * The security provider can check any other permissions to create a new
@@ -639,7 +659,9 @@ check_index_create(const char *indName, Oid indNsp, Oid indTblspc)
  * check_index_reindex
  *
  * It checks privileges to rebuild a certain index.
- * Note that it is not called on REINDEX DATABASE or TABLE.
+ * If violated, it shall raise an error.
+ *
+ * Note that this hook is not called on REINDEX DATABASE or TABLE.
  * 
  * indOid : OID of the index to be rebuilt
  */
@@ -656,8 +678,9 @@ check_index_reindex(Oid indOid)
 /*
  * check_sequence_get_value
  *
- * It enables security providers to check permission to reference
- * a certain sequence object, using currval() or lastval().
+ * It checks privileges to reference the specified sequence object,
+ * using currval() or lastval().
+ * If violated, it shall raise an error.
  *
  * seqOid : OID of the sequence to be referenced
  */
@@ -677,8 +700,9 @@ check_sequence_get_value(Oid seqOid)
 /*
  * check_sequence_next_value
  *
- * It enables security providers to check permission to fetch a value
- * from a certain sequence object, using nextval()
+ * It checks privileges to reference the specified sequence object,
+ * using nextval().
+ * If violated, it shall raise an error.
  *
  * seqOid : OID of the sequence to be referenced
  */
@@ -698,8 +722,9 @@ check_sequence_next_value(Oid seqOid)
 /*
  * check_sequence_set_value
  *
- * It enables security providers to check permission to set an arbitary
- * value on a certain sequence object, using setval()
+ * It checks privileges to assign a discretionary value on the specified
+ * sequence object, using setval().
+ * If violated, it shall raise an error.
  *
  * seqOid : OID of the sequence to be referenced
  */

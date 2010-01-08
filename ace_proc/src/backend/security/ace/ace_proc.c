@@ -21,6 +21,7 @@
  *
  * It checks privileges to create a new regular procedure using CREATE
  * FUNCTION statement.
+ * If violated, it shall raise an error.
  *
  * proName : Name of the new function
  * replaced : OID of the function to be replaced, if exist.
@@ -83,6 +84,7 @@ check_proc_create(const char *proName, Oid replaced, Oid nspOid, Oid langOid)
  *
  * It checks privileges to alter properties of a certain procedure
  * except for its name, ownership and schema.
+ * If violated, it shall raise an error.
  *
  * proOid : OID of the procedure to be altered
  */
@@ -99,6 +101,7 @@ check_proc_alter(Oid proOid)
  * check_proc_alter_rename
  *
  * It checks privileges to rename a certain procedure.
+ * If violated, it shall raise an error.
  *
  * proOid : OID of the procedure to be renamed
  * newName : New name of the procedure
@@ -126,6 +129,7 @@ check_proc_alter_rename(Oid proOid, const char *newName)
  * check_proc_alter_schema
  *
  * It checks privileges to move a certain procedure into the new schema.
+ * If violated, it shall raise an error.
  *
  * proOid : OID of the procedure to be moved
  * newNsp : OID of the new namespace which shall own the procedure
@@ -151,6 +155,7 @@ check_proc_alter_schema(Oid proOid, Oid newNsp)
  * check_proc_alter_owner
  *
  * It checks privileges to change ownership of a certain procedure.
+ * If violated, it shall raise an error.
  *
  * proOid : OID of the procedure to be moved
  * newOwner : OID of the new owner of the procedure
@@ -186,6 +191,7 @@ check_proc_alter_owner(Oid proOid, Oid newOwner)
  * check_proc_drop
  *
  * It checks privileges to drop a certain procedure
+ * If violated, it shall raise an error.
  *
  * proOid : OID of the procedure to be dropped
  * cascade : True, if it was called due to the cascaded deletion
@@ -212,19 +218,21 @@ check_proc_drop(Oid proOid, bool cascade)
  * on a certain relation.
  * The caller (aclchk.c) handles the default PG privileges well,
  * so rest of enhanced security providers can apply its checks here.
+ * If violated, it shall raise an error.
  *
  * proOid : OID of the procedure to be granted/revoked
  */
 void
 check_proc_grant(Oid proOid)
 {
-	/* do nothing */
+	/* right now, no enhanced security providers */
 }
 
 /*
  * check_proc_comment
  *
  * It checks privileges to comment on a procedure
+ * If violated, it shall raise an error.
  *
  * proOid : OID of the procedure to be commented on
  */
@@ -241,6 +249,7 @@ check_proc_comment(Oid proOid)
  * check_proc_execute
  *
  * It checks privileges to execute a certain procedure
+ * If violated, it shall raise an error.
  *
  * proOid : OID of the procedure to be executed
  */
@@ -259,6 +268,7 @@ check_proc_execute(Oid proOid)
  *
  * It gives the caller a hint whether the given SQL function can be inlined
  * for query optimization purpose, or not, due to the security reason.
+ * If not optimizable, it returns false.
  *
  * proTup : HeapTuple of the procedure to be inlined
  */
@@ -309,6 +319,7 @@ check_proc_canbe_setcred(HeapTuple proTup)
  * check_aggregate_create
  *
  * It checks privileges to create a new aggregate function.
+ * If violated, it shall raise an error.
  *
  * aggName : Name of the new aggregate function
  * nspOid : OID of the namespace for the new aggregate function
@@ -346,6 +357,7 @@ check_aggregate_create(const char *aggName, Oid nspOid,
  * check_aggregate_execute
  *
  * It checks privileges to execute a certain function
+ * If violated, it shall raise an error.
  *
  * aggOid : OID of the aggregate function to be executed
  */

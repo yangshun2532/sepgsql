@@ -17,8 +17,8 @@
 /*
  * check_schema_create
  *
- * It enables security providers to check permission to create
- * a new schema object.
+ * It checks privileges to create a new schema with the given parameters.
+ * If violated, it shall raise an error.
  *
  * nspName : Name of the new schema object
  * nspOwner : OID of the new schema owner
@@ -50,8 +50,8 @@ check_schema_create(const char *nspName, Oid nspOwner, bool isTemp)
 /*
  * check_schema_alter_rename
  *
- * It enables security providers to check permission to alter
- * name of a certain schema object.
+ * It checks privileges to alter name of the specified schema.
+ * If violated, it shall raise an error.
  *
  * nspOid : OID of the schema to be renamed
  * newName : New name of the schema
@@ -78,8 +78,8 @@ check_schema_alter_rename(Oid nspOid, const char *newName)
 /*
  * check_schema_alter_owner
  *
- * It enables security providers to check permission to alter
- * ownership of a certain schema object.
+ * It checks privileges to alter ownership of the specified schema.
+ * If violated, it shall raise an error.
  *
  * nspOid : OID of the schema to be altered
  * newOwner : New owner of the schema
@@ -116,8 +116,8 @@ check_schema_alter_owner(Oid nspOid, Oid newOwner)
 /*
  * check_schema_drop
  *
- * It enables security providers to check permission to drop a certain
- * schema obejct.
+ * It checks privileges to drop the specified schema.
+ * If violated, it shall raise an error.
  *
  * nspOid : OID of the schema to be dropped
  * cascade : True, if cascaded deletion.
@@ -134,24 +134,27 @@ check_schema_drop(Oid nspOid, bool cascade)
 /*
  * check_schema_grant
  *
- * It enables security providers to check permission to grant/revoke
- * the default PG permissions on a certain schema.
+ * It checks privileges to grant/revoke the default PG permissions on
+ * the specified schema.
  * The caller (aclchk.c) handles the default PG privileges well,
  * so rest of enhanced security providers can apply its checks here.
+ * If violated, it shall raise an error.
  *
  * nspOid : OID of the schema to be granted/revoked
  */
 void
 check_schema_grant(Oid nspOid)
 {
-	/* do nothing here */
+	/* right now, no enhanced security providers */
 }
 
 /*
  * check_schema_search
  *
- * It enables security provides to check permission to search database
- * objects under a certain schema.
+ * It checks privileges to search database objects owned by the specified 
+ * schema.
+ * If violated, it shall raise an error, or return false when the `abort'
+ * is not true.
  *
  * Note that we handles "pg_temp" schema as an exception.
  * It is indeed a schema in fact, and in implementation. but it is an
@@ -185,8 +188,8 @@ check_schema_search(Oid nspOid, bool abort)
 /*
  * check_schema_comment
  *
- * It enables security provides to check permission to comment on
- * a certain schema object.
+ * It checks privileges to comment on the specified schema.
+ * If violated, it raised an error.
  *
  * nspOid : OID of the schema to be commented
  */
