@@ -59,23 +59,26 @@ When we create a new database, the default PG checks the following privileges.
   or
  - The user has "rolcreatedb" privilege?
  - The user has membership on the new database owner?
- - If the source is not a template, the user has ownership on the source database?
- - If an explicit tablespace in use, the user has CREATE priv on the tablespace?
+ - If the source is not a template, the user has ownership on the source
+   database?
+ - If an explicit tablespace in use, the user has CREATE permission on
+   the tablespace?
 
-We have to resolve name of the source database and tablespace (if given) earlier
-than invocation of the check_database_create() hook, so this patch moves the code
-to lookup the tablespace name ahead, and puts this call after the get_db_info().
+We have to resolve name of the source database and tablespace (if given)
+earlier than invocation of the check_database_create() hook, so this patch
+moves the code to lookup the tablespace name ahead, and puts this call after
+the get_db_info().
 
 * check_database_alter_tablespace()
 
-This hook needs both OIDs of database and tablespace, so we had to put this call
-after the get_tablespace_oid().
+This hook needs both OIDs of database and tablespace, so we had to put this
+call after the get_tablespace_oid().
 
 * check_database_getattr()
 
 It is called from the calculate_database_size(). It checks permission to refere
-the properties of a certain database, so it was named as _getattr(), rather than
-the too specific check_database_calculate_size().
+the properties of a certain database, so it was named as _getattr(), rather
+than the too specific check_database_calculate_size().
 
 
 
@@ -268,25 +271,36 @@ The check_index_create() check rest of the permissions.
 
 * check_relation_create()
 
-When we define a new relation, the default PG checks need the following privileges.
+When we define a new relation, the default PG checks need the following
+privileges.
  - CREATE privilege on the namespace
  - CREATE privilege on the tablespace, if not a database default
 
-These checks are moved to the check_relation_create(), and upcoming feature will
-want to check permission to create columns, so this hook is deployed just after
-set up of TupleDesc.
+These checks are moved to the check_relation_create(), and upcoming feature
+will want to check permission to create columns, so this hook is deployed
+just after set up of TupleDesc.
 
 * ATSimplePermissions()
 
-There are two main types of ALTER TABLE options which alter properties of relation
-or attribute. The existing ATSimplePermissions() checks ownership of the relation
-to be altered, and called to most of ALTER TABLE options.
-These are eventually same things in the default PG checks. But upcoming feature
-will want to distinguish an attribute from a relation, so this patch add 'colName'
-argument to ATSimplePermissions() to show what column to be altered.
-If NULL, it means altering properties of the relation, then check_relaion_alter()
-shall be called. Otherwise, check_attribute_alter() shall be called.
+There are two main types of ALTER TABLE options which alter properties of
+relation or attribute. The existing ATSimplePermissions() checks ownership
+of the relation to be altered, and called to most of ALTER TABLE options.
+These are eventually same things in the default PG checks. But upcoming
+feature will want to distinguish an attribute from a relation, so this
+patch add 'colName' argument to ATSimplePermissions() to show what column
+to be altered. If NULL, it means altering properties of the relation,
+then check_relaion_alter() shall be called. Otherwise, check_attribute_alter()
+shall be called.
 Both of them internally call pg_class_ownercheck(), so here is no difference.
+
+* ATPrepAddColumn() and ATPrepDropColumn()
+
+This patch modified ATSimplePermissions() to take argument of colName.
+It works as a switch to call either of check_relation_alter() or
+check_attribute_alter(). However, we want to call check_attribute_create()
+for AT_AddColumn, and check_attribute_drop() for AT_DropColumn.
+So, I added permission checks in ATPrepAddColumn() and new ATPrepDropColumn()
+instead of the ATSimplePermissions(). Here is no actual differences.
 
 * ATPrepSetTableSpace()
 
