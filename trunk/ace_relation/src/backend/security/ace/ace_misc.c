@@ -13,7 +13,7 @@
 /*
  * init_ace_providers
  *
- * This hook allows security providers to initialize itself.
+ * This hook allows any security providers to initialize itself.
  */
 void
 check_provider_initialize(void)
