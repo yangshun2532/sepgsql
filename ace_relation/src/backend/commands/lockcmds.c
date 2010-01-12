@@ -20,7 +20,7 @@
 #include "commands/lockcmds.h"
 #include "miscadmin.h"
 #include "parser/parse_clause.h"
-#include "security/ace.h"
+#include "security/common.h"
 #include "storage/lmgr.h"
 #include "utils/lsyscache.h"
 
