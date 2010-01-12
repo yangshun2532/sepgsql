@@ -5,6 +5,6 @@ subdir = src/backend/security
 top_builddir = ../../..
 include $(top_builddir)/src/Makefile.global
 
-SUBDIRS = ace
+OBJS = database.o schema.o
 
 include $(top_srcdir)/src/backend/common.mk
