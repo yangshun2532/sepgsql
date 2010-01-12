@@ -1,5 +1,5 @@
 /*
- * ace_attribute.c
+ * attribute.c
  *
  * security hooks related to attribute object class.
  *
@@ -9,7 +9,7 @@
 #include "postgres.h"
 
 #include "miscadmin.h"
-#include "security/ace.h"
+#include "security/common.h"
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
 
@@ -21,9 +21,6 @@
  *
  * Note that this check is not invoked on creation of new columns due to
  * CREATE TABLE, so use check_relation_create() instead.
- *
- * relOid : OID of the relation that shall own the new column
- * colDef : definition of the new column
  */
 void
 check_attribute_create(Oid relOid, ColumnDef *cdef)
@@ -44,9 +41,6 @@ check_attribute_create(Oid relOid, ColumnDef *cdef)
  * It checks privileges to alter properties of the specified column
  * using ALTER TABLE statement.
  * If violated, it shall raise an error.
- *
- * relOid : OID of the relation that owns the target column
- * colName : Name of the column to be altered
  */
 void
 check_attribute_alter(Oid relOid, const char *colName)
@@ -70,10 +64,6 @@ check_attribute_alter(Oid relOid, const char *colName)
  *
  * Note that this check is not invoked on deletion of columns due
  * to DROP TABLE, so also use the check_relation_drop().
- *
- * relOid : OID of the relation that owns the target column
- * attName : Name of the column to be dropped
- * cascade : True, if it was called due to the cascaded deletion
  */
 void
 check_attribute_drop(Oid relOid, const char *colName, bool cascade)
@@ -97,9 +87,6 @@ check_attribute_drop(Oid relOid, const char *colName, bool cascade)
  * The caller (aclchk.c) handles the default PG privileges well,
  * so rest of enhanced security providers can apply its checks here.
  * If violated, it shall raise an error.
- *
- * relOid : OID of the relation that owns the target column
- * colName : Name of the column to be granted/revoked
  */
 void
 check_attribute_grant(Oid relOid, AttrNumber attnum)
@@ -112,9 +99,6 @@ check_attribute_grant(Oid relOid, AttrNumber attnum)
  *
  * It checks privileges to comment on the specified column.
  * If violated, it shall raise an error.
- *
- * relOid : OID of the relation that owns the target column
- * colName : Name of the column to be commented on
  */
 void
 check_attribute_comment(Oid relOid, const char *colName)

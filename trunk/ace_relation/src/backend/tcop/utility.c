@@ -53,7 +53,7 @@
 #include "storage/fd.h"
 #include "tcop/pquery.h"
 #include "tcop/utility.h"
-#include "security/ace.h"
+#include "security/common.h"
 #include "utils/guc.h"
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"

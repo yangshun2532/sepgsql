@@ -27,7 +27,7 @@
 #include "libpq/pqformat.h"
 #include "miscadmin.h"
 #include "parser/parsetree.h"
-#include "security/ace.h"
+#include "security/common.h"
 #include "utils/builtins.h"
 #include "utils/rel.h"
 #include "utils/tqual.h"

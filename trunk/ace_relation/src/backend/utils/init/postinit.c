@@ -36,7 +36,7 @@
 #include "pgstat.h"
 #include "postmaster/autovacuum.h"
 #include "postmaster/postmaster.h"
-#include "security/ace.h"
+#include "security/common.h"
 #include "storage/bufmgr.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
@@ -708,8 +708,8 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 		am_superuser = superuser();
 	}
 
-	/* Initialize ace security providers */
-	check_provider_initialize();
+	/* set up ACL framework (so CheckMyDatabase can check permissions) */
+	initialize_acl();
 
 	/* Process pg_db_role_setting options */
 	process_settings(MyDatabaseId, GetSessionUserId());

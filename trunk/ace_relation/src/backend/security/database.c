@@ -1,7 +1,7 @@
 /*
- * ace_database.c
+ * database.c
  *
- * security hooks related to database object class.
+ * security checks related to database object class.
  *
  * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
@@ -13,11 +13,12 @@
 #include "commands/dbcommands.h"
 #include "commands/tablespace.h"
 #include "miscadmin.h"
-#include "security/ace.h"
+#include "security/common.h"
 #include "utils/syscache.h"
 
 /*
- * Check pg_authid.rolcreatedb bit for the current database user
+ * A helper function to check pg_authid.rolcreatedb
+ * for the current database role.
  */
 static bool
 role_has_createdb(void)
@@ -46,15 +47,12 @@ role_has_createdb(void)
  * It checks privileges to create a new database with the given parameters.
  * If violated, it shall raise an error.
  *
- * datName : Name of the new database
- * srcDatOid : OID of the source database (may be template database)
- * datOwner : OID of the new database owner
- * datTblspc : OID of the default tablespace, if explicitly given.
- *             Otherwise, InvalidOid
+ * Note that the datTblspc (OID of the default tablespace in new database)
+ * may be InvalidOid, if user does not specify explicit tablespace option.
  */
 void
-check_database_create(const char *datName,
-					  Oid srcDatOid, Oid datOwner, Oid datTblspc)
+check_database_create(const char *datName, Oid srcDatOid,
+					  Oid datOwner, Oid datTblspc)
 {
 	AclResult	aclresult;
 	HeapTuple	tuple;
@@ -117,8 +115,6 @@ check_database_create(const char *datName,
  * It checks privileges to alter properties of the specified database,
  * except for its name, ownership and default tablespace.
  * If violated, it shall raise an error.
- *
- * datOid : OID of the database to be altered
  */
 void
 check_database_alter(Oid datOid)
@@ -127,7 +123,6 @@ check_database_alter(Oid datOid)
 	if (!pg_database_ownercheck(datOid, GetUserId()))
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_DATABASE,
 					   get_database_name(datOid));
-
 }
 
 /*
@@ -135,9 +130,6 @@ check_database_alter(Oid datOid)
  *
  * It checks privileges to alter name of the specified database.
  * If violated, it shall raise an error.
- *
- * datOid : OID of the database to be altered
- * newName : The new database name 
  */
 void
 check_database_alter_rename(Oid datOid, const char *newName)
@@ -159,9 +151,6 @@ check_database_alter_rename(Oid datOid, const char *newName)
  *
  * It checks privileges to alter ownership of the specified database.
  * If violated, it shall raise an error.
- *
- * datOid : OID of the database to be altered
- * newOwner : OID of the new database owner
  */
 void
 check_database_alter_owner(Oid datOid, Oid newOwner)
@@ -194,9 +183,6 @@ check_database_alter_owner(Oid datOid, Oid newOwner)
  *
  * It checks privileges to alter tablespace of the specified database.
  * If violated, it shall raise an error.
- *
- * datOid : OID of the database to be altered
- * newTblspc : OID of the new default tablespace
  */
 void
 check_database_alter_tablespace(Oid datOid, Oid newTblspc)
@@ -221,9 +207,6 @@ check_database_alter_tablespace(Oid datOid, Oid newTblspc)
  *
  * It checks privileges to drop the specified database.
  * If violated, it shall raise an error.
- *
- * datOid : OID of the database to be dropped
- * cascade : True, if cascaded deletion. Currently, it should never happen.
  */
 void
 check_database_drop(Oid datOid, bool cascade)
@@ -239,8 +222,6 @@ check_database_drop(Oid datOid, bool cascade)
  *
  * It checks privileges to get attribute of the specified database.
  * If violated, it shall raise an error.
- *
- * datOid : OID of the database to be referenced
  */
 void
 check_database_getattr(Oid datOid)
@@ -260,15 +241,13 @@ check_database_getattr(Oid datOid)
  * It checks privileges to grant/revoke the default PG permissions
  * on the specified database.
  * The caller (aclchk.c) handles the default PG privileges well,
- * so rest of enhanced security providers can apply its checks here.
+ * so, this hook can provides an entrypoint for additional checks.
  * If violated, it shall raise an error.
- *
- * datOid : OID of the database to be granted/revoked
  */
 void
 check_database_grant(Oid datOid)
 {
-	/* right now, no enhanced security providers */
+	/* right now, we don't need any additional checks */
 }
 
 /*
@@ -276,8 +255,6 @@ check_database_grant(Oid datOid)
  *
  * It checks privileges to comment on the specified database.
  * If violated, it shall raise an error.
- *
- * datOid : OID of the database to be commented
  */
 void
 check_database_comment(Oid datOid)
@@ -292,10 +269,7 @@ check_database_comment(Oid datOid)
  *
  * It checks privileges to connect to the specified database under the
  * initialization of a server instance.
- * In this hook, security providers shall raise a FATAL error, not
- * an ERROR, if violated.
- *
- * datOid : OID of the database to be connected
+ * Note that this hook shall raise a FATAL error, not ERROR, if violated.
  */
 void
 check_database_connect(Oid datOid)
@@ -315,8 +289,6 @@ check_database_connect(Oid datOid)
  * It checks privileges to reindex all the tables within the specified
  * database.
  * If violated, it shall raise an error.
- *
- * datOid : OID of the database to be reindexed
  */
 void
 check_database_reindex(Oid datOid)

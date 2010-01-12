@@ -1,7 +1,7 @@
 /*
- * ace_schema.c
+ * schema.c
  *
- * security hooks related to schema object class.
+ * security checks related to schema object class.
  *
  * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
@@ -10,7 +10,7 @@
 
 #include "commands/dbcommands.h"
 #include "miscadmin.h"
-#include "security/ace.h"
+#include "security/common.h"
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
 
@@ -19,10 +19,6 @@
  *
  * It checks privileges to create a new schema with the given parameters.
  * If violated, it shall raise an error.
- *
- * nspName : Name of the new schema object
- * nspOwner : OID of the new schema owner
- * isTemp : True, if it is a temporary schema.
  */
 void
 check_schema_create(const char *nspName, Oid nspOwner, bool isTemp)
@@ -52,9 +48,6 @@ check_schema_create(const char *nspName, Oid nspOwner, bool isTemp)
  *
  * It checks privileges to alter name of the specified schema.
  * If violated, it shall raise an error.
- *
- * nspOid : OID of the schema to be renamed
- * newName : New name of the schema
  */
 void
 check_schema_alter_rename(Oid nspOid, const char *newName)
@@ -80,9 +73,6 @@ check_schema_alter_rename(Oid nspOid, const char *newName)
  *
  * It checks privileges to alter ownership of the specified schema.
  * If violated, it shall raise an error.
- *
- * nspOid : OID of the schema to be altered
- * newOwner : New owner of the schema
  */
 void
 check_schema_alter_owner(Oid nspOid, Oid newOwner)
@@ -118,9 +108,6 @@ check_schema_alter_owner(Oid nspOid, Oid newOwner)
  *
  * It checks privileges to drop the specified schema.
  * If violated, it shall raise an error.
- *
- * nspOid : OID of the schema to be dropped
- * cascade : True, if cascaded deletion.
  */
 void
 check_schema_drop(Oid nspOid, bool cascade)
@@ -137,15 +124,13 @@ check_schema_drop(Oid nspOid, bool cascade)
  * It checks privileges to grant/revoke the default PG permissions on
  * the specified schema.
  * The caller (aclchk.c) handles the default PG privileges well,
- * so rest of enhanced security providers can apply its checks here.
+ * so, this check just provide an entrypoint for additional checks.
  * If violated, it shall raise an error.
- *
- * nspOid : OID of the schema to be granted/revoked
  */
 void
 check_schema_grant(Oid nspOid)
 {
-	/* right now, no enhanced security providers */
+	/* right now, we don't need any additional checks */
 }
 
 /*
@@ -158,14 +143,10 @@ check_schema_grant(Oid nspOid)
  *
  * Note that we handles "pg_temp" schema as an exception.
  * It is indeed a schema in fact, and in implementation. but it is an
- * internal details from the perspective of users.
- * Any security providers launched from this hook shall always return
- * 'true' on the temporary schema. Even if it tries to apply access
- * controls on temporary schema, this hook is not called when the schema
- * is obviously temporary.
- *
- * nspOid : OID of the schema to be searched 
- * abort : True, if the caller want to raise an error on violation.
+ * internal details from the perspective of users. So, this hook always
+ * return `true' for temporary schemas.
+ * Also note that this hook is not called on the code path, when the
+ * schema is obviously temporary, because it shall be always allowed.
  */
 bool
 check_schema_search(Oid nspOid, bool abort)
@@ -190,8 +171,6 @@ check_schema_search(Oid nspOid, bool abort)
  *
  * It checks privileges to comment on the specified schema.
  * If violated, it raised an error.
- *
- * nspOid : OID of the schema to be commented
  */
 void
 check_schema_comment(Oid nspOid)
