@@ -39,7 +39,7 @@
 #include "parser/parse_func.h"
 #include "rewrite/rewriteManip.h"
 #include "tcop/tcopprot.h"
-#include "security/ace.h"
+#include "security/common.h"
 #include "utils/builtins.h"
 #include "utils/datum.h"
 #include "utils/lsyscache.h"

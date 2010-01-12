@@ -1,7 +1,7 @@
 /*
- * ace_proc.c
+ * proc.c
  *
- * security hooks related to (aggregate) procedure object class
+ * security checks related to procedure and aggregate object class
  *
  * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
@@ -12,22 +12,24 @@
 #include "catalog/pg_proc.h"
 #include "catalog/pg_language.h"
 #include "miscadmin.h"
-#include "security/ace.h"
+#include "security/common.h"
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
 
 /*
  * check_proc_create
  *
- * It checks privileges to create a new regular procedure using CREATE
- * FUNCTION statement.
+ * It checks privilege to create a new function (not an aggregate) with
+ * the specified parameters.
  * If violated, it shall raise an error.
  *
- * proName : Name of the new function
- * replaced : OID of the function to be replaced, if exist.
- *            Elsewhere, InvalidOid shall be given.
- * nspOid : OID of the namespace for the new function
- * langOid : OID of the procedural language for the new function
+ * Note that `replaced' means OID of the function to be replaced using
+ * CREATE OR REPLACE FUNCTION statement. If here is no function to be
+ * replaced, InvalidOid shall be delivered instead.
+ *
+ * Also note that this check is not called from the AggregateCreate() and
+ * CreateProceduralLanguage(), although they internally define new
+ * functions.
  */
 void
 check_proc_create(const char *proName, Oid replaced, Oid nspOid, Oid langOid)
@@ -85,8 +87,6 @@ check_proc_create(const char *proName, Oid replaced, Oid nspOid, Oid langOid)
  * It checks privileges to alter properties of a certain procedure
  * except for its name, ownership and schema.
  * If violated, it shall raise an error.
- *
- * proOid : OID of the procedure to be altered
  */
 void
 check_proc_alter(Oid proOid)
@@ -102,9 +102,6 @@ check_proc_alter(Oid proOid)
  *
  * It checks privileges to rename a certain procedure.
  * If violated, it shall raise an error.
- *
- * proOid : OID of the procedure to be renamed
- * newName : New name of the procedure
  */
 void
 check_proc_alter_rename(Oid proOid, const char *newName)
@@ -130,9 +127,6 @@ check_proc_alter_rename(Oid proOid, const char *newName)
  *
  * It checks privileges to move a certain procedure into the new schema.
  * If violated, it shall raise an error.
- *
- * proOid : OID of the procedure to be moved
- * newNsp : OID of the new namespace which shall own the procedure
  */
 void
 check_proc_alter_schema(Oid proOid, Oid newNsp)
@@ -156,9 +150,6 @@ check_proc_alter_schema(Oid proOid, Oid newNsp)
  *
  * It checks privileges to change ownership of a certain procedure.
  * If violated, it shall raise an error.
- *
- * proOid : OID of the procedure to be moved
- * newOwner : OID of the new owner of the procedure
  */
 void
 check_proc_alter_owner(Oid proOid, Oid newOwner)
@@ -192,9 +183,6 @@ check_proc_alter_owner(Oid proOid, Oid newOwner)
  *
  * It checks privileges to drop a certain procedure
  * If violated, it shall raise an error.
- *
- * proOid : OID of the procedure to be dropped
- * cascade : True, if it was called due to the cascaded deletion
  */
 void
 check_proc_drop(Oid proOid, bool cascade)
@@ -217,15 +205,13 @@ check_proc_drop(Oid proOid, bool cascade)
  * It checks privileges to grant/revoke the default PG permissions
  * on a certain relation.
  * The caller (aclchk.c) handles the default PG privileges well,
- * so rest of enhanced security providers can apply its checks here.
+ * so, this check just provide an entrypoint for additional checks.
  * If violated, it shall raise an error.
- *
- * proOid : OID of the procedure to be granted/revoked
  */
 void
 check_proc_grant(Oid proOid)
 {
-	/* right now, no enhanced security providers */
+	/* right now, we don't need any additional checks */
 }
 
 /*
@@ -233,8 +219,6 @@ check_proc_grant(Oid proOid)
  *
  * It checks privileges to comment on a procedure
  * If violated, it shall raise an error.
- *
- * proOid : OID of the procedure to be commented on
  */
 void
 check_proc_comment(Oid proOid)
@@ -250,8 +234,6 @@ check_proc_comment(Oid proOid)
  *
  * It checks privileges to execute a certain procedure
  * If violated, it shall raise an error.
- *
- * proOid : OID of the procedure to be executed
  */
 void
 check_proc_execute(Oid proOid)
@@ -269,8 +251,6 @@ check_proc_execute(Oid proOid)
  * It gives the caller a hint whether the given SQL function can be inlined
  * for query optimization purpose, or not, due to the security reason.
  * If not optimizable, it returns false.
- *
- * proTup : HeapTuple of the procedure to be inlined
  */
 bool
 check_proc_canbe_inlined(HeapTuple proTup)
@@ -297,8 +277,6 @@ check_proc_canbe_inlined(HeapTuple proTup)
  * invoked via fmgr_security_definer(), or not. If we need to change the
  * credential (such as user identifier) during execution of the function
  * call, this hook returns true. Elsewhere, it returns false.
- *
- * proTup : HeapTuple of the procedure to be invoked
  */
 bool
 check_proc_canbe_setcred(HeapTuple proTup)
@@ -321,10 +299,8 @@ check_proc_canbe_setcred(HeapTuple proTup)
  * It checks privileges to create a new aggregate function.
  * If violated, it shall raise an error.
  *
- * aggName : Name of the new aggregate function
- * nspOid : OID of the namespace for the new aggregate function
- * transfn : OID of the trans function for the aggregate
- * finalfn : OID of the final function for the aggregate, if exist
+ * Note that `finalfn' may be InvalidOid, if no explicit final-function
+ * was not specified in the CREATE AGGREGATE statement.
  */
 void
 check_aggregate_create(const char *aggName, Oid nspOid,
@@ -358,8 +334,6 @@ check_aggregate_create(const char *aggName, Oid nspOid,
  *
  * It checks privileges to execute a certain function
  * If violated, it shall raise an error.
- *
- * aggOid : OID of the aggregate function to be executed
  */
 void
 check_aggregate_execute(Oid aggOid)

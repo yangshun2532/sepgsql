@@ -26,7 +26,7 @@
 #include "libpq/pqformat.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
-#include "security/ace.h"
+#include "security/common.h"
 #include "tcop/fastpath.h"
 #include "tcop/tcopprot.h"
 #include "utils/lsyscache.h"

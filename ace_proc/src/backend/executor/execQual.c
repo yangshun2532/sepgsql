@@ -49,7 +49,7 @@
 #include "optimizer/planner.h"
 #include "parser/parse_coerce.h"
 #include "pgstat.h"
-#include "security/ace.h"
+#include "security/common.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
