@@ -1,5 +1,5 @@
 /*
- * ace_database.c
+ * database.c
  *
  * security hooks related to database object class.
  *
@@ -13,7 +13,7 @@
 #include "commands/dbcommands.h"
 #include "commands/tablespace.h"
 #include "miscadmin.h"
-#include "security/ace.h"
+#include "security/common.h"
 #include "utils/syscache.h"
 
 /*

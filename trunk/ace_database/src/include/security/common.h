@@ -1,24 +1,18 @@
 /*
- * ace.h
+ * security/common.h
  *
- * Header file for the ACE framework
+ * Header file for common access controls.
  *
  * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  */
-#ifndef SECURITY_ACE_H
-#define SECURITY_ACE_H
+#ifndef SECURITY_COMMON_H
+#define SECURITY_COMMON_H
 
 #include "utils/acl.h"
 
 /*
- * ace_misc.c - miscellaneous security hook routines
- */
-extern void
-check_provider_initialize(void);
-
-/*
- * ace_database.c - hooks related to databases
+ * database.c - hooks related to databases
  */
 extern void
 check_database_create(const char *datName, Oid srcDatOid,
@@ -44,4 +38,4 @@ check_database_connect(Oid datOid);
 extern void
 check_database_reindex(Oid datOid);
 
-#endif	/* SECURITY_ACE_H */
+#endif	/* SECURITY_COMMON_H */
