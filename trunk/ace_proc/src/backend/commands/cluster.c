@@ -36,7 +36,7 @@
 #include "commands/trigger.h"
 #include "commands/vacuum.h"
 #include "miscadmin.h"
-#include "security/ace.h"
+#include "security/common.h"
 #include "storage/bufmgr.h"
 #include "storage/procarray.h"
 #include "utils/fmgroids.h"
