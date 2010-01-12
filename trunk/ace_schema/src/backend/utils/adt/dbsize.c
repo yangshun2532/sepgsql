@@ -21,7 +21,7 @@
 #include "commands/dbcommands.h"
 #include "commands/tablespace.h"
 #include "miscadmin.h"
-#include "security/ace.h"
+#include "security/common.h"
 #include "storage/fd.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
