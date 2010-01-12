@@ -1,7 +1,7 @@
 /*
- * ace_schema.c
+ * schema.c
  *
- * security hooks related to schema object class.
+ * security checks related to schema object class.
  *
  * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
@@ -10,7 +10,7 @@
 
 #include "commands/dbcommands.h"
 #include "miscadmin.h"
-#include "security/ace.h"
+#include "security/common.h"
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
 
@@ -124,13 +124,13 @@ check_schema_drop(Oid nspOid, bool cascade)
  * It checks privileges to grant/revoke the default PG permissions on
  * the specified schema.
  * The caller (aclchk.c) handles the default PG privileges well,
- * so, this hook is just an entrypoint for additional checks.
+ * so, this check just provide an entrypoint for additional checks.
  * If violated, it shall raise an error.
  */
 void
 check_schema_grant(Oid nspOid)
 {
-	/* right now, no enhanced security providers */
+	/* right now, we don't need any additional checks */
 }
 
 /*

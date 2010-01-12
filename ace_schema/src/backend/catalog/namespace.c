@@ -40,7 +40,7 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "parser/parse_func.h"
-#include "security/ace.h"
+#include "security/common.h"
 #include "storage/backendid.h"
 #include "storage/ipc.h"
 #include "utils/builtins.h"
