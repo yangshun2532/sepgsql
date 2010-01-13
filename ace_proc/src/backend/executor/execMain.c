@@ -26,7 +26,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/executor/execMain.c,v 1.339 2010/01/02 16:57:40 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/executor/execMain.c,v 1.341 2010/01/08 02:44:00 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -1428,6 +1428,8 @@ EvalPlanQualFetch(EState *estate, Relation relation, int lockmode,
 					{
 						/* it was updated, so look at the updated version */
 						tuple.t_self = update_ctid;
+						/* updated row should have xmin matching this xmax */
+						priorXmax = update_xmax;
 						continue;
 					}
 					/* tuple was deleted, so give up */
@@ -2062,7 +2064,7 @@ OpenIntoRel(QueryDesc *queryDesc)
 
 	(void) heap_reloptions(RELKIND_TOASTVALUE, reloptions, true);
 
-	AlterTableCreateToastTable(intoRelationId, InvalidOid, reloptions, false);
+	AlterTableCreateToastTable(intoRelationId, reloptions);
 
 	/*
 	 * And open the constructed table for writing.
