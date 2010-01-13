@@ -1532,9 +1532,8 @@ ExecGrant_Attribute(InternalGrant *istmt, Oid relOid, const char *relname,
 								 relOid, grantorId, ACL_KIND_COLUMN,
 								 relname, attnum,
 								 NameStr(pg_attribute_tuple->attname));
-	/*
-	 * Check permissions by enhanced security providers
-	 */
+
+	/* Additional permission checks, if necessary. */
 	check_attribute_grant(relOid, attnum);
 
 	/*
@@ -1791,9 +1790,8 @@ ExecGrant_Relation(InternalGrant *istmt)
 										 ? ACL_KIND_SEQUENCE : ACL_KIND_CLASS,
 										 NameStr(pg_class_tuple->relname),
 										 0, NULL);
-			/*
-			 * Check permission by enhanced security provider
-			 */
+
+			/* Additional permission checks, if necessary. */
 			check_relation_grant(relOid);
 
 			/*
@@ -1984,9 +1982,7 @@ ExecGrant_Database(InternalGrant *istmt)
 									 NameStr(pg_database_tuple->datname),
 									 0, NULL);
 
-		/*
-		 * Permission checks by enhanced security providers
-		 */
+		/* Additional permission checks, if necessary */
 		check_database_grant(datId);
 
 		/*
@@ -2718,9 +2714,7 @@ ExecGrant_Namespace(InternalGrant *istmt)
 									 NameStr(pg_namespace_tuple->nspname),
 									 0, NULL);
 
-		/*
-		 * Permission checks by enhanced security providers
-		 */
+		/* Additional permission checks, if necessary. */
 		check_schema_grant(nspid);
 
 		/*

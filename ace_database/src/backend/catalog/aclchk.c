@@ -1976,9 +1976,7 @@ ExecGrant_Database(InternalGrant *istmt)
 									 NameStr(pg_database_tuple->datname),
 									 0, NULL);
 
-		/*
-		 * Permission checks by enhanced security providers
-		 */
+		/* Additional permission checks, if necessary */
 		check_database_grant(datId);
 
 		/*
