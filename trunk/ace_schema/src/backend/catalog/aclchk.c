@@ -1976,9 +1976,7 @@ ExecGrant_Database(InternalGrant *istmt)
 									 NameStr(pg_database_tuple->datname),
 									 0, NULL);
 
-		/*
-		 * Permission checks by enhanced security providers
-		 */
+		/* Additional permission checks, if necessary */
 		check_database_grant(datId);
 
 		/*
@@ -2710,9 +2708,7 @@ ExecGrant_Namespace(InternalGrant *istmt)
 									 NameStr(pg_namespace_tuple->nspname),
 									 0, NULL);
 
-		/*
-		 * Permission checks by enhanced security providers
-		 */
+		/* Additional permission checks, if necessary. */
 		check_schema_grant(nspid);
 
 		/*
