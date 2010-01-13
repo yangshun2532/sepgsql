@@ -1,13 +1,15 @@
-Reviewer's memo for pgace-01-database patch
----------------------------------------------
+Reviewer's memo for priv-reworks-01-database patch
+---------------------------------------------------
 
 This memo introduces unobvious points in this patch to help understand.
 
-The ACE framework provides a set of common entry points for various kind
-of upcoming security providers, not only the default PG checks.
-At this moment, the default PG checks is the only security provider, so
-this patch tries to reorganize the inlined these checks related to
-pg_database object class by the abstracted security hook invocations.
+This cleanup patch reorganizes the default PG privilege checks deployed
+on various kind of core routines into abstracted checker functions.
+It will become a set of common entry points for the upcoming security
+features in the future. PostgreSQL has various kind of object classes
+and it is too large to rework within a single patch/commit. So, this
+patch tries to reorganize the inlined default PG checks corresponding
+to pg_database object class by the abstracted security checker functions.
 
 For example:
 <quote>
@@ -52,7 +54,7 @@ We omitted introductions about such kind of obvious replacements in this memo.
 In some points, we had to modify the core routines to abstract access control
 logics. The following memo introduces these unobvious modifications and so on.
 
-* check_database_create() hook
+* check_database_create()
 
 When we create a new database, the default PG checks the following privileges.
  - The user has superuser privilege?
@@ -65,14 +67,14 @@ When we create a new database, the default PG checks the following privileges.
    the tablespace?
 
 We have to resolve name of the source database and tablespace (if given)
-earlier than invocation of the check_database_create() hook, so this patch
-moves the code to lookup the tablespace name ahead, and puts this call after
-the get_db_info().
+earlier than invocation of the check_database_create(), so this patch moves
+the code to lookup the tablespace name ahead, and puts this call after the
+get_db_info().
 
 * check_database_alter_tablespace()
 
-This hook needs both OIDs of database and tablespace, so we had to put this
-call after the get_tablespace_oid().
+This checker function needs both OIDs of database and tablespace, so we had
+to put this call after the get_tablespace_oid().
 
 * check_database_getattr()
 
@@ -85,16 +87,18 @@ than the too specific check_database_calculate_size().
 
 
 
-Reviewer's memo for pgace-02-schema patch
-------------------------------------------
+Reviewer's memo for priv-reworks-02-schema patch
+-------------------------------------------------
 
 This memo introduces unobvious points in this patch to help understand.
 
-The ACE framework provides a set of common entry points for various kind
-of upcoming security providers, not only the default PG checks.
-At this moment, the default PG checks is the only security provider, so
-this patch tries to reorganize the inlined these checks related to
-pg_namespace object class by the abstracted security hook invocations.
+This cleanup patch reorganizes the default PG privilege checks deployed
+on various kind of core routines into abstracted checker functions.
+It will become a set of common entry points for the upcoming security
+features in the future. PostgreSQL has various kind of object classes
+and it is too large to rework within a single patch/commit. So, this
+patch tries to reorganize the inlined default PG checks corresponding
+to pg_namespace object class by the abstracted security checker functions.
 
 For example:
 <quote>
@@ -171,17 +175,19 @@ It eventually applies same checks, so no compatibility issue.
 
 
 
-Reviewer's memo for pgace-03-relation patch
---------------------------------------------
+Reviewer's memo for priv-reworks-03-relation patch
+---------------------------------------------------
 
 This memo introduces unobvious points in this patch to help understand.
 
-The ACE framework provides a set of common entry points for various kind
-of upcoming security providers, not only the default PG checks.
-At this moment, the default PG checks is the only security provider, so
-this patch tries to reorganize the inlined these checks related to
-pg_class and pg_attribute object class by the abstracted security hook
-invocations.
+This cleanup patch reorganizes the default PG privilege checks deployed
+on various kind of core routines into abstracted checker functions.
+It will become a set of common entry points for the upcoming security
+features in the future. PostgreSQL has various kind of object classes
+and it is too large to rework within a single patch/commit. So, this
+patch tries to reorganize the inlined default PG checks corresponding
+to pg_class and pg_attribute object class by the abstracted security
+checker functions.
 
 For example:
 <quote>
@@ -239,6 +245,7 @@ any other affects.
 
 This patch also put CheckRelationOwnership() just before renametrig(), because
 we don't intend to rework permission checks related to triggers.
+But it shall be reworked in the future revision.
 
 
 * ExecAlterObjectSchemaStmt
@@ -267,7 +274,8 @@ When we define a new index, the default PG checks need the following privileges.
 
 The relation ownership is checked in the caller of DefineIndex(), except for
 bootstraping mode, so this patch replaced these checks by check_relation_alter().
-The check_index_create() check rest of the permissions.
+The check_index_create() check rest of the permissions specific to creation
+of new indexes.
 
 * check_relation_create()
 
@@ -281,35 +289,35 @@ will want to check permission to create columns, so this hook is deployed
 just after set up of TupleDesc.
 
 * ATSimplePermissions()
+ALTER TABLE is a multi-functional statement which allows to alter properties
+of relation or attribute, and to create/drop attribute.
+The default PG checks control these operations with ownership of the relation
+to be altered. The existing ATSimplePermissions() applies ownership checks and
+a few more sanity checks (appropriate relkind? not a system catalog?), and it
+is called by most of ALTER TABLE options.
+This patch added 'colName' argument of the function to inform whether the given
+ALTER TABLE intends to alter properties of relation or attribute.
+And, two exceptions were separated to ATAddColumnPermissions() and
+ATDropColumnPermissions() to check privileges to create/drop a certain attribute.
+These functions internally calls one of the security checker functions, and they
+eventually calls pg_class_ownercheck(), so here is no actual differences.
 
-There are two main types of ALTER TABLE options which alter properties of
-relation or attribute. The existing ATSimplePermissions() checks ownership
-of the relation to be altered, and called to most of ALTER TABLE options.
-These are eventually same things in the default PG checks. But upcoming
-feature will want to distinguish an attribute from a relation, so this
-patch add 'colName' argument to ATSimplePermissions() to show what column
-to be altered. If NULL, it means altering properties of the relation,
-then check_relaion_alter() shall be called. Otherwise, check_attribute_alter()
-shall be called.
-Both of them internally call pg_class_ownercheck(), so here is no difference.
-
-* ATPrepAddColumn() and ATPrepDropColumn()
-
-This patch modified ATSimplePermissions() to take argument of colName.
-It works as a switch to call either of check_relation_alter() or
-check_attribute_alter(). However, we want to call check_attribute_create()
-for AT_AddColumn, and check_attribute_drop() for AT_DropColumn.
-So, I added permission checks in ATPrepAddColumn() and new ATPrepDropColumn()
-instead of the ATSimplePermissions(). Here is no actual differences.
+* ATPrepAddOids()
+On AT_AddOids, The ATPrepCmd() conditionally called ATPrepAddOids() when the
+target relation does not have "oid" system column. At the top level recursion,
+it makes a pseudo ColumnDef object, then it calls ATPrepAddColumn().
+This patch moved this condition check after the creation of pseudo ColumnDef
+object, because we want to use common routine with AT_AddColumn cases.
 
 * ATPrepSetTableSpace()
 
-The default PG check needs CREATE permission on the new tablespace, not only
-ownership of the relation, so we want to use check_relation_alter_tablespace()
-instead of the check_relation_alter() called in the ATSimplePermissions().
-This patch replaces ATSimplePermissions() and pg_tablespace_aclcheck() on
-AT_SetTableSpace option by the check_relation_alter_tablespace().
-So, it also needed to put sanity checks on relkind and system catalog here.
+This ALTER TABLE option also need to check CREATE permission on the new
+tablespace, not only ownership of the relation, so this patch replaced
+invocation of ATSimplePermissionsRelationOrIndex() and pg_tablespace_aclcheck()
+by the check_relation_alter_tablespace().
+It takes OID of the tablespace as an argument, so we have to deploy it
+within ATPrepSetTableSpace(). In addition, a few sanity checks were also
+copied to ATPrepSetTableSpace().
 
 * ExecCheckRTEPerms()
 
@@ -322,8 +330,7 @@ The CheckRelationOwnership() is replaced by check_relation_alter() with OID of
 the relation to be indexed, like ATSimplePermissions().
 It also applied sanity checks on system catalogs, this patch also added this
 check here.
-(If ATSimplePermissions() is not static, we can call here...)
-
+(If ATSimplePermissions() is not static, we can call it here...)
 
 * RI_Initial_Check
 
@@ -336,16 +343,18 @@ In this case, we cannot raise an error on access violations, so it may return
 
 
 
-Reviewer's memo for pgace-04-proc.patch
-----------------------------------------
+Reviewer's memo for priv-reworks-04-proc patch
+-----------------------------------------------
 
 This memo introduces unobvious points in this patch to help understand.
 
-The ACE framework provides a set of common entry points for various kind
-of upcoming security providers, not only the default PG checks.
-At this moment, the default PG checks is the only security provider, so
-this patch tries to reorganize the inlined these checks related to
-pg_proc object class by the abstracted security hook invocations.
+This cleanup patch reorganizes the default PG privilege checks deployed
+on various kind of core routines into abstracted checker functions.
+It will become a set of common entry points for the upcoming security
+features in the future. PostgreSQL has various kind of object classes
+and it is too large to rework within a single patch/commit. So, this
+patch tries to reorganize the inlined default PG checks corresponding
+to pg_proc object class by the abstracted security checker functions.
 
 For example:
 <quote>
@@ -390,7 +399,7 @@ following privileges:
 The CREATE permission was checked in the DefineAggregate(), and the rest of
 permissions are checked in the lookup_agg_function() from AggregateCreate().
 
-This patch consolidated these checks into check_aggregate_create() hook,
+This patch consolidated these checks into check_aggregate_create(),
 and remove these inlined checks from above places. It eventually applies
 same checks, so here is no compatibility issue.
 
@@ -413,7 +422,7 @@ and procedural language.
 * AlterFunctionNamespace()
 
 This patch replaced checks on ownership of the function and CREATE permission
-on the schema which was moved to the caller on the pgace-02-schema patch.
+on the schema which was moved to the caller on the priv-reworks-02-schema patch.
 
 * ExecInitAgg() and ExecInitWindowAgg()
 
@@ -431,8 +440,8 @@ check_aggregate_execute(), if window aggregate function.
 It checks whether the given SQL function can be inlined, or not, for optimization.
 The check_proc_canbe_inlined() replaced a few condition which disallow to inline
 the SQL function.
-This hook returns false, if lack of EXECUTE permission or the function is declared
-as security definer function.
+This checker function returns false, if lack of EXECUTE permission or the function
+is declared as security definer function.
 
 
 
