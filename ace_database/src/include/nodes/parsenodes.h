@@ -13,7 +13,7 @@
  * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/nodes/parsenodes.h,v 1.421 2010/01/02 16:58:04 momjian Exp $
+ * $PostgreSQL: pgsql/src/include/nodes/parsenodes.h,v 1.423 2010/01/06 05:31:14 itagaki Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -1477,6 +1477,14 @@ typedef struct DropTableSpaceStmt
 	bool		missing_ok;		/* skip error if missing? */
 } DropTableSpaceStmt;
 
+typedef struct AlterTableSpaceOptionsStmt
+{
+	NodeTag		type;
+	char	   *tablespacename;
+	List	   *options;
+	bool		isReset;
+} AlterTableSpaceOptionsStmt;
+
 /* ----------------------
  *		Create/Drop FOREIGN DATA WRAPPER Statements
  * ----------------------
@@ -2236,7 +2244,8 @@ typedef enum VacuumOption
 	VACOPT_ANALYZE		= 1 << 1,	/* do ANALYZE */
 	VACOPT_VERBOSE		= 1 << 2,	/* print progress info */
 	VACOPT_FREEZE		= 1 << 3,	/* FREEZE option */
-	VACOPT_FULL			= 1 << 4	/* FULL (non-concurrent) vacuum */
+	VACOPT_FULL			= 1 << 4,	/* FULL (non-concurrent) vacuum */
+	VACOPT_INPLACE		= 1 << 5	/* traditional FULL INPLACE vacuum */
 } VacuumOption;
 
 typedef struct VacuumStmt

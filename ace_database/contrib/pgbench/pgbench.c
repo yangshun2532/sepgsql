@@ -4,7 +4,7 @@
  * A simple benchmark program for PostgreSQL
  * Originally written by Tatsuo Ishii and enhanced by many contributors.
  *
- * $PostgreSQL: pgsql/contrib/pgbench/pgbench.c,v 1.94 2010/01/02 16:57:32 momjian Exp $
+ * $PostgreSQL: pgsql/contrib/pgbench/pgbench.c,v 1.96 2010/01/06 01:30:03 itagaki Exp $
  * Copyright (c) 2000-2010, PostgreSQL Global Development Group
  * ALL RIGHTS RESERVED;
  *
@@ -34,15 +34,12 @@
 #include "postgres_fe.h"
 
 #include "libpq-fe.h"
-#include "pqsignal.h"
+#include "libpq/pqsignal.h"
 #include "portability/instr_time.h"
 
 #include <ctype.h>
 
-#ifdef WIN32
-#include <win32.h>
-#else
-#include <signal.h>
+#ifndef WIN32
 #include <sys/time.h>
 #include <unistd.h>
 #endif   /* ! WIN32 */
@@ -431,8 +428,23 @@ getVariable(CState *st, char *name)
 		return NULL;
 }
 
+/* check whether the name consists of alphabets, numerals and underscores. */
+static bool
+isLegalVariableName(const char *name)
+{
+	int		i;
+
+	for (i = 0; name[i] != '\0'; i++)
+	{
+		if (!isalnum((unsigned char) name[i]) && name[i] != '_')
+			return false;
+	}
+
+	return true;
+}
+
 static int
-putVariable(CState *st, char *name, char *value)
+putVariable(CState *st, const char *context, char *name, char *value)
 {
 	Variable	key,
 			   *var;
@@ -452,6 +464,16 @@ putVariable(CState *st, char *name, char *value)
 	{
 		Variable   *newvars;
 
+		/*
+		 * Check for the name only when declaring a new variable to avoid
+		 * overhead.
+		 */
+		if (!isLegalVariableName(name))
+		{
+			fprintf(stderr, "%s: invalid variable name '%s'\n", context, name);
+			return false;
+		}
+
 		if (st->variables)
 			newvars = (Variable *) realloc(st->variables,
 									(st->nvariables + 1) * sizeof(Variable));
@@ -459,7 +481,7 @@ putVariable(CState *st, char *name, char *value)
 			newvars = (Variable *) malloc(sizeof(Variable));
 
 		if (newvars == NULL)
-			return false;
+			goto out_of_memory;
 
 		st->variables = newvars;
 
@@ -493,6 +515,10 @@ putVariable(CState *st, char *name, char *value)
 	}
 
 	return true;
+
+out_of_memory:
+	fprintf(stderr, "%s: out of memory for variable '%s'\n", context, name);
+	return false;
 }
 
 static char *
@@ -687,11 +713,8 @@ runShellCommand(CState *st, char *variable, char **argv, int argc)
 		return false;
 	}
 	snprintf(res, sizeof(res), "%d", retval);
-	if (!putVariable(st, variable, res))
-	{
-		fprintf(stderr, "%s: out of memory\n", argv[0]);
+	if (!putVariable(st, "setshell", variable, res))
 		return false;
-	}
 
 #ifdef DEBUG
 	printf("shell parameter name: %s, value: %s\n", argv[1], res);
@@ -987,9 +1010,8 @@ top:
 #endif
 			snprintf(res, sizeof(res), "%d", getrand(min, max));
 
-			if (putVariable(st, argv[1], res) == false)
+			if (!putVariable(st, argv[0], argv[1], res))
 			{
-				fprintf(stderr, "%s: out of memory\n", argv[0]);
 				st->ecnt++;
 				return true;
 			}
@@ -1057,9 +1079,8 @@ top:
 				}
 			}
 
-			if (putVariable(st, argv[1], res) == false)
+			if (!putVariable(st, argv[0], argv[1], res))
 			{
-				fprintf(stderr, "%s: out of memory\n", argv[0]);
 				st->ecnt++;
 				return true;
 			}
@@ -1874,11 +1895,8 @@ main(int argc, char **argv)
 					}
 
 					*p++ = '\0';
-					if (putVariable(&state[0], optarg, p) == false)
-					{
-						fprintf(stderr, "Couldn't allocate memory for variable\n");
+					if (!putVariable(&state[0], "option", optarg, p))
 						exit(1);
-					}
 				}
 				break;
 			case 'F':
@@ -1958,11 +1976,8 @@ main(int argc, char **argv)
 			state[i].id = i;
 			for (j = 0; j < state[0].nvariables; j++)
 			{
-				if (putVariable(&state[i], state[0].variables[j].name, state[0].variables[j].value) == false)
-				{
-					fprintf(stderr, "Couldn't allocate memory for variable\n");
+				if (!putVariable(&state[i], "startup", state[0].variables[j].name, state[0].variables[j].value))
 					exit(1);
-				}
 			}
 		}
 	}
@@ -2039,11 +2054,8 @@ main(int argc, char **argv)
 		snprintf(val, sizeof(val), "%d", scale);
 		for (i = 0; i < nclients; i++)
 		{
-			if (putVariable(&state[i], "scale", val) == false)
-			{
-				fprintf(stderr, "Couldn't allocate memory for variable\n");
+			if (!putVariable(&state[i], "startup", "scale", val))
 				exit(1);
-			}
 		}
 	}
 
