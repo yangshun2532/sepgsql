@@ -6822,7 +6822,9 @@ fi
 
 
 
-# Extract the first word of "perl", so it can be a program name with args.
+# Let the user override the search
+if test -z "$PERL"; then
+  # Extract the first word of "perl", so it can be a program name with args.
 set dummy perl; ac_word=$2
 { $as_echo "$as_me:$LINENO: checking for $ac_word" >&5
 $as_echo_n "checking for $ac_word... " >&6; }
@@ -6862,7 +6864,44 @@ $as_echo "no" >&6; }
 fi
 
 
+fi
+
+if test "$PERL"; then
+  pgac_perl_version=`$PERL -v 2>/dev/null | sed -n 's/This is perl, v[a-z ]*//p' | sed 's/ .*//'`
+  { $as_echo "$as_me:$LINENO: using perl $pgac_perl_version" >&5
+$as_echo "$as_me: using perl $pgac_perl_version" >&6;}
+  if echo "$pgac_perl_version" | sed 's/[.a-z_]/ /g' | \
+    $AWK '{ if ($1 = 5 && $2 >= 8) exit 1; else exit 0;}'
+  then
+    { $as_echo "$as_me:$LINENO: WARNING:
+*** The installed version of Perl, $PERL, is too old to use with PostgreSQL.
+*** Perl version 5.8 or later is required, but this is $pgac_perl_version." >&5
+$as_echo "$as_me: WARNING:
+*** The installed version of Perl, $PERL, is too old to use with PostgreSQL.
+*** Perl version 5.8 or later is required, but this is $pgac_perl_version." >&2;}
+    PERL=""
+  fi
+fi
+
+if test -z "$PERL"; then
+  { $as_echo "$as_me:$LINENO: WARNING:
+*** Without Perl you will not be able to build PostgreSQL from CVS.
+*** You can obtain Perl from any CPAN mirror site.
+*** (If you are using the official distribution of PostgreSQL then you do not
+*** need to worry about this, because the Perl output is pre-generated.)" >&5
+$as_echo "$as_me: WARNING:
+*** Without Perl you will not be able to build PostgreSQL from CVS.
+*** You can obtain Perl from any CPAN mirror site.
+*** (If you are using the official distribution of PostgreSQL then you do not
+*** need to worry about this, because the Perl output is pre-generated.)" >&2;}
+fi
+
 if test "$with_perl" = yes; then
+  if test -z "$PERL"; then
+    { { $as_echo "$as_me:$LINENO: error: Perl not found" >&5
+$as_echo "$as_me: error: Perl not found" >&2;}
+   { (exit 1); exit 1; }; }
+  fi
 
 { $as_echo "$as_me:$LINENO: checking for Perl archlibexp" >&5
 $as_echo_n "checking for Perl archlibexp... " >&6; }
@@ -22385,6 +22424,7 @@ fi
 
 
 
+
 { $as_echo "$as_me:$LINENO: checking whether long int is 64 bits" >&5
 $as_echo_n "checking whether long int is 64 bits... " >&6; }
 if test "${pgac_cv_type_long_int_64+set}" = set; then
@@ -22657,6 +22697,11 @@ _ACEOF
 
 fi
 
+  if test x"$HAVE_LONG_LONG_INT_64" = x"no" ; then
+    { { $as_echo "$as_me:$LINENO: error: Cannot find a working 64-bit integer type." >&5
+$as_echo "$as_me: error: Cannot find a working 64-bit integer type." >&2;}
+   { (exit 1); exit 1; }; }
+  fi
 fi
 
 
@@ -26540,26 +26585,6 @@ _ACEOF
 
 fi
 
-
-
-# If the user did not disable integer datetimes, check that
-# there is a working 64-bit integral type to use.
-if test x"$USE_INTEGER_DATETIMES" = x"yes" &&
-   test x"$HAVE_LONG_INT_64" = x"no" &&
-   test x"$HAVE_LONG_LONG_INT_64" = x"no" &&
-   test x"$HAVE_INT64" = x"no" ; then
-  { { $as_echo "$as_me:$LINENO: error:
-Integer-based datetime support requires a 64-bit integer type,
-but no such type could be found. The --disable-integer-datetimes
-configure option can be used to disable integer-based storage
-of datetime values." >&5
-$as_echo "$as_me: error:
-Integer-based datetime support requires a 64-bit integer type,
-but no such type could be found. The --disable-integer-datetimes
-configure option can be used to disable integer-based storage
-of datetime values." >&2;}
-   { (exit 1); exit 1; }; }
-fi
 
 
 if test "$PORTNAME" != "win32"
