@@ -10,7 +10,7 @@
 # Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
 # Portions Copyright (c) 1994, Regents of the University of California
 #
-# $PostgreSQL: pgsql/src/backend/catalog/genbki.pl,v 1.1 2010/01/05 01:06:56 tgl Exp $
+# $PostgreSQL: pgsql/src/backend/catalog/genbki.pl,v 1.6 2010/01/06 22:02:45 tgl Exp $
 #
 #----------------------------------------------------------------------
 
@@ -40,9 +40,11 @@ while (@ARGV)
     {
         push @include_path, length($arg) > 2 ? substr($arg, 2) : shift @ARGV;
     }
-    elsif ($arg =~ /^--set-version=(\d+\.\d+).*$/)
+    elsif ($arg =~ /^--set-version=(.*)$/)
     {
         $major_version = $1;
+	die "Version must be in format nn.nn.\n"
+	    if !($major_version =~ /^\d+\.\d+$/);
     }
     else
     {
@@ -53,7 +55,7 @@ while (@ARGV)
 # Sanity check arguments.
 die "No input files.\n" if !@input_files;
 die "No include path; you must specify -I at least once.\n" if !@include_path;
-die "Version not specified or wrong format.\n" if !defined $major_version;
+die "--set-version must be specified.\n" if !defined $major_version;
 
 # Make sure output_path ends in a slash.
 if ($output_path ne '' && substr($output_path, -1) ne '/')
@@ -62,14 +64,19 @@ if ($output_path ne '' && substr($output_path, -1) ne '/')
 }
 
 # Open temp files
-open BKI,      '>', $output_path . 'postgres.bki.tmp'
-  || die "can't open postgres.bki.tmp: $!";
-open SCHEMAPG, '>', $output_path . 'schemapg.h.tmp'
-  || die "can't open 'schemapg.h.tmp: $!";
-open DESCR,    '>', $output_path . 'postgres.description.tmp'
-  || die "can't open postgres.description.tmp: $!";
-open SHDESCR,  '>', $output_path . 'postgres.shdescription.tmp'
-  || die "can't open postgres.shdescription.tmp: $!";
+my $tmpext = ".tmp$$";
+my $bkifile = $output_path . 'postgres.bki';
+open BKI, '>', $bkifile . $tmpext
+  or die "can't open $bkifile$tmpext: $!";
+my $schemafile = $output_path . 'schemapg.h';
+open SCHEMAPG, '>', $schemafile . $tmpext
+  or die "can't open $schemafile$tmpext: $!";
+my $descrfile = $output_path . 'postgres.description';
+open DESCR, '>', $descrfile . $tmpext
+  or die "can't open $descrfile$tmpext: $!";
+my $shdescrfile = $output_path . 'postgres.shdescription';
+open SHDESCR, '>', $shdescrfile . $tmpext
+  or die "can't open $shdescrfile$tmpext: $!";
 
 # Fetch some special data that we will substitute into the output file.
 # CAUTION: be wary about what symbols you substitute into the .bki file here!
@@ -146,7 +153,7 @@ foreach my $catname ( @{ $catalogs->{names} } )
             my $oid = $row->{oid} ? "OID = $row->{oid} " : '';
             printf BKI "insert %s( %s)\n", $oid, $row->{bki_values};
 
-            # Write values to postgres.description and postgres.shdescription
+            # Write comments to postgres.description and postgres.shdescription
             if (defined $row->{descr})
             {
                 printf DESCR "%s\t%s\t0\t%s\n", $row->{oid}, $catname, $row->{descr};
@@ -166,15 +173,15 @@ foreach my $catname ( @{ $catalogs->{names} } )
         {
             my $table = $catalogs->{$table_name};
 
-            # Build Schema_pg_xxx macros needed by relcache.c.
+            # Currently, all bootstrapped relations also need schemapg.h
+            # entries, so skip if the relation isn't to be in schemapg.h.
             next if $table->{schema_macro} ne 'True';
 
             $schemapg_entries{$table_name} = [];
             push @tables_needing_macros, $table_name;
             my $is_bootstrap = $table->{bootstrap};
 
-            # Both postgres.bki and schemapg.h have entries corresponding
-            # to user attributes
+            # Generate entries for user attributes.
             my $attnum = 0;
             my @user_attrs = @{ $table->{columns} };
             foreach my $attr (@user_attrs)
@@ -184,21 +191,20 @@ foreach my $catname ( @{ $catalogs->{names} } )
                 $row->{attnum} = $attnum;
                 $row->{attstattarget} = '-1';
 
-                # Of these tables, only bootstrapped ones
-                # have data declarations in postgres.bki
+                # If it's bootstrapped, put an entry in postgres.bki.
                 if ($is_bootstrap eq ' bootstrap')
                 {
                     bki_insert($row, @attnames);
                 }
 
-                # Store schemapg entries for later
+                # Store schemapg entries for later.
                 $row = emit_schemapg_row($row, grep { $bki_attr{$_} eq 'bool' } @attnames);
                 push @{ $schemapg_entries{$table_name} },
                   '{ ' . join(', ', map $row->{$_}, @attnames) . ' }';
             }
 
-            # Only postgres.bki has entries corresponding to system
-            # attributes, so only bootstrapped relations here
+            # Generate entries for system attributes.
+            # We only need postgres.bki entries, not schemapg.h entries.
             if ($is_bootstrap eq ' bootstrap')
             {
                 $attnum = 0;
@@ -215,12 +221,13 @@ foreach my $catname ( @{ $catalogs->{names} } )
                 {
                     $attnum--;
                     my $row = emit_pgattr_row($table_name, $attr);
-
-                    # pg_attribute has no oids -- skip
-                    next if $table_name eq 'pg_attribute' && $row->{attname} eq 'oid';
-
                     $row->{attnum} = $attnum;
                     $row->{attstattarget} = '0';
+
+                    # some catalogs don't have oids
+                    next if $table->{without_oids} eq ' without_oids' &&
+                      $row->{attname} eq 'oid';
+
                     bki_insert($row, @attnames);
                 }
             }
@@ -283,15 +290,15 @@ print SCHEMAPG "\n#endif /* SCHEMAPG_H */\n";
 
 # We're done emitting data
 close BKI;
+close SCHEMAPG;
 close DESCR;
 close SHDESCR;
-close SCHEMAPG;
 
-# Rename temp files on top of final files, if they have changed
-Catalog::RenameTempFile($output_path . 'postgres.bki');
-Catalog::RenameTempFile($output_path . 'postgres.description');
-Catalog::RenameTempFile($output_path . 'postgres.shdescription');
-Catalog::RenameTempFile($output_path . 'schemapg.h');
+# Finally, rename the completed files into place.
+Catalog::RenameTempFile($bkifile, $tmpext);
+Catalog::RenameTempFile($schemafile, $tmpext);
+Catalog::RenameTempFile($descrfile, $tmpext);
+Catalog::RenameTempFile($shdescrfile, $tmpext);
 
 exit 0;
 
@@ -299,8 +306,8 @@ exit 0;
 
 
 # Given a system catalog name and a reference to a key-value pair corresponding
-# to the name and type of a column, generate a reference to a pg_attribute
-# entry
+# to the name and type of a column, generate a reference to a hash that
+# represents a pg_attribute entry
 sub emit_pgattr_row
 {
     my ($table_name, $attr) = @_;
@@ -317,7 +324,7 @@ sub emit_pgattr_row
         $atttype = '_' . $1;
     }
 
-    # Copy the type data from pg_type, with minor modifications:
+    # Copy the type data from pg_type, and add some type-dependent items
     foreach my $type (@types)
     {
         if ( defined $type->{typname} && $type->{typname} eq $atttype )
@@ -327,8 +334,17 @@ sub emit_pgattr_row
             $row{attbyval}    = $type->{typbyval};
             $row{attstorage}  = $type->{typstorage};
             $row{attalign}    = $type->{typalign};
+            # set attndims if it's an array type
             $row{attndims}    = $type->{typcategory} eq 'A' ? '1' : '0';
-            $row{attnotnull}  = $type->{typstorage}  eq 'x' ? 'f' : 't';
+            # This approach to attnotnull is not really good enough;
+            # we need to know about prior column types too.  Look at
+            # DefineAttr in bootstrap.c.  For the moment it's okay for
+            # the column orders appearing in bootstrapped catalogs.
+            $row{attnotnull}  =
+                $type->{typname} eq 'oidvector' ? 't'
+              : $type->{typname} eq 'int2vector' ? 't'
+              : $type->{typlen} eq 'NAMEDATALEN' ? 't'
+              : $type->{typlen} > 0 ? 't' : 'f';
             last;
         }
     }
@@ -357,25 +373,21 @@ sub bki_insert
     printf BKI "insert %s( %s)\n", $oid, $bki_values;
 }
 
-# The values of a Schema_pg_xxx declaration are similar, but not
-# quite identical, to the corresponding values in pg_attribute.
+# The field values of a Schema_pg_xxx declaration are similar, but not
+# quite identical, to the corresponding values in postgres.bki.
 sub emit_schemapg_row
 {
     my $row = shift;
     my @bool_attrs = @_;
 
-    # pg_index has attrelid = 0 in schemapg.h
-    if ($row->{attrelid} eq '2610')
-    {
-        $row->{attrelid} = '0';
-    }
-
+    # Supply appropriate quoting for these fields.
     $row->{attname}     = q|{"| . $row->{attname}    . q|"}|;
     $row->{attstorage}  = q|'|  . $row->{attstorage} . q|'|;
     $row->{attalign}    = q|'|  . $row->{attalign}   . q|'|;
     $row->{attacl}      = q|{ 0 }|;
 
-    # Expand booleans, accounting for FLOAT4PASSBYVAL etc.
+    # Expand booleans from 'f'/'t' to 'false'/'true'.
+    # Some values might be other macros (eg FLOAT4PASSBYVAL), don't change.
     foreach my $attr (@bool_attrs)
     {
         $row->{$attr} =
