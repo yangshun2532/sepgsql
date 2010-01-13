@@ -91,7 +91,7 @@ check_attribute_drop(Oid relOid, const char *colName, bool cascade)
 void
 check_attribute_grant(Oid relOid, AttrNumber attnum)
 {
-	/* right now, no enhanced security providers */
+	/* right now, we don't need any additional checks */
 }
 
 /*
