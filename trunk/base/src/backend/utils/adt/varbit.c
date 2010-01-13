@@ -9,7 +9,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/adt/varbit.c,v 1.60 2010/01/02 16:57:55 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/adt/varbit.c,v 1.63 2010/01/07 20:17:43 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -22,6 +22,9 @@
 #include "utils/varbit.h"
 
 #define HEXDIG(z)	 ((z)<10 ? ((z)+'0') : ((z)-10+'A'))
+
+static VarBit *bitsubstring(VarBit *arg, int32 s, int32 l,
+							bool length_not_specified);
 
 
 /* common code for bittypmodin and varbittypmodin */
@@ -927,9 +930,23 @@ bitcat(PG_FUNCTION_ARGS)
 Datum
 bitsubstr(PG_FUNCTION_ARGS)
 {
-	VarBit	   *arg = PG_GETARG_VARBIT_P(0);
-	int32		s = PG_GETARG_INT32(1);
-	int32		l = PG_GETARG_INT32(2);
+	PG_RETURN_VARBIT_P(bitsubstring(PG_GETARG_VARBIT_P(0),
+									PG_GETARG_INT32(1),
+									PG_GETARG_INT32(2),
+									false));
+}
+
+Datum
+bitsubstr_no_len(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_VARBIT_P(bitsubstring(PG_GETARG_VARBIT_P(0),
+									PG_GETARG_INT32(1),
+									-1, true));
+}
+
+static VarBit *
+bitsubstring(VarBit *arg, int32 s, int32 l, bool length_not_specified)
+{
 	VarBit	   *result;
 	int			bitlen,
 				rbitlen,
@@ -945,13 +962,26 @@ bitsubstr(PG_FUNCTION_ARGS)
 			   *ps;
 
 	bitlen = VARBITLEN(arg);
-	/* If we do not have an upper bound, set bitlen */
-	if (l == -1)
-		l = bitlen;
-	e = s + l;
 	s1 = Max(s, 1);
-	e1 = Min(e, bitlen + 1);
-	if (s1 > bitlen || e1 < 1)
+	/* If we do not have an upper bound, use end of string */
+	if (length_not_specified)
+	{
+		e1 = bitlen + 1;
+	}
+	else
+	{
+		e = s + l;
+		/*
+		 * A negative value for L is the only way for the end position
+		 * to be before the start. SQL99 says to throw an error.
+		 */
+		if (e < s)
+			ereport(ERROR,
+					(errcode(ERRCODE_SUBSTRING_ERROR),
+					 errmsg("negative substring length not allowed")));
+		e1 = Min(e, bitlen + 1);
+	}
+	if (s1 > bitlen || e1 <= s1)
 	{
 		/* Need to return a zero-length bitstring */
 		len = VARBITTOTALLEN(0);
@@ -1001,7 +1031,7 @@ bitsubstr(PG_FUNCTION_ARGS)
 		}
 	}
 
-	PG_RETURN_VARBIT_P(result);
+	return result;
 }
 
 /* bitlength, bitoctetlength
@@ -1414,11 +1444,7 @@ bitfromint8(PG_FUNCTION_ARGS)
 
 	r = VARBITS(result);
 	destbitsleft = typmod;
-#ifndef INT64_IS_BUSTED
 	srcbitsleft = 64;
-#else
-	srcbitsleft = 32;			/* don't try to shift more than 32 */
-#endif
 	/* drop any input bits that don't fit */
 	srcbitsleft = Min(srcbitsleft, destbitsleft);
 	/* sign-fill any excess bytes in output */
