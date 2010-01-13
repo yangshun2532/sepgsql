@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/executor/execQual.c,v 1.259 2010/01/02 16:57:41 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/executor/execQual.c,v 1.261 2010/01/11 15:31:04 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -591,17 +591,23 @@ ExecEvalVar(ExprState *exprstate, ExprContext *econtext,
 			/*
 			 * We really only care about number of attributes and data type.
 			 * Also, we can ignore type mismatch on columns that are dropped
-			 * in the destination type, so long as the physical storage
-			 * matches.  This is helpful in some cases involving out-of-date
-			 * cached plans.  Also, we have to allow the case that the slot
-			 * has more columns than the Var's type, because we might be
-			 * looking at the output of a subplan that includes resjunk
-			 * columns.  (XXX it would be nice to verify that the extra
-			 * columns are all marked resjunk, but we haven't got access to
-			 * the subplan targetlist here...)	Resjunk columns should always
-			 * be at the end of a targetlist, so it's sufficient to ignore
-			 * them here; but we need to use ExecEvalWholeRowSlow to get rid
-			 * of them in the eventual output tuples.
+			 * in the destination type, so long as (1) the physical storage
+			 * matches or (2) the actual column value is NULL.  Case (1) is
+			 * helpful in some cases involving out-of-date cached plans, while
+			 * case (2) is expected behavior in situations such as an INSERT
+			 * into a table with dropped columns (the planner typically
+			 * generates an INT4 NULL regardless of the dropped column type).
+			 * If we find a dropped column and cannot verify that case (1)
+			 * holds, we have to use ExecEvalWholeRowSlow to check (2) for
+			 * each row.  Also, we have to allow the case that the slot has
+			 * more columns than the Var's type, because we might be looking
+			 * at the output of a subplan that includes resjunk columns.
+			 * (XXX it would be nice to verify that the extra columns are all
+			 * marked resjunk, but we haven't got access to the subplan
+			 * targetlist here...) Resjunk columns should always be at the end
+			 * of a targetlist, so it's sufficient to ignore them here; but we
+			 * need to use ExecEvalWholeRowSlow to get rid of them in the
+			 * eventual output tuples.
 			 */
 			var_tupdesc = lookup_rowtype_tupdesc(variable->vartype, -1);
 
@@ -615,7 +621,7 @@ ExecEvalVar(ExprState *exprstate, ExprContext *econtext,
 										  slot_tupdesc->natts,
 										  var_tupdesc->natts)));
 			else if (var_tupdesc->natts < slot_tupdesc->natts)
-				needslow = true;
+				needslow = true;			/* need to trim trailing atts */
 
 			for (i = 0; i < var_tupdesc->natts; i++)
 			{
@@ -635,11 +641,7 @@ ExecEvalVar(ExprState *exprstate, ExprContext *econtext,
 
 				if (vattr->attlen != sattr->attlen ||
 					vattr->attalign != sattr->attalign)
-					ereport(ERROR,
-							(errcode(ERRCODE_DATATYPE_MISMATCH),
-							 errmsg("table row type and query-specified row type do not match"),
-							 errdetail("Physical storage mismatch on dropped attribute at ordinal position %d.",
-									   i + 1)));
+					needslow = true;		/* need runtime check for null */
 			}
 
 			ReleaseTupleDesc(var_tupdesc);
@@ -766,7 +768,7 @@ ExecEvalWholeRowVar(ExprState *exprstate, ExprContext *econtext,
 /* ----------------------------------------------------------------
  *		ExecEvalWholeRowSlow
  *
- *		Returns a Datum for a whole-row variable, in the "slow" case where
+ *		Returns a Datum for a whole-row variable, in the "slow" cases where
  *		we can't just copy the subplan's output.
  * ----------------------------------------------------------------
  */
@@ -779,6 +781,7 @@ ExecEvalWholeRowSlow(ExprState *exprstate, ExprContext *econtext,
 	HeapTuple	tuple;
 	TupleDesc	var_tupdesc;
 	HeapTupleHeader dtuple;
+	int			i;
 
 	if (isDone)
 		*isDone = ExprSingleResult;
@@ -802,17 +805,37 @@ ExecEvalWholeRowSlow(ExprState *exprstate, ExprContext *econtext,
 	}
 
 	/*
-	 * Currently, the only case handled here is stripping of trailing resjunk
-	 * fields, which we do in a slightly chintzy way by just adjusting the
-	 * tuple's natts header field.  Possibly there will someday be a need for
-	 * more-extensive rearrangements, in which case it'd be worth
-	 * disassembling and reassembling the tuple (perhaps use a JunkFilter for
-	 * that?)
+	 * Currently, the only data modification case handled here is stripping of
+	 * trailing resjunk fields, which we do in a slightly chintzy way by just
+	 * adjusting the tuple's natts header field.  Possibly there will someday
+	 * be a need for more-extensive rearrangements, in which case we'd
+	 * probably use tupconvert.c.
 	 */
 	Assert(variable->vartype != RECORDOID);
 	var_tupdesc = lookup_rowtype_tupdesc(variable->vartype, -1);
 
 	tuple = ExecFetchSlotTuple(slot);
+
+	Assert(HeapTupleHeaderGetNatts(tuple->t_data) >= var_tupdesc->natts);
+
+	/* Check to see if any dropped attributes are non-null */
+	for (i = 0; i < var_tupdesc->natts; i++)
+	{
+		Form_pg_attribute vattr = var_tupdesc->attrs[i];
+		Form_pg_attribute sattr = slot->tts_tupleDescriptor->attrs[i];
+
+		if (!vattr->attisdropped)
+			continue;			/* already checked non-dropped cols */
+		if (heap_attisnull(tuple, i+1))
+			continue;			/* null is always okay */
+		if (vattr->attlen != sattr->attlen ||
+			vattr->attalign != sattr->attalign)
+			ereport(ERROR,
+					(errcode(ERRCODE_DATATYPE_MISMATCH),
+					 errmsg("table row type and query-specified row type do not match"),
+					 errdetail("Physical storage mismatch on dropped attribute at ordinal position %d.",
+							   i + 1)));
+	}
 
 	/*
 	 * We have to make a copy of the tuple so we can safely insert the Datum
@@ -826,7 +849,6 @@ ExecEvalWholeRowSlow(ExprState *exprstate, ExprContext *econtext,
 	HeapTupleHeaderSetTypeId(dtuple, variable->vartype);
 	HeapTupleHeaderSetTypMod(dtuple, variable->vartypmod);
 
-	Assert(HeapTupleHeaderGetNatts(dtuple) >= var_tupdesc->natts);
 	HeapTupleHeaderSetNatts(dtuple, var_tupdesc->natts);
 
 	ReleaseTupleDesc(var_tupdesc);
@@ -3762,12 +3784,20 @@ ExecEvalFieldSelect(FieldSelectState *fstate,
 	tupDesc = get_cached_rowtype(tupType, tupTypmod,
 								 &fstate->argdesc, econtext);
 
-	/* Check for dropped column, and force a NULL result if so */
-	if (fieldnum <= 0 ||
-		fieldnum > tupDesc->natts)		/* should never happen */
+	/*
+	 * Find field's attr record.  Note we don't support system columns here:
+	 * a datum tuple doesn't have valid values for most of the interesting
+	 * system columns anyway.
+	 */
+	if (fieldnum <= 0)					/* should never happen */
+		elog(ERROR, "unsupported reference to system column %d in FieldSelect",
+			 fieldnum);
+	if (fieldnum > tupDesc->natts)		/* should never happen */
 		elog(ERROR, "attribute number %d exceeds number of columns %d",
 			 fieldnum, tupDesc->natts);
 	attr = tupDesc->attrs[fieldnum - 1];
+
+	/* Check for dropped column, and force a NULL result if so */
 	if (attr->attisdropped)
 	{
 		*isNull = true;
@@ -3783,14 +3813,8 @@ ExecEvalFieldSelect(FieldSelectState *fstate,
 						   format_type_be(attr->atttypid),
 						   format_type_be(fselect->resulttype))));
 
-	/*
-	 * heap_getattr needs a HeapTuple not a bare HeapTupleHeader.  We set all
-	 * the fields in the struct just in case user tries to inspect system
-	 * columns.
-	 */
+	/* heap_getattr needs a HeapTuple not a bare HeapTupleHeader */
 	tmptup.t_len = HeapTupleHeaderGetDatumLength(tuple);
-	ItemPointerSetInvalid(&(tmptup.t_self));
-	tmptup.t_tableOid = InvalidOid;
 	tmptup.t_data = tuple;
 
 	result = heap_getattr(&tmptup,
