@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/catalog/aclchk.c,v 1.159 2010/01/02 16:57:36 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/backend/catalog/aclchk.c,v 1.161 2010/01/07 02:41:15 rhaas Exp $
  *
  * NOTES
  *	  See acl.h.
@@ -2796,18 +2796,11 @@ ExecGrant_Tablespace(InternalGrant *istmt)
 		int			nnewmembers;
 		Oid		   *oldmembers;
 		Oid		   *newmembers;
-		ScanKeyData entry[1];
-		SysScanDesc scan;
 		HeapTuple	tuple;
 
-		/* There's no syscache for pg_tablespace, so must look the hard way */
-		ScanKeyInit(&entry[0],
-					ObjectIdAttributeNumber,
-					BTEqualStrategyNumber, F_OIDEQ,
-					ObjectIdGetDatum(tblId));
-		scan = systable_beginscan(relation, TablespaceOidIndexId, true,
-								  SnapshotNow, 1, entry);
-		tuple = systable_getnext(scan);
+		/* Search syscache for pg_tablespace */
+		tuple = SearchSysCache(TABLESPACEOID, ObjectIdGetDatum(tblId),
+							   0, 0, 0);
 		if (!HeapTupleIsValid(tuple))
 			elog(ERROR, "cache lookup failed for tablespace %u", tblId);
 
@@ -2878,8 +2871,7 @@ ExecGrant_Tablespace(InternalGrant *istmt)
 							  noldmembers, oldmembers,
 							  nnewmembers, newmembers);
 
-		systable_endscan(scan);
-
+		ReleaseSysCache(tuple);
 		pfree(new_acl);
 
 		/* prevent error when processing duplicate objects */
@@ -3536,16 +3528,11 @@ pg_language_aclmask(Oid lang_oid, Oid roleid,
 /*
  * Exported routine for examining a user's privileges for a largeobject
  *
- * The reason why this interface has an argument of snapshot is that
- * we apply a snapshot available on lo_open(), not SnapshotNow, when
- * it is opened as read-only mode.
- * If we could see the metadata and data from inconsistent viewpoint,
- * it will give us much confusion. So, we need to provide an interface
- * which takes an argument of snapshot.
- *
- * If the caller refers a large object with a certain snapshot except
- * for SnapshotNow, its permission checks should be also applied in
- * the same snapshot.
+ * When a large object is opened for reading, it is opened relative to the
+ * caller's snapshot, but when it is opened for writing, it is always relative
+ * to SnapshotNow, as documented in doc/src/sgml/lobj.sgml.  This function
+ * takes a snapshot argument so that the permissions check can be made relative
+ * to the same snapshot that will be used to read the underlying data.
  */
 AclMode
 pg_largeobject_aclmask_snapshot(Oid lobj_oid, Oid roleid,
@@ -3709,9 +3696,6 @@ pg_tablespace_aclmask(Oid spc_oid, Oid roleid,
 					  AclMode mask, AclMaskHow how)
 {
 	AclMode		result;
-	Relation	pg_tablespace;
-	ScanKeyData entry[1];
-	SysScanDesc scan;
 	HeapTuple	tuple;
 	Datum		aclDatum;
 	bool		isNull;
@@ -3724,17 +3708,9 @@ pg_tablespace_aclmask(Oid spc_oid, Oid roleid,
 
 	/*
 	 * Get the tablespace's ACL from pg_tablespace
-	 *
-	 * There's no syscache for pg_tablespace, so must look the hard way
 	 */
-	pg_tablespace = heap_open(TableSpaceRelationId, AccessShareLock);
-	ScanKeyInit(&entry[0],
-				ObjectIdAttributeNumber,
-				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(spc_oid));
-	scan = systable_beginscan(pg_tablespace, TablespaceOidIndexId, true,
-							  SnapshotNow, 1, entry);
-	tuple = systable_getnext(scan);
+	tuple = SearchSysCache(TABLESPACEOID, ObjectIdGetDatum(spc_oid),
+						   0, 0, 0);
 	if (!HeapTupleIsValid(tuple))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
@@ -3742,8 +3718,9 @@ pg_tablespace_aclmask(Oid spc_oid, Oid roleid,
 
 	ownerId = ((Form_pg_tablespace) GETSTRUCT(tuple))->spcowner;
 
-	aclDatum = heap_getattr(tuple, Anum_pg_tablespace_spcacl,
-							RelationGetDescr(pg_tablespace), &isNull);
+	aclDatum = SysCacheGetAttr(TABLESPACEOID, tuple,
+								   Anum_pg_tablespace_spcacl,
+								   &isNull);
 
 	if (isNull)
 	{
@@ -3763,8 +3740,7 @@ pg_tablespace_aclmask(Oid spc_oid, Oid roleid,
 	if (acl && (Pointer) acl != DatumGetPointer(aclDatum))
 		pfree(acl);
 
-	systable_endscan(scan);
-	heap_close(pg_tablespace, AccessShareLock);
+	ReleaseSysCache(tuple);
 
 	return result;
 }
@@ -4351,9 +4327,6 @@ pg_namespace_ownercheck(Oid nsp_oid, Oid roleid)
 bool
 pg_tablespace_ownercheck(Oid spc_oid, Oid roleid)
 {
-	Relation	pg_tablespace;
-	ScanKeyData entry[1];
-	SysScanDesc scan;
 	HeapTuple	spctuple;
 	Oid			spcowner;
 
@@ -4361,17 +4334,9 @@ pg_tablespace_ownercheck(Oid spc_oid, Oid roleid)
 	if (superuser_arg(roleid))
 		return true;
 
-	/* There's no syscache for pg_tablespace, so must look the hard way */
-	pg_tablespace = heap_open(TableSpaceRelationId, AccessShareLock);
-	ScanKeyInit(&entry[0],
-				ObjectIdAttributeNumber,
-				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(spc_oid));
-	scan = systable_beginscan(pg_tablespace, TablespaceOidIndexId, true,
-							  SnapshotNow, 1, entry);
-
-	spctuple = systable_getnext(scan);
-
+	/* Search syscache for pg_tablespace */
+	spctuple = SearchSysCache(TABLESPACEOID, ObjectIdGetDatum(spc_oid),
+							  0, 0, 0);
 	if (!HeapTupleIsValid(spctuple))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
@@ -4379,8 +4344,7 @@ pg_tablespace_ownercheck(Oid spc_oid, Oid roleid)
 
 	spcowner = ((Form_pg_tablespace) GETSTRUCT(spctuple))->spcowner;
 
-	systable_endscan(scan);
-	heap_close(pg_tablespace, AccessShareLock);
+	ReleaseSysCache(spctuple);
 
 	return has_privs_of_role(roleid, spcowner);
 }
