@@ -3,7 +3,7 @@ package Mkvcbuild;
 #
 # Package that generates build files for msvc build
 #
-# $PostgreSQL: pgsql/src/tools/msvc/Mkvcbuild.pm,v 1.44 2009/11/12 00:13:00 tgl Exp $
+# $PostgreSQL: pgsql/src/tools/msvc/Mkvcbuild.pm,v 1.46 2010/01/11 14:16:18 adunstan Exp $
 #
 use Carp;
 use Win32;
@@ -11,6 +11,8 @@ use strict;
 use warnings;
 use Project;
 use Solution;
+use Cwd;
+use File::Copy;
 
 use Exporter;
 our (@ISA, @EXPORT_OK);
@@ -101,6 +103,26 @@ sub mkvcbuild
             {
                 unlink('src\pl\plperl\SPI.c'); # if zero size
                 die 'Failed to create SPI.c' . "\n";
+            }
+        }
+        if (  Solution::IsNewer('src\pl\plperl\perlchunks.h','src\pl\plperl\plc_perlboot.pl')
+            ||Solution::IsNewer('src\pl\plperl\perlchunks.h','src\pl\plperl\plc_safe_bad.pl')
+            ||Solution::IsNewer('src\pl\plperl\perlchunks.h','src\pl\plperl\plc_safe_ok.pl'))
+        {
+            print 'Building src\pl\plperl\perlchunks.h ...' . "\n";
+            my $basedir = getcwd;
+            chdir 'src\pl\plperl';
+            system( $solution->{options}->{perl}
+                  . '/bin/perl '
+                  . 'text2macro.pl '
+                  . '--strip="^(\#.*|\s*)$$" '
+                  . 'plc_perlboot.pl plc_safe_bad.pl plc_safe_ok.pl '
+                  .	'>perlchunks.h');
+            chdir $basedir;
+            if ((!(-f 'src\pl\plperl\perlchunks.h')) || -z 'src\pl\plperl\perlchunks.h')
+            {
+                unlink('src\pl\plperl\perlchunks.h'); # if zero size
+                die 'Failed to create perlchunks.h' . "\n";
             }
         }
         $plperl->AddReference($postgres);
