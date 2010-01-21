@@ -5,7 +5,7 @@ GIT_DIR="${HOME}/repo/sepgsql"
 PGSQL_GIT="git://git.postgresql.org/git/postgresql.git"
 UPSTREAM="master"
 LOCAL_GIT="git://git.postgresql.org/git/users/kaigai/sepgsql.git"
-BRANCHES="master devel/ace_database devel/ace_schema devel/ace_relation_pre"
+BRANCHES="master devel/ace_database devel/ace_schema devel/ace_relation_pre devel/ace_relation devel/ace_proc"
 #================================================================
 
 cd ${GIT_DIR}
