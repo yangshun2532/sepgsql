@@ -8,7 +8,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/executor/execQual.c,v 1.250 2009/06/11 17:25:38 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/executor/execQual.c,v 1.250.2.4 2010/02/18 18:41:55 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -46,6 +46,7 @@
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
 #include "optimizer/planner.h"
+#include "parser/parse_coerce.h"
 #include "pgstat.h"
 #include "security/sepgsql.h"
 #include "utils/acl.h"
@@ -60,6 +61,7 @@
 static Datum ExecEvalArrayRef(ArrayRefExprState *astate,
 				 ExprContext *econtext,
 				 bool *isNull, ExprDoneCond *isDone);
+static bool isAssignmentIndirectionExpr(ExprState *exprstate);
 static Datum ExecEvalAggref(AggrefExprState *aggref,
 			   ExprContext *econtext,
 			   bool *isNull, ExprDoneCond *isDone);
@@ -348,21 +350,73 @@ ExecEvalArrayRef(ArrayRefExprState *astate,
 	if (isAssignment)
 	{
 		Datum		sourceData;
+		Datum		save_datum;
+		bool		save_isNull;
+
+		/*
+		 * We might have a nested-assignment situation, in which the
+		 * refassgnexpr is itself a FieldStore or ArrayRef that needs to
+		 * obtain and modify the previous value of the array element or slice
+		 * being replaced.  If so, we have to extract that value from the
+		 * array and pass it down via the econtext's caseValue.  It's safe to
+		 * reuse the CASE mechanism because there cannot be a CASE between
+		 * here and where the value would be needed, and an array assignment
+		 * can't be within a CASE either.  (So saving and restoring the
+		 * caseValue is just paranoia, but let's do it anyway.)
+		 *
+		 * Since fetching the old element might be a nontrivial expense, do it
+		 * only if the argument appears to actually need it.
+		 */
+		save_datum = econtext->caseValue_datum;
+		save_isNull = econtext->caseValue_isNull;
+
+		if (isAssignmentIndirectionExpr(astate->refassgnexpr))
+		{
+			if (*isNull)
+			{
+				/* whole array is null, so any element or slice is too */
+				econtext->caseValue_datum = (Datum) 0;
+				econtext->caseValue_isNull = true;
+			}
+			else if (lIndex == NULL)
+			{
+				econtext->caseValue_datum = array_ref(array_source, i,
+													  upper.indx,
+													  astate->refattrlength,
+													  astate->refelemlength,
+													  astate->refelembyval,
+													  astate->refelemalign,
+													  &econtext->caseValue_isNull);
+			}
+			else
+			{
+				resultArray = array_get_slice(array_source, i,
+											  upper.indx, lower.indx,
+											  astate->refattrlength,
+											  astate->refelemlength,
+											  astate->refelembyval,
+											  astate->refelemalign);
+				econtext->caseValue_datum = PointerGetDatum(resultArray);
+				econtext->caseValue_isNull = false;
+			}
+		}
+		else
+		{
+			/* argument shouldn't need caseValue, but for safety set it null */
+			econtext->caseValue_datum = (Datum) 0;
+			econtext->caseValue_isNull = true;
+		}
 
 		/*
 		 * Evaluate the value to be assigned into the array.
-		 *
-		 * XXX At some point we'll need to look into making the old value of
-		 * the array element available via CaseTestExpr, as is done by
-		 * ExecEvalFieldStore.	This is not needed now but will be needed to
-		 * support arrays of composite types; in an assignment to a field of
-		 * an array member, the parser would generate a FieldStore that
-		 * expects to fetch its input tuple via CaseTestExpr.
 		 */
 		sourceData = ExecEvalExpr(astate->refassgnexpr,
 								  econtext,
 								  &eisnull,
 								  NULL);
+
+		econtext->caseValue_datum = save_datum;
+		econtext->caseValue_isNull = save_isNull;
 
 		/*
 		 * For an assignment to a fixed-length array type, both the original
@@ -425,6 +479,34 @@ ExecEvalArrayRef(ArrayRefExprState *astate,
 	}
 }
 
+/*
+ * Helper for ExecEvalArrayRef: is expr a nested FieldStore or ArrayRef
+ * that might need the old element value passed down?
+ *
+ * (We could use this in ExecEvalFieldStore too, but in that case passing
+ * the old value is so cheap there's no need.)
+ */
+static bool
+isAssignmentIndirectionExpr(ExprState *exprstate)
+{
+	if (exprstate == NULL)
+		return false;			/* just paranoia */
+	if (IsA(exprstate, FieldStoreState))
+	{
+		FieldStore *fstore = (FieldStore *) exprstate->expr;
+
+		if (fstore->arg && IsA(fstore->arg, CaseTestExpr))
+			return true;
+	}
+	else if (IsA(exprstate, ArrayRefExprState))
+	{
+		ArrayRef   *arrayRef = (ArrayRef *) exprstate->expr;
+
+		if (arrayRef->refexpr && IsA(arrayRef->refexpr, CaseTestExpr))
+			return true;
+	}
+	return false;
+}
 
 /* ----------------------------------------------------------------
  *		ExecEvalAggref
@@ -599,17 +681,23 @@ ExecEvalVar(ExprState *exprstate, ExprContext *econtext,
 			/*
 			 * We really only care about number of attributes and data type.
 			 * Also, we can ignore type mismatch on columns that are dropped
-			 * in the destination type, so long as the physical storage
-			 * matches.  This is helpful in some cases involving out-of-date
-			 * cached plans.  Also, we have to allow the case that the slot
-			 * has more columns than the Var's type, because we might be
-			 * looking at the output of a subplan that includes resjunk
-			 * columns.  (XXX it would be nice to verify that the extra
-			 * columns are all marked resjunk, but we haven't got access to
-			 * the subplan targetlist here...)	Resjunk columns should always
-			 * be at the end of a targetlist, so it's sufficient to ignore
-			 * them here; but we need to use ExecEvalWholeRowSlow to get rid
-			 * of them in the eventual output tuples.
+			 * in the destination type, so long as (1) the physical storage
+			 * matches or (2) the actual column value is NULL.  Case (1) is
+			 * helpful in some cases involving out-of-date cached plans, while
+			 * case (2) is expected behavior in situations such as an INSERT
+			 * into a table with dropped columns (the planner typically
+			 * generates an INT4 NULL regardless of the dropped column type).
+			 * If we find a dropped column and cannot verify that case (1)
+			 * holds, we have to use ExecEvalWholeRowSlow to check (2) for
+			 * each row.  Also, we have to allow the case that the slot has
+			 * more columns than the Var's type, because we might be looking
+			 * at the output of a subplan that includes resjunk columns.
+			 * (XXX it would be nice to verify that the extra columns are all
+			 * marked resjunk, but we haven't got access to the subplan
+			 * targetlist here...) Resjunk columns should always be at the end
+			 * of a targetlist, so it's sufficient to ignore them here; but we
+			 * need to use ExecEvalWholeRowSlow to get rid of them in the
+			 * eventual output tuples.
 			 */
 			var_tupdesc = lookup_rowtype_tupdesc(variable->vartype, -1);
 
@@ -623,7 +711,7 @@ ExecEvalVar(ExprState *exprstate, ExprContext *econtext,
 										  slot_tupdesc->natts,
 										  var_tupdesc->natts)));
 			else if (var_tupdesc->natts < slot_tupdesc->natts)
-				needslow = true;
+				needslow = true;			/* need to trim trailing atts */
 
 			for (i = 0; i < var_tupdesc->natts; i++)
 			{
@@ -643,11 +731,7 @@ ExecEvalVar(ExprState *exprstate, ExprContext *econtext,
 
 				if (vattr->attlen != sattr->attlen ||
 					vattr->attalign != sattr->attalign)
-					ereport(ERROR,
-							(errcode(ERRCODE_DATATYPE_MISMATCH),
-							 errmsg("table row type and query-specified row type do not match"),
-							 errdetail("Physical storage mismatch on dropped attribute at ordinal position %d.",
-									   i + 1)));
+					needslow = true;		/* need runtime check for null */
 			}
 
 			ReleaseTupleDesc(var_tupdesc);
@@ -757,7 +841,7 @@ ExecEvalWholeRowVar(ExprState *exprstate, ExprContext *econtext,
 /* ----------------------------------------------------------------
  *		ExecEvalWholeRowSlow
  *
- *		Returns a Datum for a whole-row variable, in the "slow" case where
+ *		Returns a Datum for a whole-row variable, in the "slow" cases where
  *		we can't just copy the subplan's output.
  * ----------------------------------------------------------------
  */
@@ -770,23 +854,44 @@ ExecEvalWholeRowSlow(ExprState *exprstate, ExprContext *econtext,
 	HeapTuple	tuple;
 	TupleDesc	var_tupdesc;
 	HeapTupleHeader dtuple;
+	int			i;
 
 	if (isDone)
 		*isDone = ExprSingleResult;
 	*isNull = false;
 
 	/*
-	 * Currently, the only case handled here is stripping of trailing resjunk
-	 * fields, which we do in a slightly chintzy way by just adjusting the
-	 * tuple's natts header field.  Possibly there will someday be a need for
-	 * more-extensive rearrangements, in which case it'd be worth
-	 * disassembling and reassembling the tuple (perhaps use a JunkFilter for
-	 * that?)
+	 * Currently, the only data modification case handled here is stripping of
+	 * trailing resjunk fields, which we do in a slightly chintzy way by just
+	 * adjusting the tuple's natts header field.  Possibly there will someday
+	 * be a need for more-extensive rearrangements, in which case we'd
+	 * probably use tupconvert.c.
 	 */
 	Assert(variable->vartype != RECORDOID);
 	var_tupdesc = lookup_rowtype_tupdesc(variable->vartype, -1);
 
 	tuple = ExecFetchSlotTuple(slot);
+
+	Assert(HeapTupleHeaderGetNatts(tuple->t_data) >= var_tupdesc->natts);
+
+	/* Check to see if any dropped attributes are non-null */
+	for (i = 0; i < var_tupdesc->natts; i++)
+	{
+		Form_pg_attribute vattr = var_tupdesc->attrs[i];
+		Form_pg_attribute sattr = slot->tts_tupleDescriptor->attrs[i];
+
+		if (!vattr->attisdropped)
+			continue;			/* already checked non-dropped cols */
+		if (heap_attisnull(tuple, i+1))
+			continue;			/* null is always okay */
+		if (vattr->attlen != sattr->attlen ||
+			vattr->attalign != sattr->attalign)
+			ereport(ERROR,
+					(errcode(ERRCODE_DATATYPE_MISMATCH),
+					 errmsg("table row type and query-specified row type do not match"),
+					 errdetail("Physical storage mismatch on dropped attribute at ordinal position %d.",
+							   i + 1)));
+	}
 
 	/*
 	 * We have to make a copy of the tuple so we can safely insert the Datum
@@ -800,7 +905,6 @@ ExecEvalWholeRowSlow(ExprState *exprstate, ExprContext *econtext,
 	HeapTupleHeaderSetTypeId(dtuple, variable->vartype);
 	HeapTupleHeaderSetTypMod(dtuple, variable->vartypmod);
 
-	Assert(HeapTupleHeaderGetNatts(dtuple) >= var_tupdesc->natts);
 	HeapTupleHeaderSetNatts(dtuple, var_tupdesc->natts);
 
 	ReleaseTupleDesc(var_tupdesc);
@@ -1346,7 +1450,7 @@ tupledesc_match(TupleDesc dst_tupdesc, TupleDesc src_tupdesc)
 		Form_pg_attribute dattr = dst_tupdesc->attrs[i];
 		Form_pg_attribute sattr = src_tupdesc->attrs[i];
 
-		if (dattr->atttypid == sattr->atttypid)
+		if (IsBinaryCoercible(sattr->atttypid, dattr->atttypid))
 			continue;			/* no worries */
 		if (!dattr->attisdropped)
 			ereport(ERROR,
@@ -2001,15 +2105,10 @@ ExecMakeTableFunctionResult(ExprState *funcexpr,
 				tmptup.t_len = HeapTupleHeaderGetDatumLength(td);
 				tmptup.t_data = td;
 
-				oldcontext = MemoryContextSwitchTo(econtext->ecxt_per_query_memory);
 				tuplestore_puttuple(tupstore, &tmptup);
 			}
 			else
-			{
-				oldcontext = MemoryContextSwitchTo(econtext->ecxt_per_query_memory);
 				tuplestore_putvalues(tupstore, tupdesc, &result, &fcinfo.isnull);
-			}
-			MemoryContextSwitchTo(oldcontext);
 
 			/*
 			 * Are we done?
@@ -3912,10 +4011,12 @@ ExecEvalFieldStore(FieldStoreState *fstate,
 
 		/*
 		 * Use the CaseTestExpr mechanism to pass down the old value of the
-		 * field being replaced; this is useful in case we have a nested field
-		 * update situation.  It's safe to reuse the CASE mechanism because
-		 * there cannot be a CASE between here and where the value would be
-		 * needed.
+		 * field being replaced; this is needed in case the newval is itself a
+		 * FieldStore or ArrayRef that has to obtain and modify the old value.
+		 * It's safe to reuse the CASE mechanism because there cannot be a
+		 * CASE between here and where the value would be needed, and a field
+		 * assignment can't be within a CASE either.  (So saving and restoring
+		 * the caseValue is just paranoia, but let's do it anyway.)
 		 */
 		econtext->caseValue_datum = values[fieldnum - 1];
 		econtext->caseValue_isNull = isnull[fieldnum - 1];
