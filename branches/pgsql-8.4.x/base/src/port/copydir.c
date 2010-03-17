@@ -11,7 +11,7 @@
  *	as a service.
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/port/copydir.c,v 1.23 2009/01/01 17:24:04 momjian Exp $
+ *	  $PostgreSQL: pgsql/src/port/copydir.c,v 1.23.2.2 2010/02/16 00:01:35 stark Exp $
  *
  *-------------------------------------------------------------------------
  */
