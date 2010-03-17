@@ -10,7 +10,7 @@
  * Written by Peter Eisentraut <peter_e@gmx.net>.
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.505.2.3 2009/12/09 21:58:04 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/misc/guc.c,v 1.505.2.5 2010/02/25 13:26:26 mha Exp $
  *
  *--------------------------------------------------------------------
  */
@@ -114,6 +114,7 @@ extern char *default_tablespace;
 extern char *temp_tablespaces;
 extern bool synchronize_seqscans;
 extern bool fullPageWrites;
+extern int	ssl_renegotiation_limit;
 
 #ifdef TRACE_SORT
 extern bool trace_sort;
@@ -1887,6 +1888,16 @@ static struct config_int ConfigureNamesInt[] =
 		},
 		&tcp_keepalives_interval,
 		0, 0, INT_MAX, assign_tcp_keepalives_interval, show_tcp_keepalives_interval
+	},
+
+	{
+		{"ssl_renegotiation_limit", PGC_USERSET, CONN_AUTH_SECURITY,
+			gettext_noop("Set the amount of traffic to send and receive before renegotiating the encryption keys."),
+			NULL,
+			GUC_UNIT_KB,
+		},
+		&ssl_renegotiation_limit,
+		512 * 1024, 0, MAX_KILOBYTES, NULL, NULL
 	},
 
 	{
@@ -3786,7 +3797,14 @@ AtEOXact_GUC(bool isCommit, int nestLevel)
 	bool		still_dirty;
 	int			i;
 
-	Assert(nestLevel > 0 && nestLevel <= GUCNestLevel);
+	/*
+	 * Note: it's possible to get here with GUCNestLevel == nestLevel-1 during
+	 * abort, if there is a failure during transaction start before
+	 * AtStart_GUC is called.
+	 */
+	Assert(nestLevel > 0 &&
+		   (nestLevel <= GUCNestLevel ||
+			(nestLevel == GUCNestLevel + 1 && !isCommit)));
 
 	/* Quick exit if nothing's changed in this transaction */
 	if (!guc_dirty)
