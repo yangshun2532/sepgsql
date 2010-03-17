@@ -1,7 +1,7 @@
 /**********************************************************************
  * plperl.c - perl as a procedural language for PostgreSQL
  *
- *	  $PostgreSQL: pgsql/src/pl/plperl/plperl.c,v 1.150.2.3 2009/11/29 21:02:22 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/pl/plperl/plperl.c,v 1.150.2.6 2010/03/09 22:34:49 tgl Exp $
  *
  **********************************************************************/
 
@@ -793,7 +793,7 @@ plperl_modify_tuple(HV *hvTD, TriggerData *tdata, HeapTuple otup)
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_COLUMN),
 				 errmsg("$_TD->{new} does not exist")));
-	if (!SvOK(*svp) || SvTYPE(*svp) != SVt_RV || SvTYPE(SvRV(*svp)) != SVt_PVHV)
+	if (!SvOK(*svp) || !SvROK(*svp) || SvTYPE(SvRV(*svp)) != SVt_PVHV)
 		ereport(ERROR,
 				(errcode(ERRCODE_DATATYPE_MISMATCH),
 				 errmsg("$_TD->{new} is not a hash reference")));
@@ -1284,7 +1284,7 @@ plperl_func_handler(PG_FUNCTION_ARGS)
 		 * value is an error, except undef which means return an empty set.
 		 */
 		if (SvOK(perlret) &&
-			SvTYPE(perlret) == SVt_RV &&
+			SvROK(perlret) &&
 			SvTYPE(SvRV(perlret)) == SVt_PVAV)
 		{
 			int			i = 0;
@@ -1329,7 +1329,7 @@ plperl_func_handler(PG_FUNCTION_ARGS)
 		AttInMetadata *attinmeta;
 		HeapTuple	tup;
 
-		if (!SvOK(perlret) || SvTYPE(perlret) != SVt_RV ||
+		if (!SvOK(perlret) || !SvROK(perlret) ||
 			SvTYPE(SvRV(perlret)) != SVt_PVHV)
 		{
 			ereport(ERROR,
@@ -1530,8 +1530,11 @@ compile_plperl_function(Oid fn_oid, bool is_trigger)
 		{
 			hash_search(plperl_proc_hash, internal_proname,
 						HASH_REMOVE, NULL);
-			if (prodesc->reference)
+			if (prodesc->reference) {
+				check_interp(prodesc->lanpltrusted);
 				SvREFCNT_dec(prodesc->reference);
+				restore_context(oldcontext);
+			}
 			free(prodesc->proname);
 			free(prodesc);
 			prodesc = NULL;
@@ -1916,7 +1919,7 @@ plperl_return_next(SV *sv)
 				 errmsg("cannot use return_next in a non-SETOF function")));
 
 	if (prodesc->fn_retistuple &&
-		!(SvOK(sv) && SvTYPE(sv) == SVt_RV && SvTYPE(SvRV(sv)) == SVt_PVHV))
+		!(SvOK(sv) && SvROK(sv) && SvTYPE(SvRV(sv)) == SVt_PVHV))
 		ereport(ERROR,
 				(errcode(ERRCODE_DATATYPE_MISMATCH),
 				 errmsg("SETOF-composite-returning PL/Perl function "
@@ -1981,11 +1984,7 @@ plperl_return_next(SV *sv)
 
 		tuple = plperl_build_tuple_result((HV *) SvRV(sv),
 										  current_call_data->attinmeta);
-
-		/* Make sure to store the tuple in a long-lived memory context */
-		MemoryContextSwitchTo(rsi->econtext->ecxt_per_query_memory);
 		tuplestore_puttuple(current_call_data->tuple_store, tuple);
-		MemoryContextSwitchTo(old_cxt);
 	}
 	else
 	{
@@ -2015,14 +2014,12 @@ plperl_return_next(SV *sv)
 			isNull = true;
 		}
 
-		/* Make sure to store the tuple in a long-lived memory context */
-		MemoryContextSwitchTo(rsi->econtext->ecxt_per_query_memory);
 		tuplestore_putvalues(current_call_data->tuple_store,
 							 current_call_data->ret_tdesc,
 							 &ret, &isNull);
-		MemoryContextSwitchTo(old_cxt);
 	}
 
+	MemoryContextSwitchTo(old_cxt);
 	MemoryContextReset(current_call_data->tmp_cxt);
 }
 
