@@ -3,7 +3,7 @@ package Solution;
 #
 # Package that encapsulates a Visual C++ solution file generation
 #
-# $PostgreSQL: pgsql/src/tools/msvc/Solution.pm,v 1.47 2009/01/06 18:37:50 mha Exp $
+# $PostgreSQL: pgsql/src/tools/msvc/Solution.pm,v 1.47.2.3 2010/03/03 03:29:02 adunstan Exp $
 #
 use Carp;
 use strict;
@@ -173,6 +173,11 @@ s{PG_VERSION_STR "[^"]+"}{__STRINGIFY(x) #x\n#define __STRINGIFY2(z) __STRINGIFY
         {
             print O "#define HAVE_LIBXML2\n";
             print O "#define USE_LIBXML\n";
+        }
+        if ($self->{options}->{xslt})
+        {
+            print O "#define HAVE_LIBXSLT\n";
+            print O "#define USE_LIBXSLT\n";
         }
         if ($self->{options}->{krb5})
         {
@@ -373,12 +378,21 @@ sub AddProject
         $proj->AddLibrary($self->{options}->{krb5} . '\lib\i386\comerr32.lib');
         $proj->AddLibrary($self->{options}->{krb5} . '\lib\i386\gssapi32.lib');
     }
+    if ($self->{options}->{iconv})
+    {
+        $proj->AddIncludeDir($self->{options}->{iconv} . '\include');
+        $proj->AddLibrary($self->{options}->{iconv} . '\lib\iconv.lib');
+	}
     if ($self->{options}->{xml})
     {
         $proj->AddIncludeDir($self->{options}->{xml} . '\include');
-        $proj->AddIncludeDir($self->{options}->{iconv} . '\include');
         $proj->AddLibrary($self->{options}->{xml} . '\lib\libxml2.lib');
     }
+	if ($self->{options}->{xslt})
+	{
+		$proj->AddIncludeDir($self->{options}->{xslt} . '\include');
+		$proj->AddLibrary($self->{options}->{xslt} . '\lib\libxslt.lib');
+	}
     return $proj;
 }
 
