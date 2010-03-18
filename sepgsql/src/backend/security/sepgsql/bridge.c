@@ -43,6 +43,9 @@
 #include "utils/tqual.h"
 
 #include <libgen.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 /* ------------------------------------------------------------ *
  * Common Helper Routines
