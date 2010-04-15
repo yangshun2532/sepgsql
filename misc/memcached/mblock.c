@@ -16,6 +16,7 @@
 #include <time.h>
 
 #include "memcached/engine.h"
+#include "selinux_engine.h"
 
 #define MBLOCK_MIN_BITS		7		/* 128byte */
 #define MBLOCK_MAX_BITS		23		/* 8MB */
@@ -23,10 +24,6 @@
 #define MBLOCK_MAX_SIZE		(1<<MBLOCK_MAX_BITS)
 #define MBLOCK_HEAD_MAGIC	0x20100414
 
-#define offset_to_addr(mhead,offset)			\
-	((void *)(((char *)(mhead)) + (offset)))
-#define addr_to_offset(mhead,addr)				\
-	((uint64_t)(((char *)(addr)) - ((char *)(mhead))))
 #define offset_of(type, member)					\
 	((unsigned long) &((type *)0)->member)
 #define container_of(ptr, type, member)			\
@@ -100,6 +97,86 @@ mblock_list_del(mblock_head *mhead, mblock_list *list)
 	list->next = list->prev = addr_to_offset(mhead, list);
 }
 
+static inline int
+ffs_uint64(uint64_t value)
+{
+	int		ret = 1;
+
+	if (!value)
+		return 0;
+	if (!(value & 0xffffffff))
+	{
+		value >>= 32;
+		ret += 32;
+	}
+	if (!(value & 0x0000ffff))
+	{
+		value >>= 16;
+		ret += 16;
+	}
+	if (!(value & 0x000000ff))
+	{
+		value >>= 8;
+		ret += 8;
+	}
+	if (!(value & 0x0000000f))
+	{
+		value >>= 4;
+		ret += 4;
+	}
+	if (!(value & 0x00000003))
+	{
+		value >>= 2;
+		ret += 2;
+	}
+	if (!(value & 0x00000001))
+	{
+		value >>= 1;
+		ret += 1;
+	}
+	return ret;
+}
+
+static inline int
+fls_uint64(uint64_t value)
+{
+	int		ret = 1;
+
+	if (!value)
+		return 0;
+	if (value & 0xffffffff00000000)
+	{
+		value >>= 32;
+		ret += 32;
+	}
+	if (value & 0xffff0000)
+	{
+		value >>= 16;
+		ret += 16;
+	}
+	if (value & 0xff00)
+	{
+		value >>= 8;
+		ret += 8;
+	}
+	if (value & 0xf0)
+	{
+		value >>= 4;
+		ret += 4;
+	}
+	if (value & 0xc)
+	{
+		value >>= 2;
+		ret += 2;
+	}
+	if (value & 0x2)
+	{
+		value >>= 1;
+		ret += 1;
+	}
+	return ret;
+}
+
 static bool
 mblock_divide_chunk(mblock_head *mhead, int index)
 {
@@ -150,14 +227,11 @@ mblock_alloc(void *handle, size_t size)
 	mblock_chunk   *mchunk;
 	int				index;
 
-	if (size > MBLOCK_MAX_SIZE)
+	index = fls_uint64(size - 1);
+	if (index > MBLOCK_MAX_BITS)
 		return NULL;
-
-	for (index = MBLOCK_MIN_BITS; index <= MBLOCK_MAX_BITS; index++)
-	{
-		if ((1 << index) >= size)
-			break;
-	}
+	if (index < MBLOCK_MIN_BITS)
+		index = MBLOCK_MIN_BITS;
 
 	pthread_mutex_lock(&mhead->lock);
 
@@ -265,7 +339,7 @@ mblock_reset(void *handle)
 	while (mhead->segment_size - offset >= MBLOCK_MIN_SIZE)
 	{
 		/* choose an appropriate chunk class */
-		index = ffsll(offset) - 1;
+		index = ffs_uint64(offset) - 1;
 		assert(index >= MBLOCK_MIN_BITS);
 
 		/* truncate to maximum size */
@@ -305,15 +379,15 @@ mblock_stat(void *handle, char *buffer, size_t buflen)
 	{
 		if ((1<<index) < 1024)
 			ofs += snprintf(buffer + ofs, buflen - ofs,
-							"% 4ubyte: ", (1<<index));
+							"%4ubyte: ", (1<<index));
 		else if ((1<<index) < 1024 * 1024)
 			ofs += snprintf(buffer + ofs, buflen - ofs,
-							"% 6uKB: ", (1<<(index - 10)));
+							"%6uKB: ", (1<<(index - 10)));
 		else
 			ofs += snprintf(buffer + ofs, buflen - ofs,
-							"% 6uMB: ", (1<<(index - 20)));
+							"%6uMB: ", (1<<(index - 20)));
 		ofs += snprintf(buffer + ofs, buflen - ofs,
-						"%lu of used, %lu of free\n",
+						"%u of used, %u of free\n",
 						mhead->num_active[index],
 						mhead->num_free[index]);
 
@@ -337,7 +411,6 @@ mblock_init(int fdesc, size_t segment_size,
 	mblock_chunk   *mchunk;
 	uint64_t		offset;
 	int				index;
-	int				count;
 
 	mhead = (mblock_head *) mmap(NULL, segment_size,
 								 PROT_READ | PROT_WRITE,
@@ -360,7 +433,6 @@ mblock_init(int fdesc, size_t segment_size,
 	else
 	{
 		/* sanity checks */
-		struct timespec		timeout = { .tv_sec = 5, .tv_nsec = 0 };
 		uint32_t	num_free[MBLOCK_MAX_BITS + 1];
 		uint32_t	num_active[MBLOCK_MAX_BITS + 1];
 		uint64_t	total_free = 0;
@@ -432,19 +504,6 @@ error:
 #include <sys/stat.h>
 #include <fcntl.h>
 
-static int my_index = 0;
-static void *my_ptr[1024];
-
-static bool
-my_callback(void *data, size_t size)
-{
-	printf("%s called on %p (size=%d)\n", __FUNCTION__, data, size);
-
-	my_ptr[my_index++] = data;
-
-	return true;
-}
-
 int main(int argc, const char *argv[])
 {
 	int		i, fd = -1;
@@ -458,7 +517,7 @@ int main(int argc, const char *argv[])
 		length = atol(argv[2]);
 		if (length < 1024 * 1024)
 		{
-			fprintf(stderr, "file length too short %u\n", length);
+			fprintf(stderr, "file length too short %lu\n", length);
 			return 1;
 		}
 	}
@@ -473,7 +532,7 @@ int main(int argc, const char *argv[])
 		}
 	}
 
-	handle = mblock_init(fd, length, my_callback);
+	handle = mblock_init(fd, length, NULL);
 	if (!handle)
 	{
 		fprintf(stderr, "failed to init mblock\n");
@@ -483,17 +542,14 @@ int main(int argc, const char *argv[])
 	mblock_stat(handle, buffer, sizeof(buffer));
 	puts(buffer);
 
-	a = mblock_alloc(handle, 1);
+	a = mblock_alloc(handle, 255);
+	b = mblock_alloc(handle, 256);
+	c = mblock_alloc(handle, 257);
 
 	mblock_stat(handle, buffer, sizeof(buffer));
 	puts(buffer);
 
-	b = mblock_alloc(handle, 385);
-
-	mblock_stat(handle, buffer, sizeof(buffer));
-	puts(buffer);
-
-	c = mblock_alloc(handle, 3);
+	mblock_alloc(handle, 1);
 
 	mblock_stat(handle, buffer, sizeof(buffer));
 	puts(buffer);
@@ -501,11 +557,6 @@ int main(int argc, const char *argv[])
 	mblock_free(handle, a);
 	mblock_free(handle, b);
 	mblock_free(handle, c);
-
-	printf("mokeke\n");
-
-	while (my_index > 0)
-		mblock_free(handle, my_ptr[--my_index]);
 
 	mblock_stat(handle, buffer, sizeof(buffer));
 	puts(buffer);
