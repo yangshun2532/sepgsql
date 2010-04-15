@@ -62,6 +62,7 @@ extern "C" {
         ENGINE_WANT_MORE   = 0x09, /**< The engine want more data if the frontend
                                     * have more data available. */
         ENGINE_DISCONNECT  = 0x0a, /**< Tell the server to disconnect this client */
+        ENGINE_EACCESS     = 0x0b, /**< Access control violations */
         ENGINE_FAILED      = 0xff  /**< Generic failue. */
     } ENGINE_ERROR_CODE;
 
@@ -313,6 +314,16 @@ extern "C" {
     typedef ENGINE_ERROR_CODE (*CREATE_INSTANCE)(uint64_t interface,
                                                  GET_SERVER_API get_server_api,
                                                  ENGINE_HANDLE** handle);
+
+    typedef enum {
+        ENGINE_FEATURE_CAS, /**< has compare-and-set operation */
+        ENGINE_FEATURE_PERSISTENT_STORAGE, /**< has persistent storage support*/
+        ENGINE_FEATURE_SECONDARY_ENGINE, /**< performs as pseudo engine */
+        ENGINE_FEATURE_ACCESS_CONTROL, /**< has access control feature */
+        ENGINE_FEATURE_MULTI_TENANCY,
+        ENGINE_FEATURE_LRU /* Cache implements an LRU */
+#define LAST_REGISTERED_ENGINE_FEATURE ENGINE_FEATURE_LRU
+    } engine_feature_t;
 
     typedef struct {
         /**
