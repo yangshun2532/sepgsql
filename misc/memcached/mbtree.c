@@ -6,6 +6,9 @@
  *
  *
  */
+#include "memcached/engine.h"
+#include "selinux_engine.h"
+
 #define MBTREE_NUM_KEYS		64
 
 typedef struct {
@@ -32,11 +35,16 @@ typedef struct {
 uint64_t
 mbtree_lookup(void *handle, void *mbroot, uint32_t key, mbtree_state *state)
 {
+
+
+	return 0;
 }
 
 uint64_t
 mbtree_lookup_next(void *handle, void *mbroot, mbtree_state *state)
 {
+
+	return 0;
 }
 
 bool
@@ -52,15 +60,16 @@ mbtree_insert(void *handle, void *mbroot, uint32_t key, uint64_t item)
 
 
 
-
+	return true;
 }
 
 bool
 mbtree_delete(void *handle, void *mbroot, uint32_t key, uint64_t item)
 {
-	mbtree_item	   *mbroot = mbroot;
+	mbtree_item	   *mbitem = mbroot;
 
 
+	return true;
 }
 
 void *
