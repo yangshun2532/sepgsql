@@ -241,7 +241,55 @@ mblock_free(void *handle, void *ptr)
 
 void
 mblock_reset(void *handle)
-{}
+{
+	mblock_head	   *mhead = handle;
+	mblock_chunk   *mchunk;
+	uint64_t		offset;
+	int				index;
+
+	pthread_mutex_lock(&mhead->lock);
+
+	for (index = 0; index < MBLOCK_MAX_BITS + 1; index++)
+	{
+		mblock_list_init(mhead, &mhead->free_list[index]);
+		mblock_list_init(mhead, &mhead->active_list[index]);
+		mhead->num_free[index] = 0;
+		mhead->num_active[index] = 0;
+	}
+
+	/* adjust initial position */
+	for (offset = MBLOCK_MIN_SIZE;
+		 offset < sizeof(mblock_head);
+		 offset <<= 1);
+
+	while (mhead->segment_size - offset >= MBLOCK_MIN_SIZE)
+	{
+		/* choose an appropriate chunk class */
+		index = ffsll(offset) - 1;
+		assert(index >= MBLOCK_MIN_BITS);
+
+		/* truncate to maximum size */
+		if (index > MBLOCK_MAX_BITS)
+			index = MBLOCK_MAX_BITS;
+
+		/* if (offset + chunk_size) over the tail, truncate it */
+		while (mhead->segment_size < offset + (1 << index))
+			index--;
+
+		if (index < MBLOCK_MIN_BITS)
+			break;
+
+		/* chain a memory chunk to free list */
+		mchunk = offset_to_addr(mhead, offset);
+		mchunk->flags = index;
+
+		mblock_list_add(mhead, &mhead->free_list[index], &mchunk->list);
+		mhead->num_free[index]++;
+
+		offset += (1 << index);
+	}
+	pthread_mutex_unlock(&mhead->lock);
+}
 
 void
 mblock_stat(void *handle, char *buffer, size_t buflen)
@@ -307,45 +355,7 @@ mblock_init(int fdesc, size_t segment_size,
 
 		pthread_mutex_init(&mhead->lock, NULL);
 
-		for (index = 0; index < MBLOCK_MAX_BITS + 1; index++)
-		{
-			mblock_list_init(mhead, &mhead->free_list[index]);
-			mblock_list_init(mhead, &mhead->active_list[index]);
-			mhead->num_free[index] = 0;
-			mhead->num_active[index] = 0;
-		}
-
-		/* adjust initial position */
-		for (offset = MBLOCK_MIN_SIZE;
-			 offset < sizeof(mblock_head);
-			 offset <<= 1);
-
-		while (segment_size - offset >= MBLOCK_MIN_SIZE)
-		{
-			/* choose an appropriate chunk class */
-			index = ffsll(offset) - 1;
-			assert(index >= MBLOCK_MIN_BITS);
-
-			/* truncate to maximum size */
-			if (index > MBLOCK_MAX_BITS)
-				index = MBLOCK_MAX_BITS;
-
-			/* if (offset + chunk_size) over the tail, truncate it */
-			while (segment_size < offset + (1 << index))
-				index--;
-
-			if (index < MBLOCK_MIN_BITS)
-				break;
-
-			/* chain a memory chunk to free list */
-			mchunk = offset_to_addr(mhead, offset);
-			mchunk->flags = index;
-
-			mblock_list_add(mhead, &mhead->free_list[index], &mchunk->list);
-			mhead->num_free[index]++;
-
-			offset += (1 << index);
-		}
+		mblock_reset(mhead);
 	}
 	else
 	{
