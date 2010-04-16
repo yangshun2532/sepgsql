@@ -8,10 +8,8 @@
 #ifndef SELINUX_ENGINE_H
 #define SELINUX_ENGINE_H
 
-#define NODETAG_KV_ITEM			0x0100
-#define NODETAG_MBTREE_ITEM		0x0101
-
-
+#define TAG_MBTREE_NODE			0x01
+#define TAG_KV_ITEM				0x02
 
 
 
