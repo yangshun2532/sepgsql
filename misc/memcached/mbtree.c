@@ -12,18 +12,26 @@
 #define MBTREE_NUM_KEYS		8
 
 typedef struct {
-	uint8_t		tag;		/* = TAG_MBTREE_NODE */
-	uint8_t		leaf;		/* true, if leaf node */
+	uint16_t	tag;		/* = TAG_MBTREE_NODE or TAG_MBTREE_LEAF */
 	uint16_t	nkeys;		/* # of keys in this node */
 	uint64_t	upper;		/* 0, if root node */
+	/*
+	 * In the case when TAG_MBTREE_NODE
+	 * keys[i] (i<n) stores maximum key of the item[i] being either
+	 * node or leaf. The items[n] stores offset to node/leaf being
+	 * larger than keys[n-1].
+	 *
+	 * In the case when TAG_MBTREE_LEAF
+	 * keys[i] (i<n) stores offset to the items[i] being value of
+	 * the corresponding key. key[n] stores offset to the next
+	 * leaf, if exist.
+	 */
 	uint32_t	keys[MBTREE_NUM_KEYS];
 	uint64_t	items[MBTREE_NUM_KEYS + 1];
 } mbtree_node;
 
 typedef struct {
 	uint64_t	current_leaf;
-	
-
 	uint32_t	current_key;
 	uint64_t	current_item;
 	int			current_index;	/* items[current_index] == current_item */
@@ -36,16 +44,16 @@ typedef struct {
  * It indexes the least item with key which is equal or larger then the given key.
  */
 static int
-mbtree_find_index(void *handle, void *mbitem, uint32_t key)
+mbtree_find_index(void *handle, mbtree_node *mbnode, uint32_t key)
 {
 	int		min = 0;
-	int		max = mbitem->nkeys;
+	int		max = mbnode->nkeys;
 	int		index;
 
 	do {
 		index = (min + max) / 2;
 
-		if (mbitem->keys[index] < key)
+		if (mbnode->keys[index] < key)
 			min = index + 1;
 		else
 			max = index;
@@ -53,6 +61,51 @@ mbtree_find_index(void *handle, void *mbitem, uint32_t key)
 
 	return min;
 }
+
+static int
+mbtree_find_item_index(void *handle, mbtree_node *mbnode, uint64_t item)
+{
+	int		index;
+
+	for (index=0; index <= mbnode->nkeys; index++)
+	{
+		if (mbnode->items[index] == item)
+			return index;
+	}
+	return -1;
+}
+
+static uint32_t
+mbtree_find_min_key(void *handle, mbtree_node *mbnode)
+{
+	while (!mbnode->leaf)
+	{
+		mbnode = offset_to_addr(handle, mbnode->items[0]);
+		assert(mbnode->tag == TAG_MBTREE_NODE);
+	}
+	assert(mbnode->tag == TAG_MBTREE_NODE);
+
+	return mbnode->keys[0];
+}
+
+static uint32_t
+mbtree_find_max_key(void *handle, uint64_t item)
+{
+	mbtree_node *mnode = offset_to_addr(handle, item);
+
+	while (mnode->tag == TAG_MBTREE_NODE)
+		mnode = offset_to_addr(handle, mnode->items[mnode->nkeys]);
+
+	assert(mnode->tag == TAG_MBTREE_LEAF);
+
+	return mnode->keys[mnode->nkeys - 1];
+}
+
+
+
+
+
+
 
 uint64_t
 mbtree_lookup(void *handle, void *mbroot, uint32_t key, mbtree_state *state)
@@ -111,7 +164,7 @@ do_mbtree_insert(void *handle, mbtree_node *mbnode, uint32_t key, uint64_t item)
 			index = mbnode->nkeys / 2;
 			if (mbnode->leaf)
 			{
-				for (j=0; j < i; j++)
+				for (j=0; j < index; j++)
 				{
 					lnode->keys[j] = mbnode->keys[j];
 					lnode->items[j] = mbnode->items[j];
@@ -150,7 +203,7 @@ do_mbtree_insert(void *handle, mbtree_node *mbnode, uint32_t key, uint64_t item)
 			mbnode->keys[0] = rnode->keys[0];
 			mbnode->items[0] = addr_to_offset(handle, lnode);
 			mbnode->items[1] = addr_to_offset(handle, rnode);
-			mbnode->flags &= ~MBTREE_FLAGS_LEAF;
+			mbnode->leaf = false;
 
 			if (key <= mbnode->keys[0])
 				do_mbtree_insert(handle, lnode, key, item);
@@ -209,6 +262,7 @@ do_mbtree_insert(void *handle, mbtree_node *mbnode, uint32_t key, uint64_t item)
 			mbnode->keys[j] = mbnode->keys[j - 1];
 			mbnode->items[j] = mbnode->items[j - 1];
 		}
+		mbnode->nkeys++;
 		mbnode->keys[i] = key;
 		mbnode->items[i] = item;
 	}
@@ -222,43 +276,150 @@ mbtree_insert(void *handle, void *mbroot, uint32_t key, uint64_t item)
 	mbtree_node	   *mbnode = mbroot;
 	mbtree_node	   *mbparent;
 	int				index;
-	int				j;
 
 	assert(mbnode->tag == TAG_MBTREE_NODE);
 
 	// to be writer lock
 
-	while ((mbnode->flags & MBTREE_FLAGS_LEAF) == 0)
+	while (!mbnode->leaf)
 	{
 		index = mbtree_find_index(handle, mbnode, key);
 
-		mbitem = offset_to_addr(handle, mbitem[index]);
+		mbnode = offset_to_addr(handle, mbnode[index]);
 
 		assert(mbnode->tag == TAG_MBTREE_NODE);
 	}
-
 	return do_mbtree_insert(handle, mbnode, key, item);
+}
+
+static void
+mbtree_merge(void *handle, mbtree_node *pnode, int index)
+{
+	mbtree_node	   *lnode = pnode->items[index];
+	mbtree_node	   *rnode = pnode->items[index+1];
+
+	assert(lnode->tag == rnode->tag);
+
+	if (lnode->tag == TAG_MBTREE_LEAF)
+	{
+		if (lnode->nkeys + rnode->nkeys <= MBTREE_NUM_KEYS)
+		{
+			for (j=0; j < rnode->nkeys; j++)
+			{
+				lnode->keys[j + lnode->nkeys] = rnode->keys[j];
+				lnode->items[j + lnode->nkeys] = rnode->items[j];
+			}
+			lnode->items[lnode->nkeys + rnode->nkeys] = rnode->items[rnode->nkeys];
+			lnode->nkeys += rnode->nkeys;
+
+			for (j=index+1; j < pnode->nkeys; j++)
+			{
+				pnode->keys[j-1] = pnode->keys[j];
+				pnode->items[j-1] = pnode->items[j];
+			}
+			pnode->nkeys--;
+		}
+		else if (lnode->nkeys > rnode->nkeys)
+		{
+			
+		}
+		else
+		{
+			
+		}
+	}
+	else
+	{
+		if (lnode->nkeys + rnode->nkeys < MBTREE_NUM_KEYS)
+		{
+			lnode->keys[lnode->nkeys]
+				= mbtree_find_max_key(handle, lnode->items[lnode->nkeys]);
+			lnode->nkeys++;
+
+			for (j=0; j < rnode->nkeys; j++)
+			{
+				lnode->keys[lnode->nkeys + j] = rnode->keys[j];
+				lnode->items[lnode->nkeys + j] = rnode->items[j];
+			}
+			lnode->nkeys += rnode->nkeys;
+
+			for (j=index+1; j < pnode->nkeys; j++)
+			{
+				pnode->keys[j-1] = pnode->keys[j];
+				pnode->items[j-1] = pnode->items[j];
+			}
+			pnode->nkeys--;
+		}
+		else if (lnode->nkeys > rnode->nkeys)
+		{
+			
+		}
+		else
+		{
+			
+		}
+	}
 }
 
 bool
 mbtree_delete(void *handle, void *mbroot, uint32_t key, uint64_t item)
 {
-	mbtree_node	   *mbnode = mbroot;
-	int				index;
-	int				j;
+	mbtree_node	   *pnode = mbroot;
+	mbtree_node	   *cnode;
+	int				index, j;
+	bool			retval;
 
-	assert(mbitem->node == NODETAG_MBTREE_ITEM);
-
-	// to be writer lock
-
-	while ((mbitem->flags & MBTREE_FLAGS_IS_LEAF) == 0)
+	if (pnode->tag == TAG_MBTREE_LEAF)
 	{
-		index = mbtree_find_index(handle, mbitem, key);
+		index = mbtree_find_index(handle, pnode, key);
+		while (true)
+		{
+			if (index == pnode->nkeys)
+			{
+				if (pnode->items[index] == 0)
+					break;
 
-		mbitem = offset_to_addr(handle, mbitem[index]);
+				pnode = offset_to_addr(handle, pnode->items[pnode->nkeys]);
+				index = 0;
+			}
+			if (pnode->keys[index] != key)
+				break;
+			if (pnode->items[index] == item)
+			{
+				for (j=index+1; j < pnode->nkeys; j++)
+				{
+					pnode->keys[j-1] = pnode->keys[j];
+					pnode->items[j-1] = pnode->items[j];
+				}
+				pnode->nkeys--;
 
-		assert(mbitem->node == NODETAG_MBTREE_ITEM);
+				return true;
+			}
+			index++;
+		}
+		return false;
 	}
+
+	index = mbtree_find_index(handle, pnode, key);
+	cnode = offset_to_addr(handle, mbnode->items[index]);
+
+	retval = mbtree_delete(handle, cnode, key, item);
+	if (!retval || cnode->nkeys >= MBTREE_NUM_KEYS / 2)
+		return retval;
+
+	/*
+	 * Merge two nodes, if nkeys are smaller than threshold
+	 */
+	if (index == mbnode->nkeys)
+		index--;
+	else if (index > 0)
+	{
+		mbtree_node *lnode = offset_to_addr(handle, mbnode->items[index - 1]);
+		mbtree_node *rnode = offset_to_addr(handle, mbnode->items[index + 1]);
+		if (lnode->nkeys < rnode->nkeys)
+			index--;
+	}
+	mbtree_merge(handle, mbnode, index);
 
 	return true;
 }
@@ -272,7 +433,6 @@ mbtree_create(void *handle)
 		return NULL;
 
 	mbroot->tag = TAG_MBTREE_NODE;
-	mbroot->flags = MBTREE_FLAGS_ROOT | MBTREE_FLAGS_LEAF;
 	mbroot->nkeys = 0;
 	mbroot->upper = 0;
 	memset(mbroot->keys, 0, sizeof(mbroot->keys));
@@ -280,3 +440,11 @@ mbtree_create(void *handle)
 
 	return mbroot;
 }
+
+#if 1
+int main(int argc, const char *argv[])
+{
+
+	return 0;
+}
+#endif
