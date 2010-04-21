@@ -194,7 +194,6 @@ mblock_divide_chunk(mblock_head *mhead, int index)
 			if (!mblock_divide_chunk(mhead, index + 1))
 				return false;
 	}
-
 	mchunk1 = offset_to_addr(mhead, mhead->free_list[index].next);
 	assert(mchunk_index(mchunk1) == index);
 
@@ -227,7 +226,7 @@ mblock_alloc(void *handle, size_t size)
 	mblock_chunk   *mchunk;
 	int				index;
 
-	index = fls_uint64(size - 1);
+	index = fls_uint64(size + offset_of(mblock_chunk, data)- 1);
 	if (index > MBLOCK_MAX_BITS)
 		return NULL;
 	if (index < MBLOCK_MIN_BITS)
@@ -366,41 +365,34 @@ mblock_reset(void *handle)
 }
 
 void
-mblock_stat(void *handle, char *buffer, size_t buflen)
+mblock_dump(void *handle)
 {
 	mblock_head	   *mhead = handle;
 	uint64_t		total_active = 0;
 	uint64_t		total_free = 0;
-	int				index, ofs = 0;
+	int				index;
 
-	ofs += snprintf(buffer, buflen, "segment_size: %" PRIu64 "\n",
-					mhead->segment_size);
+	printf("segment_size: %" PRIu64 "\n", mhead->segment_size);
 	for (index = MBLOCK_MIN_BITS; index <= MBLOCK_MAX_BITS; index++)
 	{
 		if ((1<<index) < 1024)
-			ofs += snprintf(buffer + ofs, buflen - ofs,
-							"%4ubyte: ", (1<<index));
+			printf("%4ubyte: ", (1<<index));
 		else if ((1<<index) < 1024 * 1024)
-			ofs += snprintf(buffer + ofs, buflen - ofs,
-							"%6uKB: ", (1<<(index - 10)));
+			printf("%6uKB: ", (1<<(index - 10)));
 		else
-			ofs += snprintf(buffer + ofs, buflen - ofs,
-							"%6uMB: ", (1<<(index - 20)));
-		ofs += snprintf(buffer + ofs, buflen - ofs,
-						"%u of used, %u of free\n",
-						mhead->num_active[index],
-						mhead->num_free[index]);
+			printf("%6uMB: ", (1<<(index - 20)));
+
+		printf("%u of used, %u of free\n",
+			   mhead->num_active[index],
+			   mhead->num_free[index]);
 
 		total_active += mhead->num_active[index] * (1 << index);
 		total_free += mhead->num_free[index] * (1 << index);
 	}
 
-	ofs += snprintf(buffer + ofs, buflen - ofs,
-					"total_active: %" PRIu64 "\n", total_active);
-	ofs += snprintf(buffer + ofs, buflen - ofs,
-					"total_free: %" PRIu64 "\n", total_free);
-	ofs += snprintf(buffer + ofs, buflen - ofs,
-					"total: %" PRIu64 "\n", total_active + total_free);
+	printf("total_active: %" PRIu64 "\n", total_active);
+	printf("total_free: %" PRIu64 "\n", total_free);
+	printf("total: %" PRIu64 "\n", total_active + total_free);
 }
 
 void *

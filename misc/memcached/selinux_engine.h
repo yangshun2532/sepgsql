@@ -9,7 +9,8 @@
 #define SELINUX_ENGINE_H
 
 #define TAG_MBTREE_NODE			0x01
-#define TAG_KV_ITEM				0x02
+#define TAG_MBTREE_LEAF			0x02
+#define TAG_KV_ITEM				0x03
 
 
 
@@ -26,7 +27,7 @@
 extern void *mblock_alloc(void *handle, size_t size);
 extern void  mblock_free(void *handle, void *ptr);
 extern void  mblock_reset(void *handle);
-extern void  mblock_stat(void *handle, char *buffer, size_t buflen);
+extern void  mblock_dump(void *handle);
 extern void *mblock_init(int fdesc, size_t segment_size,
 						 bool (*callback_mchunk)(void *data, size_t size));
 
