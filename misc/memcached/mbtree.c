@@ -134,9 +134,8 @@ mbtree_divide(void *handle, mbtree_node *mnode)
 	{
 		mbtree_node	   *lnode;
 		mbtree_node	   *rnode;
-		mbtree_node	   *cnode;
 		uint32_t		pkey;
-		int				xsect, i;
+		int				xsect;
 
 		lnode = mblock_alloc(handle, sizeof(mbtree_node));
 		if (!lnode)
@@ -203,9 +202,8 @@ mbtree_divide(void *handle, mbtree_node *mnode)
 	{
 		mbtree_node	   *pnode;
 		mbtree_node	   *nnode;
-		mbtree_node	   *cnode;
 		uint32_t		pkey;
-		int				xsect, index, j;
+		int				xsect, index;
 
 		pnode = offset_to_addr(handle, mnode->upper);
 		if (pnode->nkeys == MBTREE_NUM_KEYS)
@@ -307,7 +305,7 @@ mbtree_merge(void *handle, mbtree_node *mnode)
 	mbtree_node	   *cnode;
 	mbtree_node	   *lnode;
 	mbtree_node	   *rnode;
-	int				index, nmove, j;
+	int				index, nmove;
 
 	if (mnode->nkeys > MBTREE_NUM_KEYS / 2)
 		return;
@@ -561,6 +559,7 @@ mbtree_create(void *handle)
 }
 
 #if 1
+#include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
