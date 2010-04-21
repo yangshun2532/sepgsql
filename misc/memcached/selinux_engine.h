@@ -12,9 +12,23 @@
 #define TAG_MBTREE_LEAF			0x02
 #define TAG_KV_ITEM				0x03
 
+/*
+ * mbtree.c - mmap based B-plus tree index
+ */
+typedef struct
+{
+	uint32_t	key;
+	uint64_t	mnode;
+	int			index;
+} mbtree_scan;
 
-
-
+extern uint64_t mbtree_lookup(void *handle, void *mbroot,
+							  uint32_t key, mbtree_scan *scan);
+extern uint64_t mbtree_next(void *handle, mbtree_scan *scan);
+extern void mbtree_dump(void *handle, void *mbroot);
+extern bool mbtree_insert(void *handle, void *mbroot, uint32_t key, uint64_t item);
+extern bool mbtree_delete(void *handle, void *mbroot, uint32_t key, uint64_t item);
+extern void *mbtree_create(void *handle);
 
 /*
  * mblock.c - memory block management

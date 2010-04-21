@@ -14,7 +14,8 @@
 
 #define MBTREE_NUM_KEYS		5
 
-typedef struct {
+typedef struct
+{
 	uint16_t	tag;		/* TAG_MBTREE_NODE or TAG_MBTREE_LEAF */
 	uint16_t	nkeys;		/* # of keys in this node */
 	uint64_t	upper;		/* offset of the parent node */
@@ -83,6 +84,53 @@ children_reparent(void *handle, mbtree_node *mnode, mbtree_node *pnode)
 
 		cnode->upper = new_upper;
 	}
+}
+
+uint64_t
+mbtree_lookup(void *handle, void *mbroot, uint32_t key, mbtree_scan *scan)
+{
+	mbtree_node	   *mnode = mbroot;
+	int				index;
+
+	while (mnode->tag == TAG_MBTREE_NODE)
+	{
+		index = find_key_index(handle, mnode, key);
+
+		mnode = offset_to_addr(handle, mnode->items[index]);
+	}
+
+	index = find_key_index(handle, mnode, key);
+	if (mnode->keys[index] != key)
+		return 0;	/* not found */
+
+	if (scan)
+	{
+		scan->key = key;
+		scan->mnode = addr_to_offset(handle, mnode);
+		scan->index = index;
+	}
+	return mnode->items[index];
+}
+
+uint64_t
+mbtree_next(void *handle, mbtree_scan *scan)
+{
+	mbtree_node	   *mnode = offset_to_addr(handle, scan->mnode);
+	int				index = scan->index + 1;
+
+	if (mnode->nkeys == index)
+	{
+		mnode = offset_to_addr(handle, mnode->items[index]);
+		index = 0;
+	}
+	if (mnode->keys[index] == scan->key)
+	{
+		scan->mnode = addr_to_offset(handle, mnode);
+		scan->index = index;
+		
+		return mnode->items[index];
+	}
+	return 0;
 }
 
 static void
