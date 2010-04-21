@@ -28,7 +28,7 @@ extern void *mblock_alloc(void *handle, size_t size);
 extern void  mblock_free(void *handle, void *ptr);
 extern void  mblock_reset(void *handle);
 extern void  mblock_dump(void *handle);
-extern void *mblock_init(int fdesc, size_t segment_size,
+extern void *mblock_init(int fdesc, size_t segment_size, bool debug,
 						 bool (*callback_mchunk)(void *data, size_t size));
 
 #endif

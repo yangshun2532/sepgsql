@@ -272,6 +272,8 @@ mblock_free(void *handle, void *ptr)
 	uint64_t		offset = addr_to_offset(mhead, mchunk);
 	int				index = mchunk_index(mchunk);
 
+	assert(offset > 0);
+
 	assert(mchunk_active(mchunk));
 
 	pthread_mutex_lock(&mhead->lock);
@@ -396,7 +398,7 @@ mblock_dump(void *handle)
 }
 
 void *
-mblock_init(int fdesc, size_t segment_size,
+mblock_init(int fdesc, size_t segment_size, bool debug,
 			bool (*callback_mchunk)(void *data, size_t size))
 {
 	mblock_head	   *mhead;
@@ -436,7 +438,12 @@ mblock_init(int fdesc, size_t segment_size,
 		pthread_mutex_init(&mhead->lock, NULL);
 
 		if (mhead->segment_size != segment_size)
+		{
+			if (debug)
+				fprintf(stderr, "segment size mismatch (%lu, %lu)\n",
+						mhead->segment_size, segment_size);
 			goto error;
+		}
 
 		memset(num_free, 0, sizeof(num_free));
 		memset(num_active, 0, sizeof(num_active));
@@ -451,9 +458,18 @@ mblock_init(int fdesc, size_t segment_size,
 				mchunk = container_of(offset_to_addr(mhead, offset),
 									  mblock_chunk, list);
 				if (mchunk_index(mchunk) != index)
+				{
+					if (debug)
+						fprintf(stderr, "unexpected chunk class (%d, %d)\n",
+								mchunk_index(mchunk), index);
 					goto error;
+				}
 				if (mchunk_active(mchunk))
+				{
+					if (debug)
+						fprintf(stderr, "active chunk in free list (0x%" PRIx64")\n", offset);
 					goto error;
+				}
 
 				total_free += (1 << index);
 				num_free[index]++;
@@ -467,21 +483,43 @@ mblock_init(int fdesc, size_t segment_size,
 				mchunk = container_of(offset_to_addr(mhead, offset),
 									  mblock_chunk, list);
 				if (mchunk_index(mchunk) != index)
+				{
+					if (debug)
+						fprintf(stderr, "unexpected chunk class (%d, %d)\n",
+								mchunk_index(mchunk), index);
 					goto error;
+				}
 				if (!mchunk_active(mchunk))
+				{
+					if (debug)
+						fprintf(stderr, "free chunk in active list (0x%" PRIx64")\n", offset);
 					goto error;
-
+				}
 				if (callback_mchunk && !callback_mchunk(mchunk->data, size))
+				{
+					if (debug)
+						fprintf(stderr, "callback returned an error.\n");
 					goto error;
-
+				}
 				total_active += (1 << index);
 				num_active[index]++;
 
 				offset = mchunk_next(mchunk);
 			}
-			if (mhead->num_free[index] != num_free[index] ||
-				mhead->num_active[index] != num_active[index])
+			if (mhead->num_free[index] != num_free[index])
+			{
+				if (debug)
+					fprintf(stderr, "num of free chunk mismatch (class=%d, %u, %u)\n",
+							index, mhead->num_free[index], num_free[index]);
 				goto error;
+			}
+			if (mhead->num_active[index] != num_active[index])
+			{
+				if (debug)
+					fprintf(stderr, "num of active chunk mismatch (class=%d, %u, %u)\n",
+							index, mhead->num_active[index], num_active[index]);
+				goto error;
+			}
 		}
 	}
 	return (void *)mhead;

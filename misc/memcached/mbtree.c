@@ -304,11 +304,37 @@ static void
 mbtree_merge(void *handle, mbtree_node *mnode)
 {
 	mbtree_node	   *pnode;
+	mbtree_node	   *cnode;
 	mbtree_node	   *lnode;
 	mbtree_node	   *rnode;
-	int				index, j;
+	int				index, nmove, j;
 
-	if (mnode->upper == 0 || mnode->nkeys > MBTREE_NUM_KEYS / 2)
+	if (mnode->nkeys > MBTREE_NUM_KEYS / 2)
+		return;
+	if (mnode->nkeys == 0 && mnode->tag == TAG_MBTREE_NODE)
+	{
+		/* only happen on root node */
+		assert(mnode->upper == 0);
+
+		printf("try to pull up mnode->item[0] = 0x%lx\n", mnode->items[0]);
+
+		cnode = offset_to_addr(handle, mnode->items[0]);
+
+		printf("cnode->nkeys = %d\n", cnode->nkeys);
+
+		memcpy(mnode->keys, cnode->keys,
+			   sizeof(uint32_t) * cnode->nkeys);
+		memcpy(mnode->items, cnode->items,
+			   sizeof(uint64_t) * (cnode->nkeys + 1));
+		mnode->nkeys = cnode->nkeys;
+		mnode->tag = cnode->tag;
+
+		if (mnode->tag == TAG_MBTREE_NODE)
+			children_reparent(handle, mnode, mnode);
+
+		mblock_free(handle, cnode);
+	}
+	if (mnode->upper == 0)
 		return;
 
 	pnode = offset_to_addr(handle, mnode->upper);
@@ -320,57 +346,143 @@ mbtree_merge(void *handle, mbtree_node *mnode)
 		lnode = offset_to_addr(handle, pnode->items[index - 1]);
 		rnode = offset_to_addr(handle, pnode->items[index + 1]);
 		if (lnode->nkeys < rnode->nkeys)
-			index--;	/* try to merge with lnode */
+			index--;
 	}
-
 	lnode = offset_to_addr(handle, pnode->items[index]);
 	rnode = offset_to_addr(handle, pnode->items[index + 1]);
 	assert(lnode->tag == rnode->tag);
 
-	if (lnode->tag == TAG_MBTREE_NODE &&
-		lnode->nkeys + rnode->nkeys < MBTREE_NUM_KEYS)
+	if (lnode->tag == TAG_MBTREE_LEAF)
 	{
-		/* Fix-up children's upper */
-		for (j=0; j <= rnode->nkeys; j++)
+		if (lnode->nkeys + rnode->nkeys <= MBTREE_NUM_KEYS)
 		{
-			mbtree_node *cnode = offset_to_addr(handle, rnode->items[j]);
+			/* Try to merge two leafs into one */
+			memcpy(lnode->keys + lnode->nkeys, rnode->keys,
+				   sizeof(uint32_t) * rnode->nkeys);
+			memcpy(lnode->items + lnode->nkeys, rnode->items,
+				   sizeof(uint64_t) * (rnode->nkeys + 1));
+			lnode->nkeys += rnode->nkeys;
 
-			cnode->upper = addr_to_offset(handle, lnode);
+			mblock_free(handle, rnode);
+
+			/* Remove rnode from pnode */
+			memmove(pnode->keys + index, pnode->keys + index + 1,
+					sizeof(uint32_t) * (pnode->nkeys - index));
+			memmove(pnode->items + index + 1, pnode->items + index + 2,
+					sizeof(uint64_t) * (pnode->nkeys - index));
+			pnode->nkeys--;
 		}
+		else if (lnode->nkeys > rnode->nkeys)
+		{
+			/* Move items from lnode to rnode */
+			nmove = (lnode->nkeys - rnode->nkeys) / 2;
+			if (nmove > 0)
+			{
+				memmove(rnode->keys + nmove, rnode->keys,
+						sizeof(uint32_t) * rnode->nkeys);
+				memmove(rnode->items + nmove, rnode->items,
+						sizeof(uint64_t) * (rnode->nkeys + 1));
+				memmove(rnode->keys, lnode->keys + lnode->nkeys - nmove,
+						sizeof(uint32_t) * nmove);
+				memmove(rnode->items, lnode->items + lnode->nkeys - nmove,
+						sizeof(uint64_t) * nmove);
+				rnode->nkeys += nmove;
+				lnode->nkeys -= nmove;
+				lnode->items[lnode->nkeys] = addr_to_offset(handle, rnode);
 
-		/* Try to merge two nodes into one */
-		lnode->keys[lnode->nkeys] = pnode->keys[index + 1];
-		memcpy(lnode->keys + lnode->nkeys + 1, rnode->keys,
-			   sizeof(uint32_t) * rnode->nkeys);
-		memcpy(lnode->items + lnode->nkeys + 1, rnode->items,
-			   sizeof(uint64_t) * (rnode->nkeys + 1));
-		lnode->nkeys += rnode->nkeys + 1;
+				pnode->keys[index] = lnode->keys[lnode->nkeys - 1];
+			}
+		}
+		else
+		{
+			/* Move items from rnode to lnode */
+			nmove = (rnode->nkeys - lnode->nkeys) / 2;
+			if (nmove > 0)
+			{
+				memmove(lnode->keys + lnode->nkeys, rnode->keys,
+						sizeof(uint32_t) * nmove);
+				memmove(lnode->items + lnode->nkeys, rnode->items,
+						sizeof(uint64_t) * nmove);
+				memmove(rnode->keys, rnode->keys + nmove,
+						sizeof(uint32_t) * (rnode->nkeys - nmove));
+				memmove(rnode->items, rnode->items + nmove,
+						sizeof(uint64_t) * (rnode->nkeys - nmove + 1));
+				lnode->nkeys += nmove;
+				rnode->nkeys -= nmove;
+				lnode->items[lnode->nkeys] = addr_to_offset(handle, rnode);
 
-		/* Remove rnode from pnode */
-		memmove(pnode->keys + index + 1, pnode->keys + index + 2,
-				sizeof(uint32_t) * (pnode->nkeys - index - 2));
-		memmove(pnode->items + index + 1, pnode->items + index + 2,
-				sizeof(uint64_t) * (pnode->nkeys - index - 1));
-		pnode->nkeys--;
+				pnode->keys[index] = lnode->keys[lnode->nkeys - 1];
+			}
+		}
 	}
-	else if (lnode->tag == TAG_MBTREE_LEAF &&
-			 lnode->nkeys + rnode->nkeys <= MBTREE_NUM_KEYS)
+	else
 	{
-		/* Try to merge two leafs into one */
-		memcpy(lnode->keys + lnode->nkeys, rnode->keys,
-			   sizeof(uint32_t) * rnode->nkeys);
-		memcpy(lnode->items + lnode->nkeys, rnode->items,
-			   sizeof(uint64_t) * (rnode->nkeys + 1));
-		lnode->nkeys += rnode->nkeys;
+		if (lnode->nkeys + rnode->nkeys < MBTREE_NUM_KEYS)
+		{
+			/* Try to merge two nodes into one */
+			lnode->keys[lnode->nkeys] = pnode->keys[index];
+			memcpy(lnode->keys + lnode->nkeys + 1, rnode->keys,
+				   sizeof(uint32_t) * rnode->nkeys);
+			memcpy(lnode->items + lnode->nkeys + 1, rnode->items,
+				   sizeof(uint64_t) * (rnode->nkeys + 1));
+			lnode->nkeys += rnode->nkeys + 1;
 
-		mblock_free(handle, rnode);
+			mblock_free(handle, rnode);
 
-		/* Remove rnode from pnode */
-		memmove(pnode->keys + index + 1, pnode->keys + index + 2,
-				sizeof(uint32_t) * (pnode->nkeys - index - 1));
-		memmove(pnode->items + index + 1, pnode->items + index + 2,
-				sizeof(uint64_t) * (pnode->nkeys - index));
-		pnode->nkeys--;
+			/* Remove rnode from pnode */
+			memmove(pnode->keys + index + 1, pnode->keys + index + 2,
+					sizeof(uint32_t) * (pnode->nkeys - index - 1));
+			memmove(pnode->items + index + 1, pnode->items + index + 2,
+					sizeof(uint64_t) * (pnode->nkeys - index));
+			pnode->nkeys--;
+
+			children_reparent(handle, lnode, lnode);
+		}
+		else if (lnode->nkeys > rnode->nkeys)
+		{
+			/* Move items from lnode to rnode */
+			nmove = (lnode->nkeys - rnode->nkeys) / 2;
+			if (nmove > 0)
+			{
+				memmove(rnode->keys + nmove, rnode->keys,
+						sizeof(uint32_t) * rnode->nkeys);
+				memmove(rnode->items + nmove, rnode->items,
+						sizeof(uint64_t) * (rnode->nkeys + 1));
+				rnode->keys[nmove - 1] = pnode->keys[index];
+				pnode->keys[index] = lnode->keys[lnode->nkeys - nmove];
+				memmove(rnode->keys, lnode->keys + lnode->nkeys - nmove + 1,
+						sizeof(uint64_t) * (nmove - 1));
+				memmove(rnode->items, lnode->items + lnode->nkeys - nmove,
+						sizeof(uint64_t) * nmove);
+				rnode->nkeys += nmove;
+				lnode->nkeys -= nmove;
+
+				children_reparent(handle, rnode, rnode);
+			}
+		}
+		else
+		{
+			/* Move items from rnode to lnode */
+			nmove = (rnode->nkeys - lnode->nkeys) / 2;
+			if (nmove > 0)
+			{
+				lnode->keys[lnode->nkeys] = pnode->keys[index];
+				pnode->keys[index] = rnode->keys[nmove - 1];
+
+				memmove(lnode->keys + lnode->nkeys + 1, rnode->keys,
+						sizeof(uint32_t) * (nmove - 1));
+				memmove(lnode->items + lnode->nkeys + 1, rnode->items,
+						sizeof(uint64_t) * nmove);
+				memmove(rnode->keys, rnode->keys + nmove,
+						sizeof(uint32_t) * (rnode->nkeys - nmove));
+				memmove(rnode->items, rnode->items + nmove,
+						sizeof(uint64_t) * (rnode->nkeys - nmove + 1));
+				lnode->nkeys += nmove;
+				rnode->nkeys -= nmove;
+
+				children_reparent(handle, lnode, lnode);
+			}
+		}
 	}
 }
 
@@ -381,6 +493,12 @@ mbtree_delete(void *handle, void *mbroot, uint32_t key, uint64_t item)
 	mbtree_node	   *cnode;
 	int				index;
 
+	if (mnode->nkeys == 0)
+	{
+		/* only happen when root node */
+		assert(mnode->upper == 0);
+		return false;
+	}
 	if (mnode->tag == TAG_MBTREE_NODE)
 	{
 		index = find_key_index(handle, mnode, key);
@@ -394,11 +512,13 @@ mbtree_delete(void *handle, void *mbroot, uint32_t key, uint64_t item)
 
 		return true;
 	}
-
+	/*
+	 * Leaf node to be removed
+	 */
 	index = find_key_index(handle, mnode, key);
-
 	while (mnode->keys[index] == key)
 	{
+		/* remove an item */
 		if (mnode->items[index] == item)
 		{
 			memmove(mnode->keys + index, mnode->keys + index + 1,
@@ -483,7 +603,7 @@ int main(int argc, const char *argv[])
 		return 1;
 	}
 
-	handle =  mblock_init(fd, stbuf.st_size, mbtree_cb);
+	handle =  mblock_init(fd, stbuf.st_size, true, mbtree_cb);
 	if (!handle)
 	{
 		printf("failed to init mblock\n");
