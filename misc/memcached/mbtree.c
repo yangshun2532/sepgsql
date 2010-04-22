@@ -12,7 +12,7 @@
 #include "memcached/engine.h"
 #include "selinux_engine.h"
 
-#define MBTREE_NUM_KEYS		5
+#define MBTREE_NUM_KEYS		6	/* optimal size for 128B chunk */
 
 typedef struct
 {
@@ -662,6 +662,17 @@ int main(int argc, const char *argv[])
 
 	if (argc == 4 && strcmp(argv[2], "get") == 0)
 	{
+		mbtree_scan	scan;
+		uint32_t	key;
+		uint64_t	item;
+
+		key = atol(argv[3]);
+		item = mbtree_lookup(handle, mbroot, key, &scan);
+		while (item != 0)
+		{
+			printf("==> GET key=%" PRIu32 " value=%" PRIu64 "\n", key, item);
+			item = mbtree_next(handle, &scan);
+		}
 		mbtree_dump(handle, mbroot);
 		return 0;
 	}
@@ -677,6 +688,7 @@ int main(int argc, const char *argv[])
 			return 1;
 		}
 		mbtree_dump(handle, mbroot);
+		mblock_dump(handle);
 		return 0;
 	}
 	else if (argc == 5 && strcmp(argv[2], "del") == 0)
