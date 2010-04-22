@@ -10,7 +10,8 @@
 
 #define TAG_MBTREE_NODE			0x01
 #define TAG_MBTREE_LEAF			0x02
-#define TAG_KV_ITEM				0x03
+#define TAG_SELINUX_LABEL		0x03
+#define TAG_SELINUX_ITEM		0x04
 
 /*
  * mbtree.c - mmap based B-plus tree index
