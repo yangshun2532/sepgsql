@@ -1,0 +1,87 @@
+Index: base/src/Makefile.global.in
+===================================================================
+--- base/src/Makefile.global.in	(revision 682)
++++ base/src/Makefile.global.in	(working copy)
+@@ -74,14 +74,14 @@
+ datadir := @datadir@
+ ifeq "$(findstring pgsql, $(datadir))" ""
+ ifeq "$(findstring postgres, $(datadir))" ""
+-override datadir := $(datadir)/postgresql
++override datadir := $(datadir)/sepgsql
+ endif
+ endif
+ 
+ sysconfdir := @sysconfdir@
+ ifeq "$(findstring pgsql, $(sysconfdir))" ""
+ ifeq "$(findstring postgres, $(sysconfdir))" ""
+-override sysconfdir := $(sysconfdir)/postgresql
++override sysconfdir := $(sysconfdir)/sepgsql
+ endif
+ endif
+ 
+@@ -90,7 +90,7 @@
+ pkglibdir = $(libdir)
+ ifeq "$(findstring pgsql, $(pkglibdir))" ""
+ ifeq "$(findstring postgres, $(pkglibdir))" ""
+-override pkglibdir := $(pkglibdir)/postgresql
++override pkglibdir := $(pkglibdir)/sepgsql
+ endif
+ endif
+ 
+@@ -99,7 +99,7 @@
+ pkgincludedir = $(includedir)
+ ifeq "$(findstring pgsql, $(pkgincludedir))" ""
+ ifeq "$(findstring postgres, $(pkgincludedir))" ""
+-override pkgincludedir := $(pkgincludedir)/postgresql
++override pkgincludedir := $(pkgincludedir)/sepgsql
+ endif
+ endif
+ 
+@@ -108,7 +108,7 @@
+ docdir := @docdir@
+ ifeq "$(findstring pgsql, $(docdir))" ""
+ ifeq "$(findstring postgres, $(docdir))" ""
+-override docdir := $(docdir)/postgresql
++override docdir := $(docdir)/sepgsql
+ endif
+ endif
+ 
+Index: base/src/bin/pg_ctl/pg_ctl.c
+===================================================================
+--- base/src/bin/pg_ctl/pg_ctl.c	(revision 682)
++++ base/src/bin/pg_ctl/pg_ctl.c	(working copy)
+@@ -656,7 +656,7 @@
+ 
+ 		postmaster_path = pg_malloc(MAXPGPATH);
+ 
+-		if ((ret = find_other_exec(argv0, "postgres", PG_BACKEND_VERSIONSTR,
++		if ((ret = find_other_exec(argv0, "sepostgres", PG_BACKEND_VERSIONSTR,
+ 								   postmaster_path)) < 0)
+ 		{
+ 			char		full_path[MAXPGPATH];
+Index: base/src/bin/initdb/initdb.c
+===================================================================
+--- base/src/bin/initdb/initdb.c	(revision 682)
++++ base/src/bin/initdb/initdb.c	(working copy)
+@@ -2684,7 +2684,7 @@
+ 	sprintf(pgdenv, "PGDATA=%s", pg_data);
+ 	putenv(pgdenv);
+ 
+-	if ((ret = find_other_exec(argv[0], "postgres", PG_BACKEND_VERSIONSTR,
++	if ((ret = find_other_exec(argv[0], "sepostgres", PG_BACKEND_VERSIONSTR,
+ 							   backend_exec)) < 0)
+ 	{
+ 		char		full_path[MAXPGPATH];
+Index: base/src/bin/pg_dump/pg_dumpall.c
+===================================================================
+--- base/src/bin/pg_dump/pg_dumpall.c	(revision 682)
++++ base/src/bin/pg_dump/pg_dumpall.c	(working copy)
+@@ -143,7 +143,7 @@
+ 		}
+ 	}
+ 
+-	if ((ret = find_other_exec(argv[0], "pg_dump", PGDUMP_VERSIONSTR,
++	if ((ret = find_other_exec(argv[0], "sepg_dump", PGDUMP_VERSIONSTR,
+ 							   pg_dump_bin)) < 0)
+ 	{
+ 		char		full_path[MAXPGPATH];

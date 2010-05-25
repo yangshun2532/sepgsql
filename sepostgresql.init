@@ -1,0 +1,210 @@
+#!/bin/sh
+# sepostgresql	This is the init script for starting up SE-PostgreSQL
+#
+# chkconfig: - 62 38
+# description: Starts and stops the SE-PostgreSQL backend daemon
+# processname: postmaster
+# pidfile: /var/run/postmaster.pid
+#---------------------------------------------------------------------
+
+PGVERSION="%%__base_version__%%"
+PGMAJORVERSION=`echo "$PGVERSION" | sed 's/^\([0-9]*\.[0-9]*\).*$/\1/'`
+
+# source function library
+. /etc/rc.d/init.d/functions
+
+# get config
+. /etc/sysconfig/network
+
+# find the name of the script
+NAME=`basename $0`
+if [ ${NAME:0:1} = "S" -o ${NAME:0:1} = "K" ]; then
+    NAME=${NAME:3}
+fi
+
+# set defaults for configurable variables
+SEPGSQL_BIN="/usr/bin"
+SEPGSQL_DATA="/var/lib/sepgsql/data"
+SEPGSQL_OPTS="-i -p 5432"
+SEPGSQL_LOG="/var/log/sepostgresql.log"
+SEPGSQL_STARTUP_LOG="/var/lib/sepgsql/pgstartup.log"
+
+# override defaults from /etc/sysconfig/sepostgresql
+test -f /etc/sysconfig/${NAME} && . /etc/sysconfig/${NAME}
+
+# Check that networking is up.
+test "${NETWORKING}" = "no" && exit 0
+test -f "${SEPGSQL_BIN}/sepostgres" || exit 1
+
+# Commands
+RUNUSER="/sbin/runuser"
+SEPG_CTL="${SEPGSQL_BIN}/sepg_ctl -D ${SEPGSQL_DATA}"
+SEPG_INITDB="${SEPGSQL_BIN}/initdb.sepgsql -D ${SEPGSQL_DATA}"
+
+script_result=0
+
+do_start() {
+    PSQL_START=$"Starting ${NAME} service: "
+
+    # check for the SEPGSQL_DATA structure
+    if [ -f "${SEPGSQL_DATA}/PG_VERSION" ] && [ -d "${SEPGSQL_DATA}/base" ];
+    then
+        if [ x`cat "${SEPGSQL_DATA}/PG_VERSION"` != x"${PGMAJORVERSION}" ]; then
+            echo_failure
+            echo
+            echo "HINT: An old version of the database format was found."
+            echo "      You need to upgrade the data format before using SE-PostgreSQL."
+            exit 1
+        fi
+    else
+        echo_failure
+        echo
+        echo "HINT: ${SEPGSQL_DATA} is missing."
+        echo "HINT: Use \"service sepostgresql initdb\" to initialize the database cluster first."
+        exit 1
+    fi
+
+    # Make sure log files
+    touch "${SEPGSQL_LOG}" || exit 1
+    touch "${SEPGSQL_STARTUP_LOG}" || exit 1
+    chown sepgsql:sepgsql "${SEPGSQL_LOG}" "${SEPGSQL_STARTUP_LOG}"
+    chmod 600 "${SEPGSQL_LOG}" "${SEPGSQL_STARTUP_LOG}"
+    /sbin/restorecon "${SEPGSQL_LOG}" "${SEPGSQL_STARTUP_LOG}"
+
+    echo -n "$PSQL_START"
+
+    $RUNUSER -- sepgsql -c "$SEPG_CTL -w -t 4 -l $SEPGSQL_LOG -o '$SEPGSQL_OPTS' start" \
+	>> "${SEPGSQL_STARTUP_LOG}" 2>&1 < /dev/null
+    $RUNUSER -- sepgsql -c "$SEPG_CTL status" \
+	>> "${SEPGSQL_STARTUP_LOG}" 2>&1 < /dev/null
+    script_result=$?
+    if [ $script_result -eq 0 ];
+    then
+	/sbin/runuser - sepgsql -c "${SEPG_CTL} status" \
+	    | head -1 | sed -e 's/^.*PID://g' -e 's/[^0-9].*//g' \
+	    > "/var/run/${NAME}.pid"
+	touch "/var/lock/subsys/${NAME}.lock"
+	echo_success
+    else
+	script_result=1
+	echo_failure
+    fi
+    echo
+}
+
+do_stop() {
+    echo -n $"Stopping ${NAME} service: "
+    $RUNUSER -- sepgsql -c "$SEPG_CTL stop" >> "${SEPGSQL_STARTUP_LOG}" 2>&1 < /dev/null
+    script_result=$?
+    if [ $script_result -eq 0 ];
+    then
+        echo_success
+    else
+        echo_failure
+        script_result=1
+    fi
+    echo
+    rm -f "/var/run/${NAME}.pid"
+    rm -f "/var/lock/subsys/${NAME}.lock"
+}
+
+do_status() {
+    $RUNUSER -- sepgsql -c "$SEPG_CTL status" &> /dev/null
+
+    script_result=$?
+    if [ $script_result -eq 0 ];
+    then
+	$RUNUSER -- sepgsql -c "$SEPG_CTL status" | head -1 | \
+	    sed -e "s/server/${NAME}/g" -e "s/sepg_ctl: //g"
+    else
+	echo "${NAME} is is stopped"
+        script_result=3
+        test -e "/var/run/${NAME}.pid"          && script_result=1
+        test -e "/var/lock/subsys/${NAME}.lock" && script_result=2
+    fi
+}
+
+do_condrestart() {
+    $RUNUSER -- sepgsql -c "${SEPG_CTL} status" &>/dev/null \
+	&& do_stop && do_start
+}
+
+do_condstop() {
+    $RUNUSER -- sepgsql -c "${SEPG_CTL} status" &>/dev/null \
+	&& do_stop
+}
+
+do_reload() {
+    echo -n $"Reloading ${NAME} service: "
+    $RUNUSER -- sepgsql -c "${SEPG_CTL} reload" &>/dev/null < /dev/null
+    if [ $? -eq 0 ]; then
+        echo_success
+    else
+        echo_failure
+        script_result=1
+    fi
+    echo
+}
+
+do_initdb() {
+    if [ -f "${SEPGSQL_DATA}/PG_VERSION" ]; then
+	echo -n "HINT: Data directory is not empty!"
+	echo_failure
+	echo
+	script_result=1
+    else
+	echo -n $"Initializing database: "
+
+	# make a directory, if necessary
+	mkdir -p "${SEPGSQL_DATA}" || exit 1
+	chown sepgsql:sepgsql "${SEPGSQL_DATA}"
+	chmod 600 "${SEPGSQL_DATA}"
+	# cleanup SELinux labeling for "${SEPGSQL_DATA}"
+	test -x /sbin/restorecon && /sbin/restorecon -R "${SEPGSQL_DATA}"
+	# Initialize the database
+	$RUNUSER -- sepgsql -c "${SEPG_INITDB} --enable-selinux" \
+	    >> "${SEPGSQL_STARTUP_LOG}" 2>&1 < /dev/null
+	if [ -f "${SEPGSQL_DATA}/PG_VERSION" ]; then
+	    echo_success
+	else
+	    echo_failure
+	    script_result=1
+	fi
+	echo
+    fi
+}
+
+# see how we were called.
+case "$1" in
+    start)
+        do_start
+	;;
+    stop)
+        do_stop
+	;;
+    status)
+	do_status
+	;;
+    restart)
+	do_stop
+	do_start
+	;;
+    condrestart)
+        do_condrestart
+	;;
+    condstop)
+        do_condstop
+	;;
+    reload|force-reload)
+        do_reload
+	;;
+    initdb)
+        do_initdb
+	;;
+    *)
+        echo $"Usage: $0 {start|stop|status|restart|condrestart|condstop|reload|force-reload|initdb}"
+        exit 1
+    ;;
+esac
+
+exit $script_result
