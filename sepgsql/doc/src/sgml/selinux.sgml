@@ -1,0 +1,627 @@
+<chapter id="selinux-support">
+ <title>SELinux support in PostgreSQL</title>
+ <para>
+  PostgreSQL v8.5.x or later version optionally supports mandatory access
+  control policy collaborating with SELinux.
+  We call this feature <productname>SELinux</productname> support
+  in <productname>PostgreSQL</productname>.
+ </para>
+ <para>
+  It enables to make access control decision based on the centralized security
+  policy managed by operating system. It also means we can ensure system-wide
+  consistency in access controls.
+ </para>
+ <para>
+  For example, when a user stores his information asset labeled as
+  <literal>Classified</literal> on either filesystem or database, both of
+  them has its own access controls, but the basis to make their access
+  control decisions is not identical.
+  <productname>SELinux</productname> controls user's accesses to database
+  objects based on the centralized security policy in operating system,
+  so its access control decisions shall be consistent.
+ </para>
+ <para>
+  Note that it orthogonally performs from the default security modesl based
+  on ownerships and database acls (see <xref linkend="user-manag"> for more
+  details). In other word, it allows us to apply double security checks from
+  the different perspective.
+ </para>
+ <para>
+  It was designed based on the security model of <productname>SELinux</>.
+  However, detailed descriptions about <productname>SELinux over</> the
+  coverage of this documentation, so we recommend to refer the following
+  external resources.
+ </para>
+ <variablelist>
+  <varlistentry>
+   <term>
+    <ulink url="http://docs.fedoraproject.org/selinux-user-guide/">
+     Fedora SELinux User Guide
+    </ulink>
+   </term>
+   <listitem>
+    <para>
+     The Fedora Project provides a comprehensive quality documentation from
+     the perspective of end-users.
+    </para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term>
+    <ulink url="http://wiki.postgresql.org/wiki/SEPostgreSQL">
+     SELinux support wikipage
+    </ulink>
+   </term>
+   <listitem>
+    <para>
+     This wikipage provides a comprehensive and detailed documentation
+     about SELinux support in PostgreSQL.
+    </para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term>
+    <ulink url="http://code.google.com/p/sepgsql/">
+     SE-PostgreSQL at Google Code
+    </ulink>
+   </term>
+   <listitem>
+    <para>
+     It is the portal when the development of original SE-PostgreSQL was
+     launched at 2006. It provides previous presentation slides.
+    </para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term>
+    <ulink url="http://www.selinuxbyexample.com/">
+     SELinux By Example
+    </ulink>
+   </term>
+   <listitem>
+    <para>
+     It is a book which introduces details of the current security policy
+     using examples. In most cases, admin does not need to modify the default
+     security policy provided by the community. If you're interested in
+     details of the security policy, we can recommend this book.
+    </para>
+   </listitem>
+  </varlistentry>
+ </variablelist>
+
+ <sect1 id="selinux-overview">
+  <title>Overview</title>
+  <para>
+   This section introduces overview of the <productname>SELinux</> support.
+  </para>
+  <para>
+   The SELinux support enables to apply mandatory access controls on accesses
+   to database objects according to the access control decision of SELinux in
+   the Linux kernel.
+  </para>
+  <para>
+   Access control is to decide what action is allowed (or disallowed) between
+   a certain client and a certain object. Any access control mechanism makes
+   its access control decision based on properties of them.
+   For example, the default database privilege makes its access control
+   decision based on a pair of the database role identifier (a property of
+   the client) and access control list (also, a property of the database
+   object to be accessed).
+   SELinux makes its access control decision based on a pair of its own
+   security property called security conetxt, instead of user identifiers
+   or ownership.
+  </para>
+  <para>
+   Please note that the current version of SELinux support applies a limited
+   number of object classes.
+   It now controls accesses on databases, schemas, tables and columns.
+   Rest of fetures will be upcoming in the future versions.
+  </para>
+
+  <sect2 id="selinux-overview-selinux">
+   <title>SELinux</title>
+   <para>
+    SELinux is a feature in the Linux kernel. It performs something like
+    a function which provides other subsystems its access control decisions.
+   </para>
+   <para>
+    For example, a user process calls write(2) system call to update a certain
+    file. Then, filesystem in the kernel asks SELinux whether we should allow
+    to execute the required system call, or not. In this time, the filesystem
+    provides SELinux a pair of security contexts of the user process and the
+    file to be modified. Next, SELinux lookups its security policy which
+    contains massive number of rules defined a pair of the security contexts,
+    and returns a set of allowed actions. If it does not contain the permission
+    to write on the file, filesystem returns an error. Otherwise, filesystem
+    handles rest of works.
+   </para>
+   <para>
+    We can also apply this design on accesses to database objects using
+    queries as is. When a client sends a query to select data from a certain
+    table, the SELinux support hooks it and asks SELinux whether we should
+    allow to execute the required query, or not. In this time, the SELinux
+    support provides SELinux a pair of security contexts of the client and
+    the table to be referenced. Next, SELinux lookups its security policy
+    and returns a set of allowed actions. If is does not contain the permission
+    to select on the table, SELinux support raises an error. Otherwise, it
+    does not prevent anything.
+   </para>
+   <para>
+    Here are two key characteristics.
+    The one is a centralized decision making. The other is common security
+    identifier as a basis of access controls.
+   </para>
+  </sect2>
+
+  <sect2 id="selinux-overview-security-context">
+   <title>Security context</title>
+   <para>
+    A security context is the only identifier used to make access control
+    decision in SELinux model. It is represented as a formatted short string,
+    such as <literal>system_u:object_r:postgresql_db_t:SystemHigh</literal>.
+   </para>
+   <para>
+    A security context has four fields separated by comma character.
+    Every field has its meaning. But detailed introduction will over the
+    coverage of this documentation, see the SELinux documentations.
+    The key point is that a security context is the only property used to
+    make access control decision in SELinux.
+
+    Anyway, SELinux returns a set of allowed permissions on a pair of
+    security contexts of client and database object to be accessed.
+   </para>
+   <para>
+    In other word, it represents all the security properties in this
+    model, instead of user identifier or resource ownership.
+
+    If different two tables commonly have identical security context,
+    SELinux always makes same decision on accesses to these tables.
+    We can also considers a security context groups a set of access
+    permissions, such as database roles to be assigned on database users.
+   </para>
+
+   <sect3>
+    <title>security context of the client</title>
+    <para>
+     SELinux support applies the security context of the peer process which
+     connected to as the security context of the client.
+    </para>
+    <para>
+     SELinux provides an interface for the purpose.
+     If client connects to the server via unix domain socket, we don't need
+     any special setups here. Otherwise. if client connects to the server
+     via tcp/ip socket, we need to set up labeled ipsec between the server
+     and clients in the operating system.
+     In the case when SELinux is not enabled on the client, SELinux also
+     allows to apply an alternative security context based on the source
+     ip address as a fallback.
+     Please see the SELinux's documentations for more details.
+    </para>
+    <para>
+     We can confirm security context of the client using the
+     <literal>sepgsql_getcon()</literal> function, as follows:
+<screen>
+<prompt>$ </prompt><userinput>id -Z</userinput>
+unconfined_u:unconfined_r:unconfined_t:Classified
+<prompt>$ </prompt><userinput>psql -q</userinput>
+<prompt>postgres=# </prompt><userinput>SELECT sepgsql_getcon();</userinput>
+                  sepgsql_getcon
+---------------------------------------------------
+ unconfined_u:unconfined_r:unconfined_t:Classified
+(1 row)
+</screen>
+    </para>
+    <para>
+     The <command>id -Z</command> command shows security context of the
+     user process.
+     Pay attention that the result of <literal>sepgsql_getcon()</literal>
+     matches to the result of <command>id -Z</command>, although the one
+     is executed on the operating system, the other is executed on the
+     database server.
+    </para>
+    <para>
+     Note that the security context of subjects (processes in OS, or
+     clients in RDBMS) also perform something like user's privileges.
+     It means a consist privileges set shall be applied on both OS and
+     RDBMS.
+    </para>
+   </sect3>
+
+   <sect3>
+    <title>security context of database objects</title>
+    <para>
+     SELinux support also assigns a security context on the managed database
+     objects.
+     In the current version, a limited number of database object classes
+     are managed: databases, schemas, tables and columns.
+    </para>
+    <para>
+     System catalogs corresponding these database objects to store its
+     own security context. See the definitions of system catalogs:
+     <link linkend="catalog-pg-database"><structname>pg_database</structname></link>,
+     <link linkend="catalog-pg-namespace"><structname>pg_namespace</structname></link>,
+     <link linkend="catalog-pg-class"><structname>pg_class</structname></link> and
+     <link linkend="catalog-pg-attribute"><structname>pg_attribute</structname></link>.
+    </para>
+    <para>
+     When a user creates a new database object, SELinux support assigns a
+     default security context provided by the security policy, and checks
+     permission to create this database object with the security context.
+<screen>
+<prompt>postgres=# </prompt><userinput>CREATE TABLE tbl (a int, b text);</userinput>
+CREATE TABLE
+<prompt>postgres=# </prompt><userinput>SELECT relname, relsecon FROM pg_class WHERE oid = 'tbl'::regclass;</userinput>
+ relname |                 relsecon
+---------+------------------------------------------
+ tbl     | unconfined_u:object_r:sepgsql_table_t:s0
+(1 row)
+</screen>
+     In this example, <literal>unconfined_u:object_r:sepgsql_table_t:s0</literal>
+     was assigned on the new table, and SELinux support also checked permission
+     to create it based on a pair of security contexts of the client and the
+     new table.
+    </para>
+    <para>
+     We have another option to specify a security context to be assigned on.
+     Some of statements have <literal>SECURITY CONTEXT</literal> option.
+     It allows users to give an explicit security context in the creation
+     time or later.
+     See also
+     <xref linkend="SQL-CREATEDATABASE" endterm="sql-createdatabase-title">,
+     <xref linkend="SQL-ALTERDATABASE" endterm="sql-alterdatabase-title">,
+     <xref linkend="SQL-CREATESCHEMA" endterm="sql-createschema-title">,
+     <xref linkend="SQL-ALTERSCHEMA" endterm="sql-alterdatabase-title">,
+     <xref linkend="SQL-CREATETABLE" endterm="sql-createtable-title">,
+     <xref linkend="SQL-CREATETABLEAS" endterm="sql-createtableas-title"> and
+     <xref linkend="SQL-ALTERTABLE" endterm="sql-altertable-title">.
+    </para>
+    <para>
+     Even if user gives an explicit security context in the creation time,
+     SELinux support also checks permission to create a new object with the given
+     security context, instead of the default security context.
+
+     Please note that SELinux support assigns a security context of a managed
+     database object in either cases.
+    </para>
+    <para>
+     Here is a corner case. If we disable SELinux support at once, and enabled
+     later, any database objects created while it is disabled are unlabeled.
+     In this case, SELinux support obtains a special security context for
+     unlabeled objects from the system, and it is applied as a fallback.
+     Typically, it is <literal>system_u:object_r:unlabeled_t:s0</literal>.
+    </para>
+   </sect3>
+  </sect2>
+ </sect1>
+
+ <sect1 id="selinux-support-features">
+  <title>Features</title>
+  <sect2 id="selinux-features-mac">
+   <title>Mandatory Access Control</title>
+   <para>
+    SELinux provides MAC (Mandatory Access Control) based security policy.
+    It has a few differences from the default database privilege mechanism.
+    The most characteristic ones are a centralized security policy and
+    unbypassable access control.
+   </para>
+   <para>
+    The default database privilege allows owner of resources to grant or
+    revoke access rights on the owned objects others.
+    On the other hand, MAC model allows only a centralized security policy
+    (so, only the security administrator) to control all the accesses on
+    the managed objects including assignment of security context.
+    Note that the security context is the only identifier to make access
+    control decision in SELinux model. It also means owner of resources
+    cannot allow everyone anything, unless the security policy allows it.
+   </para>
+   <para>
+    In addition, its access control is unbypassable, even if user has database
+    superuser privilege. It checks all the needed permissions to access a certain
+    database objects.
+    Note that the default database privilege and SELinux model works mutually
+    orthogonally. SELinux makes its access control decision based on the security
+    contexts, independently from database role or resource ownership, in the same
+    way the default database privilege also makes its access control decision
+    independently from the security context.
+   </para>
+  </sect2>
+  <sect2 id="selinux-features-mac-tables">
+   <title>Access Controls on Tables/Columns</title>
+   <para>
+    We introduce an example of mandatory access control in this section.
+   </para>
+   <para>
+    When user gives a regular dml queries, SELinux support applies its acess
+    control on the tables and columns to be accessed just after checks by the
+    default database privilege mechanism.
+
+    If the security policy does not allow to access one of the required
+    tables or columns at least, it raises an error to abort current
+    transaction.
+   </para>
+   <para>
+    In this example, the <literal>customer</literal> table was declared
+    with an explicit security context
+    <literal>system_u:object_r:sepgsql_ro_table_t:s0</literal> which means
+    read-only table from the weak privileged clients such as
+    <literal>staff</literal> domain.
+    The <literal>ccredit</literal> column is individualy labeled as 
+    <literal>system_u:object_r:sepgsql_secret_table_t:s0</literal> which
+    means unaccessable from the weak privileged clients.
+   </para>
+   <para>
+    Note that a default security context shall be assigned on the rest of
+    columns. In the standard policy, it inherits the security context of
+    the table, so rest of columns are also read-only.
+
+    If we didn't give any explicit security context in creation, a default
+    security context shall be assigned. In the standard policy, it allows
+    any operations on the table in MAC checks.
+   </para>
+<screen>
+CREATE TABLE customer (
+    cid     integer primary key,
+    cname   varchar(32),
+    credit  varchar(32)
+        AS SECURITY_CONTEXT = 'system_u:object_r:sepgsql_secret_table_t:s0'
+) SECURITY_CONTEXT = 'system_u:object_r:sepgsql_ro_table_t:s0';
+
+GRANT ALL ON customer TO PUBLIC;
+
+INSERT INTO customer (cid, cname, credit)
+    VALUES ( 10, 'jack', '1111-2222-3333-4444'),
+           ( 13, 'adam', '5555-6666-7777-8888'),
+           ( 14, 'liza', '9876-5432-1098-7654');
+</screen>
+   <para>
+    Then, it shows a series of operations from the weak privileged clients
+    labeled as <literal>staff_u:staff_r:staff_t:s0</literal>.
+   </para>
+<screen>
+<prompt>postgres=> </prompt><userinput>SELECT sepgsql_getcon();</userinput>
+       sepgsql_getcon
+----------------------------
+ staff_u:staff_r:staff_t:s0
+(1 row)
+
+<prompt>postgres=> </prompt><userinput>SELECT * FROM customer;</userinput>
+ERROR:  SELinux: security policy violation
+
+<prompt>postgres=> </prompt><userinput>SELECT cid, cname FROM customer;</userinput>
+ cid | cname
+-----+-------
+  10 | jack
+  13 | adam
+  14 | liza
+(3 rows)
+
+<prompt>postgres=> </prompt><userinput>INSERT INTO customer (cid, cname) VALUES (20, 'taro');</userinput>
+ERROR:  SELinux: security policy violation
+</screen>
+   <para>
+    The first query confirms the security context of the client.
+    It is almost equivalent to a set of privileges in SELinux.
+   </para>
+   <para>
+    The second query tries to select all the columns of
+    <literal>customer</literal> table, but the <literal>credit</literal>
+    column is invisible from the weak privileged client as we configured
+    at first, so SELinux support raises an error.
+   </para>
+   <para>
+    The third query also tries to select columns except for invisible one.
+    It shall be allowed. In fact, SELinux does not prevent anything.
+   </para>
+   <para>
+    But the table is configured to read-only. The last query tries to insert
+    a new tuple, so SELinux support prevents it.
+   </para>
+  </sect2>
+  <sect2 id="selinux-features-audit">
+   <title>Security Audit</title>
+   <para>
+    SELinux support allows to generate its audit logs according to
+    <literal>auditdeny</literal> and <literal>auditallow</literal> rules in
+    the security policy.
+
+    The <literal>auditdeny</literal> rules require to generate audit log record
+    on access violation events. In contrast, the <literal>auditallow</literal>
+    rules require to generate it on access allowed events.
+   </para>
+   <para>
+    The standard security policy requires all the access violations to be audited,
+    but does not require to record any access allowed events.
+    It is controlable using the security policy, but the default settings are
+    preferable in most cases.
+    default
+   </para>
+<screen>
+LOG:  SELinux: denied { select } scontext=staff_u:staff_r:staff_t:s0  \
+    tcontext=system_u:object_r:sepgsql_secret_table_t:s0              \
+    tclass=db_column name=customer.credit
+STATEMENT:  SELECT * FROM customer;
+</screen>
+   <para>
+    This example shows a case when a weak privileged client tries to select
+    a column labeled as
+    <literal>system_u:object_r:sepgsql_secret_table_t:s0</literal>, but failed.
+   </para>
+  </sect2>
+ </sect1>
+ <sect1 id="selinux-support-admin">
+  <title>Administration</title>
+  <sect2 id="selinux-admin-build">
+   <title>Build and Installation</title>
+   <para>
+    SELinux support requires the following packages for its installation.
+   </para>
+   <variablelist>
+    <varlistentry>
+     <term><literal>Linux kernel</literal></term>
+     <listitem>
+      <para>
+       Linux kernel must support SELinux, at least.
+       In addition, it needs a set of interfaces to communicate between
+       kernel space and applications. It is available at the Linux
+       kernel 2.6.24 or later.
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>Security policy</literal></term>
+      <listitem>
+       <para>
+	The upstreamed security policy (<literal>20080702</literal> or
+	later) already contains access control rules on database objects
+	as a part of policy module for PostgreSQL.
+       </para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>libselinux</literal></term>
+     <listitem>
+      <para>
+       <literal>libselinux</literal> is a set of APIs of SELinux.
+       The <literal>2.0.80</literal> or later contains all the needed
+       interfaces to compile and execute SELinux support in PostgreSQL.
+      </para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+
+   <para>
+    In addition, <literal>policycoreutils</literal> package contains
+    some useful commands to administrate SELinux. We recommend you to
+    install this package also.
+
+    If you try to write your own security policy module, it also needs
+    <literal>checkpolicy</literal> package which contains the security
+    policy compiler.
+
+    All the needed packages can be obtained from:
+    <ulink url="http://userspace.selinuxproject.org/">
+     The SELinux Project: Userspace Development
+    </ulink>, except for the linux kernel itself.
+   </para>
+
+   <para>
+    SELinux support is disabled in the default build, so
+    you need to add <option>--enable-selinux</option> option on the
+    <command>configure</command> script, and also add
+    <option>--enable-selinux</option> option on the
+    <command>initdb</command> command at least.
+<screen>
+<prompt>$ </prompt><userinput>./configure --enable-selinux</userinput>
+<prompt>$ </prompt><userinput>make</userinput>
+<prompt>$ </prompt><userinput>su</userinput>
+<prompt># </prompt><userinput>make install</userinput>
+<prompt>$ </prompt><userinput>initdb --enable-selinux</userinput>
+<prompt>$ </prompt><userinput>pg_ctl start</userinput>
+</screen>
+   </para>
+   <para>
+    It is a minimum configuration to install PostgreSQL with SELinux support.
+
+    If you don't want the server process to perform with the
+    security context of the user's shell process (typically,
+    <literal>unconfined_u:unconfined_r:unconfined_t:s0</literal>;
+    very strong privileges), also apply the following configuration
+    just after <command>initdb</command>.
+<screen>
+<prompt>$ </prompt><userinput>su</userinput>
+<prompt># </prompt><userinput>export PREFIX=/usr/local/pgsql</userinput>
+<prompt># </prompt><userinput>export PGDATA=/opt/sepgsql</userinput>
+<prompt># </prompt><userinput>semanage fcontext -a -t usr_t "$PREFIX(/.*)?"</userinput>
+<prompt># </prompt><userinput>semanage fcontext -a -t bin_t "$PREFIX/bin(/.*)?"</userinput>
+<prompt># </prompt><userinput>semanage fcontext -a -t lib_t "$PREFIX/lib(/.*)?"</userinput>
+<prompt># </prompt><userinput>semanage fcontext -a -t postgresql_exec_t "$PREFIX/bin/postgres"</userinput>
+<prompt># </prompt><userinput>semanage fcontext -a -t initrc_exec_t "$PREFIX/bin/pg_ctl"</userinput>
+<prompt># </prompt><userinput>semanage fcontext -a -t postgresql_db_t "$PGDATA(/.*)?"</userinput>
+<prompt># </prompt><userinput>restorecon -R $PREFIX $PGDATA</userinput>
+</screen>
+   </para>
+   <para>
+    This configuration add default security contexts to be assigned on
+    certain files identified by pathnames in regular expressions.
+   </para>
+   <para>
+    The <literal>bin_t</literal> means general executables,
+    the <literal>lib_t</literal> means general shared libraries,
+    the <literal>postgresql_exec_t</literal> means executable of PostgreSQL
+    server program to be assigned on <command>postgres</command>,
+    and the <literal>initrc_exec_t</literal> means a program launcher
+    such as system init scripts.
+   </para>
+   <para>
+    The <literal>postgresql_db_t</literal> means database files, so
+    the server process can access without any limitations, but it is
+    unaccessable from other server program, such as httpd.
+   </para>
+   <para>
+    The <command>restorecon</command> command restores the security context
+    of files based on the pathnames in regular expressions.
+    For example, the <literal>postgresql_db_t</literal> shall be assigned on
+    the <filename>$PGDATA/global/pg_control</filename>.
+   </para>
+   <para>
+    If you can see the PostgreSQL server process performs with
+    <literal>postgresql_t</literal> domain, it is succeeded.
+    Otherwise, you may miss something.
+<screen>
+<prompt>$ </prompt><userinput>ps -AZ | grep postgres</userinput>
+unconfined_u:system_r:postgresql_t:s0 1695 ?   00:00:00 postgres
+unconfined_u:system_r:postgresql_t:s0 1697 ?   00:00:00 postgres
+unconfined_u:system_r:postgresql_t:s0 1698 ?   00:00:00 postgres
+unconfined_u:system_r:postgresql_t:s0 1699 ?   00:00:00 postgres
+unconfined_u:system_r:postgresql_t:s0 1700 ?   00:00:00 postgres
+</screen>
+   </para>
+  </sect2>
+  <sect2 id="selinux-admin-backup">
+   <title>Backup</title>
+   <para>
+    The <command>pg_dump</command> and <command>pg_dumpall</command>
+    command supports <option>--enable-selinux</option> option which
+    enables to dump database objects with its security context.
+   </para>
+   <para>
+    It shall be restored using <option>SECURITY_CONTEXT</option> option
+    in <command>CREATE</command> statement, as follows.
+<screen>
+<prompt>$ </prompt><userinput>pg_dump --security-label postgres</userinput>
+        :
+      (snip)
+        :
+--
+-- Name: drink; Type: TABLE; Schema: public; Owner: kaigai; Tablespace:
+--
+
+CREATE TABLE drink (
+    id integer NOT NULL,
+    name character varying(48),
+    price integer
+) SECURITY_CONTEXT = 'system_u:object_r:sepgsql_table_t';
+        :
+      (snip)
+        :
+</screen>
+   </para>
+   <para>
+    Needless to say, when we make a dump of a certain database, we must
+    have enough privilege to reference whole of the database.
+    In similar way, when we restore the backup, we must have enough
+    permission to create the dumped database object with the dumped
+    explicit security context.
+   </para>
+   <para>
+    See <xref linkend="APP-PGDUMP"> and <xref linkend="APP-PG-DUMPALL">
+    for more details.
+   </para>
+  </sect2>
+ </sect1>
+</chapter>

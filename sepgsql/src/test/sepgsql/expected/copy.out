@@ -1,0 +1,95 @@
+--@SECURITY_CONTEXT=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+SET selinux_mcstrans TO off;
+SELECT sepgsql_getcon();
+                   sepgsql_getcon                    
+-----------------------------------------------------
+ unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+(1 row)
+
+-- cleanup previous tests
+SET client_min_messages TO 'error';
+DROP TABLE IF EXISTS t1 CASCADE;
+DROP TABLE IF EXISTS t2 CASCADE;
+DROP TABLE IF EXISTS t3 CASCADE;
+DROP TABLE IF EXISTS t4 CASCADE;
+RESET client_min_messages;
+-- CREATE TABLE for COPY TO/FROM test
+CREATE TABLE t1
+(
+	a	int,
+	b	text,
+	c	text
+);
+INSERT INTO t1 VALUES (1, 'xxx', 'aaa'), (2, 'yyy', 'bbb'), (3, 'zzz', 'ccc');
+CREATE TABLE t2
+(
+	x	int,
+	y	text,
+	z	text
+) SECURITY CONTEXT (z='system_u:object_r:sepgsql_ro_table_t:s0');
+INSERT INTO t2 VALUES (1, 'XXX', 'AAA'), (2, 'YYY', 'BBB'), (3, 'ZZZ', 'CCC');
+CREATE TABLE t3
+(
+	s	int,
+	t	text,
+	u	text
+) SECURITY CONTEXT (t='system_u:object_r:sepgsql_fixed_table_t:s0',
+                    u='system_u:object_r:sepgsql_secret_table_t:s0');
+INSERT INTO t3 VALUES (1, 'AAA', 'BBB'), (2, 'CCC', 'DDD'), (3, 'EEE', 'FFF');
+--@SECURITY_CONTEXT=unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0
+SET selinux_mcstrans TO off;
+SELECT sepgsql_getcon();
+                  sepgsql_getcon                   
+---------------------------------------------------
+ unconfined_u:unconfined_r:sepgsql_test_t:s0-s0:c0
+(1 row)
+
+COPY t1 TO stdout;
+1	xxx	aaa
+2	yyy	bbb
+3	zzz	ccc
+COPY t1 FROM stdin;
+COPY t2 TO stdout;
+1	XXX	AAA
+2	YYY	BBB
+3	ZZZ	CCC
+COPY t2 FROM stdin;	-- to be denied
+ERROR:  SELinux: security policy violation
+\.
+invalid command \.
+COPY t2 (x, y) FROM stdin;
+COPY t3 TO stdout;	-- to be denied
+ERROR:  SELinux: security policy violation
+COPY t3 (s, t) TO stdout;
+1	AAA
+2	CCC
+3	EEE
+COPY t3 FROM stdin;	-- to be denied
+ERROR:  SELinux: security policy violation
+COPY t3 (s, t) FROM stdin;
+COPY (SELECT * FROM t2) TO stdout;
+1	XXX	AAA
+2	YYY	BBB
+3	ZZZ	CCC
+4	XYZ	\N
+COPY (SELECT * FROM t3) TO stdout;	-- to be denied
+ERROR:  SELinux: security policy violation
+COPY (SELECT s, t FROM t3) TO stdout;
+1	AAA
+2	CCC
+3	EEE
+4	GGG
+--@SECURITY_CONTEXT=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+SET selinux_mcstrans TO off;
+SELECT sepgsql_getcon();
+                   sepgsql_getcon                    
+-----------------------------------------------------
+ unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+(1 row)
+
+-- cleanups
+SET client_min_messages TO 'error';
+DROP TABLE IF EXISTS t1 CASCADE;
+DROP TABLE IF EXISTS t2 CASCADE;
+DROP TABLE IF EXISTS t3 CASCADE;
+RESET client_min_messages;

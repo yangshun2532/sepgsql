@@ -1,0 +1,315 @@
+--@SECURITY_CONTEXT=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+SET selinux_mcstrans TO off;
+SELECT sepgsql_getcon();
+                   sepgsql_getcon                    
+-----------------------------------------------------
+ unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c15
+(1 row)
+
+-- cleanup previous tests
+SET client_min_messages TO 'error';
+DROP TABLE IF EXISTS t1 CASCADE;
+DROP TABLE IF EXISTS t2 CASCADE;
+DROP TABLE IF EXISTS t3 CASCADE;
+DROP TABLE IF EXISTS t4 CASCADE;
+DROP TABLE IF EXISTS t5 CASCADE;
+DROP TABLE IF EXISTS t6 CASCADE;
+DROP TABLE IF EXISTS tx CASCADE;
+DROP TABLE IF EXISTS ty CASCADE;
+DROP TABLE IF EXISTS txx CASCADE;
+DROP TABLE IF EXISTS tyy CASCADE;
+DROP TABLE IF EXISTS txy CASCADE;
+RESET client_min_messages;
+-- CREATE TABLE with SECURITY_CONTEXT option
+CREATE TABLE t1
+(
+    a   int,
+    b   int
+);
+CREATE TABLE t2
+(
+    c   int,
+    d   int
+) SECURITY CONTEXT ('system_u:object_r:sepgsql_ro_table_t:s0:c0');
+CREATE TABLE t3
+(
+    e   int,
+    f   int
+) SECURITY CONTEXT ('system_u:object_r:sepgsql_ro_table_t:s0:c20');	-- to be denied
+ERROR:  SELinux: security policy violation
+CREATE TABLE t4
+(
+    g   int,
+    h   int
+) SECURITY CONTEXT ('invalid security context');			-- to be failed
+ERROR:  invalid security context "invalid security context"
+CREATE TABLE t5
+(
+    i   int,
+    j   int
+) SECURITY CONTEXT (j='system_u:object_r:sepgsql_ro_table_t:s0');
+CREATE TABLE t6
+(
+    k   int,
+    l   int
+) SECURITY CONTEXT ('system_u:object_r:sepgsql_ro_table_t:s0',
+                    l='system_u:object_r:sepgsql_secret_table_t:s0');
+SELECT relname, sepgsql_relation_getcon(oid), relsecon FROM pg_class
+       WHERE relname in ('t1', 't2', 't3', 't4', 't5', 't6')
+       ORDER BY relname;
+ relname |          sepgsql_relation_getcon           |                  relsecon                  
+---------+--------------------------------------------+--------------------------------------------
+ t1      | unconfined_u:object_r:sepgsql_table_t:s0   | unconfined_u:object_r:sepgsql_table_t:s0
+ t2      | system_u:object_r:sepgsql_ro_table_t:s0:c0 | system_u:object_r:sepgsql_ro_table_t:s0:c0
+ t5      | unconfined_u:object_r:sepgsql_table_t:s0   | unconfined_u:object_r:sepgsql_table_t:s0
+ t6      | system_u:object_r:sepgsql_ro_table_t:s0    | system_u:object_r:sepgsql_ro_table_t:s0
+(4 rows)
+
+SELECT relname, attname, attnum,
+       sepgsql_attribute_getcon(attrelid, attnum), attsecon
+       FROM pg_class c JOIN pg_attribute a ON c.oid = a.attrelid
+       WHERE c.relname IN ('t1', 't2', 't3', 't4', 't5', 't6')
+       ORDER BY relname, attnum;
+ relname | attname  | attnum |          sepgsql_attribute_getcon           |                  attsecon                   
+---------+----------+--------+---------------------------------------------+---------------------------------------------
+ t1      | tableoid |     -7 | unconfined_u:object_r:sepgsql_table_t:s0    | unconfined_u:object_r:sepgsql_table_t:s0
+ t1      | cmax     |     -6 | unconfined_u:object_r:sepgsql_table_t:s0    | unconfined_u:object_r:sepgsql_table_t:s0
+ t1      | xmax     |     -5 | unconfined_u:object_r:sepgsql_table_t:s0    | unconfined_u:object_r:sepgsql_table_t:s0
+ t1      | cmin     |     -4 | unconfined_u:object_r:sepgsql_table_t:s0    | unconfined_u:object_r:sepgsql_table_t:s0
+ t1      | xmin     |     -3 | unconfined_u:object_r:sepgsql_table_t:s0    | unconfined_u:object_r:sepgsql_table_t:s0
+ t1      | ctid     |     -1 | unconfined_u:object_r:sepgsql_table_t:s0    | unconfined_u:object_r:sepgsql_table_t:s0
+ t1      | a        |      1 | unconfined_u:object_r:sepgsql_table_t:s0    | unconfined_u:object_r:sepgsql_table_t:s0
+ t1      | b        |      2 | unconfined_u:object_r:sepgsql_table_t:s0    | unconfined_u:object_r:sepgsql_table_t:s0
+ t2      | tableoid |     -7 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | unconfined_u:object_r:sepgsql_ro_table_t:s0
+ t2      | cmax     |     -6 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | unconfined_u:object_r:sepgsql_ro_table_t:s0
+ t2      | xmax     |     -5 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | unconfined_u:object_r:sepgsql_ro_table_t:s0
+ t2      | cmin     |     -4 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | unconfined_u:object_r:sepgsql_ro_table_t:s0
+ t2      | xmin     |     -3 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | unconfined_u:object_r:sepgsql_ro_table_t:s0
+ t2      | ctid     |     -1 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | unconfined_u:object_r:sepgsql_ro_table_t:s0
+ t2      | c        |      1 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | unconfined_u:object_r:sepgsql_ro_table_t:s0
+ t2      | d        |      2 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | unconfined_u:object_r:sepgsql_ro_table_t:s0
+ t5      | tableoid |     -7 | unconfined_u:object_r:sepgsql_table_t:s0    | unconfined_u:object_r:sepgsql_table_t:s0
+ t5      | cmax     |     -6 | unconfined_u:object_r:sepgsql_table_t:s0    | unconfined_u:object_r:sepgsql_table_t:s0
+ t5      | xmax     |     -5 | unconfined_u:object_r:sepgsql_table_t:s0    | unconfined_u:object_r:sepgsql_table_t:s0
+ t5      | cmin     |     -4 | unconfined_u:object_r:sepgsql_table_t:s0    | unconfined_u:object_r:sepgsql_table_t:s0
+ t5      | xmin     |     -3 | unconfined_u:object_r:sepgsql_table_t:s0    | unconfined_u:object_r:sepgsql_table_t:s0
+ t5      | ctid     |     -1 | unconfined_u:object_r:sepgsql_table_t:s0    | unconfined_u:object_r:sepgsql_table_t:s0
+ t5      | i        |      1 | unconfined_u:object_r:sepgsql_table_t:s0    | unconfined_u:object_r:sepgsql_table_t:s0
+ t5      | j        |      2 | system_u:object_r:sepgsql_ro_table_t:s0     | system_u:object_r:sepgsql_ro_table_t:s0
+ t6      | tableoid |     -7 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | unconfined_u:object_r:sepgsql_ro_table_t:s0
+ t6      | cmax     |     -6 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | unconfined_u:object_r:sepgsql_ro_table_t:s0
+ t6      | xmax     |     -5 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | unconfined_u:object_r:sepgsql_ro_table_t:s0
+ t6      | cmin     |     -4 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | unconfined_u:object_r:sepgsql_ro_table_t:s0
+ t6      | xmin     |     -3 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | unconfined_u:object_r:sepgsql_ro_table_t:s0
+ t6      | ctid     |     -1 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | unconfined_u:object_r:sepgsql_ro_table_t:s0
+ t6      | k        |      1 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | unconfined_u:object_r:sepgsql_ro_table_t:s0
+ t6      | l        |      2 | system_u:object_r:sepgsql_secret_table_t:s0 | system_u:object_r:sepgsql_secret_table_t:s0
+(32 rows)
+
+-- ALTER TABLE with SECURITY_CONTEXT option
+ALTER TABLE t1 SECURITY CONTEXT
+      TO 'system_u:object_r:sepgsql_table_t:s0:c0';
+ALTER TABLE t2 ADD COLUMN x int;
+ALTER TABLE t2 SECURITY CONTEXT
+      TO 'system_u:object_r:sepgsql_table_t:s0:c20';	-- to be denied
+ERROR:  SELinux: security policy violation
+ALTER TABLE t2 SECURITY CONTEXT
+      TO 'invalid security context';			-- to be failed
+ERROR:  invalid security context "invalid security context"
+ALTER TABLE t1 ALTER COLUMN a SECURITY CONTEXT
+      TO 'system_u:object_r:sepgsql_table_t:s0:c1';
+ALTER TABLE t1 ALTER COLUMN b SECURITY CONTEXT
+      TO 'system_u:object_r:sepgsql_table_t:s0:c20';	-- to be denied
+ERROR:  SELinux: security policy violation
+ALTER TABLE t1 ALTER COLUMN b SECURITY CONTEXT
+      TO 'invalid security context';			-- to be failed
+ERROR:  invalid security context "invalid security context"
+ALTER TABLE t1 ALTER COLUMN tableoid SECURITY CONTEXT
+      TO 'system_u:object_r:sepgsql_ro_table_t:s0';	-- to be failed
+ERROR:  cannot relabel system column "tableoid"
+SELECT relname, sepgsql_relation_getcon(oid), relsecon FROM pg_class
+       WHERE relname IN ('t1', 't2')
+       ORDER BY relname;
+ relname |          sepgsql_relation_getcon           |                  relsecon                  
+---------+--------------------------------------------+--------------------------------------------
+ t1      | system_u:object_r:sepgsql_table_t:s0:c0    | system_u:object_r:sepgsql_table_t:s0:c0
+ t2      | system_u:object_r:sepgsql_ro_table_t:s0:c0 | system_u:object_r:sepgsql_ro_table_t:s0:c0
+(2 rows)
+
+SELECT relname, attname, attnum,
+       sepgsql_attribute_getcon(attrelid, attnum), attsecon
+       FROM pg_class c JOIN pg_attribute a ON c.oid = a.attrelid
+       WHERE c.relname IN ('t1', 't2')
+       ORDER BY relname, attnum;
+ relname | attname  | attnum |          sepgsql_attribute_getcon           |                  attsecon                   
+---------+----------+--------+---------------------------------------------+---------------------------------------------
+ t1      | tableoid |     -7 | unconfined_u:object_r:sepgsql_table_t:s0    | unconfined_u:object_r:sepgsql_table_t:s0
+ t1      | cmax     |     -6 | unconfined_u:object_r:sepgsql_table_t:s0    | unconfined_u:object_r:sepgsql_table_t:s0
+ t1      | xmax     |     -5 | unconfined_u:object_r:sepgsql_table_t:s0    | unconfined_u:object_r:sepgsql_table_t:s0
+ t1      | cmin     |     -4 | unconfined_u:object_r:sepgsql_table_t:s0    | unconfined_u:object_r:sepgsql_table_t:s0
+ t1      | xmin     |     -3 | unconfined_u:object_r:sepgsql_table_t:s0    | unconfined_u:object_r:sepgsql_table_t:s0
+ t1      | ctid     |     -1 | unconfined_u:object_r:sepgsql_table_t:s0    | unconfined_u:object_r:sepgsql_table_t:s0
+ t1      | a        |      1 | system_u:object_r:sepgsql_table_t:s0:c1     | system_u:object_r:sepgsql_table_t:s0:c1
+ t1      | b        |      2 | unconfined_u:object_r:sepgsql_table_t:s0    | unconfined_u:object_r:sepgsql_table_t:s0
+ t2      | tableoid |     -7 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | unconfined_u:object_r:sepgsql_ro_table_t:s0
+ t2      | cmax     |     -6 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | unconfined_u:object_r:sepgsql_ro_table_t:s0
+ t2      | xmax     |     -5 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | unconfined_u:object_r:sepgsql_ro_table_t:s0
+ t2      | cmin     |     -4 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | unconfined_u:object_r:sepgsql_ro_table_t:s0
+ t2      | xmin     |     -3 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | unconfined_u:object_r:sepgsql_ro_table_t:s0
+ t2      | ctid     |     -1 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | unconfined_u:object_r:sepgsql_ro_table_t:s0
+ t2      | c        |      1 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | unconfined_u:object_r:sepgsql_ro_table_t:s0
+ t2      | d        |      2 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | unconfined_u:object_r:sepgsql_ro_table_t:s0
+ t2      | x        |      3 | unconfined_u:object_r:sepgsql_ro_table_t:s0 | unconfined_u:object_r:sepgsql_ro_table_t:s0
+(17 rows)
+
+-- Table inheritance and column's security context
+CREATE TABLE tx
+(
+	x	int,
+	z	text
+) SECURITY CONTEXT (x='system_u:object_r:sepgsql_table_t:s0:c1');
+CREATE TABLE ty
+(
+	y	int,
+	z	text
+);
+CREATE TABLE txx
+(
+	xx	int
+) INHERITS(tx);
+CREATE TABLE tyy
+(
+	yy	int
+) INHERITS(ty);
+ALTER TABLE tyy ALTER COLUMN y
+      SECURITY CONTEXT TO 'system_u:object_r:sepgsql_table_t:s0:c2';	-- to be failed
+ERROR:  cannot relabel inherited column "y"
+ALTER TABLE ty ALTER COLUMN y
+      SECURITY CONTEXT TO 'system_u:object_r:sepgsql_table_t:s0:c2';
+-- inherited column shares same security context
+SELECT relname, attname, attnum,
+       sepgsql_attribute_getcon(attrelid, attnum)
+       FROM pg_class c JOIN pg_attribute a ON c.oid = a.attrelid
+       WHERE c.relname IN ('tx', 'ty', 'txx', 'tyy')
+       ORDER BY relname, attnum;
+ relname | attname  | attnum |         sepgsql_attribute_getcon         
+---------+----------+--------+------------------------------------------
+ tx      | tableoid |     -7 | unconfined_u:object_r:sepgsql_table_t:s0
+ tx      | cmax     |     -6 | unconfined_u:object_r:sepgsql_table_t:s0
+ tx      | xmax     |     -5 | unconfined_u:object_r:sepgsql_table_t:s0
+ tx      | cmin     |     -4 | unconfined_u:object_r:sepgsql_table_t:s0
+ tx      | xmin     |     -3 | unconfined_u:object_r:sepgsql_table_t:s0
+ tx      | ctid     |     -1 | unconfined_u:object_r:sepgsql_table_t:s0
+ tx      | x        |      1 | system_u:object_r:sepgsql_table_t:s0:c1
+ tx      | z        |      2 | unconfined_u:object_r:sepgsql_table_t:s0
+ txx     | tableoid |     -7 | unconfined_u:object_r:sepgsql_table_t:s0
+ txx     | cmax     |     -6 | unconfined_u:object_r:sepgsql_table_t:s0
+ txx     | xmax     |     -5 | unconfined_u:object_r:sepgsql_table_t:s0
+ txx     | cmin     |     -4 | unconfined_u:object_r:sepgsql_table_t:s0
+ txx     | xmin     |     -3 | unconfined_u:object_r:sepgsql_table_t:s0
+ txx     | ctid     |     -1 | unconfined_u:object_r:sepgsql_table_t:s0
+ txx     | x        |      1 | system_u:object_r:sepgsql_table_t:s0:c1
+ txx     | z        |      2 | unconfined_u:object_r:sepgsql_table_t:s0
+ txx     | xx       |      3 | unconfined_u:object_r:sepgsql_table_t:s0
+ ty      | tableoid |     -7 | unconfined_u:object_r:sepgsql_table_t:s0
+ ty      | cmax     |     -6 | unconfined_u:object_r:sepgsql_table_t:s0
+ ty      | xmax     |     -5 | unconfined_u:object_r:sepgsql_table_t:s0
+ ty      | cmin     |     -4 | unconfined_u:object_r:sepgsql_table_t:s0
+ ty      | xmin     |     -3 | unconfined_u:object_r:sepgsql_table_t:s0
+ ty      | ctid     |     -1 | unconfined_u:object_r:sepgsql_table_t:s0
+ ty      | y        |      1 | system_u:object_r:sepgsql_table_t:s0:c2
+ ty      | z        |      2 | unconfined_u:object_r:sepgsql_table_t:s0
+ tyy     | tableoid |     -7 | unconfined_u:object_r:sepgsql_table_t:s0
+ tyy     | cmax     |     -6 | unconfined_u:object_r:sepgsql_table_t:s0
+ tyy     | xmax     |     -5 | unconfined_u:object_r:sepgsql_table_t:s0
+ tyy     | cmin     |     -4 | unconfined_u:object_r:sepgsql_table_t:s0
+ tyy     | xmin     |     -3 | unconfined_u:object_r:sepgsql_table_t:s0
+ tyy     | ctid     |     -1 | unconfined_u:object_r:sepgsql_table_t:s0
+ tyy     | y        |      1 | system_u:object_r:sepgsql_table_t:s0:c2
+ tyy     | z        |      2 | unconfined_u:object_r:sepgsql_table_t:s0
+ tyy     | yy       |      3 | unconfined_u:object_r:sepgsql_table_t:s0
+(34 rows)
+
+CREATE TABLE txy
+(
+	xy	int
+) INHERITS(txx, tyy);
+NOTICE:  merging multiple inherited definitions of column "z"
+ALTER TABLE tx ALTER COLUMN x
+      SECURITY CONTEXT TO 'system_u:object_r:sepgsql_table_t:s0:c3';
+ALTER TABLE tx ALTER COLUMN z
+      SECURITY CONTEXT TO 'system_u:object_r:sepgsql_table_t:s0:c4';	-- to be failed
+ERROR:  cannot relabel multiple inherited column "z"
+ALTER TABLE txy NO INHERIT tyy;
+ALTER TABLE tx ALTER COLUMN z
+      SECURITY CONTEXT TO 'system_u:object_r:sepgsql_table_t:s0:c4';
+ALTER TABLE txy INHERIT tyy;						-- to be failed
+ERROR:  child table "txy" has different security context for column "z"
+ALTER TABLE tx SECURITY CONTEXT TO 'system_u:object_r:sepgsql_ro_table_t:s0';
+ALTER TABLE tx SET WITH OIDS;
+SELECT relname, attname, attnum,
+       sepgsql_attribute_getcon(attrelid, attnum)
+       FROM pg_class c JOIN pg_attribute a ON c.oid = a.attrelid
+       WHERE c.relname IN ('tx', 'ty', 'txx', 'tyy')
+       ORDER BY relname, attnum;
+ relname | attname  | attnum |          sepgsql_attribute_getcon           
+---------+----------+--------+---------------------------------------------
+ tx      | tableoid |     -7 | unconfined_u:object_r:sepgsql_table_t:s0
+ tx      | cmax     |     -6 | unconfined_u:object_r:sepgsql_table_t:s0
+ tx      | xmax     |     -5 | unconfined_u:object_r:sepgsql_table_t:s0
+ tx      | cmin     |     -4 | unconfined_u:object_r:sepgsql_table_t:s0
+ tx      | xmin     |     -3 | unconfined_u:object_r:sepgsql_table_t:s0
+ tx      | oid      |     -2 | unconfined_u:object_r:sepgsql_ro_table_t:s0
+ tx      | ctid     |     -1 | unconfined_u:object_r:sepgsql_table_t:s0
+ tx      | x        |      1 | system_u:object_r:sepgsql_table_t:s0:c3
+ tx      | z        |      2 | system_u:object_r:sepgsql_table_t:s0:c4
+ txx     | tableoid |     -7 | unconfined_u:object_r:sepgsql_table_t:s0
+ txx     | cmax     |     -6 | unconfined_u:object_r:sepgsql_table_t:s0
+ txx     | xmax     |     -5 | unconfined_u:object_r:sepgsql_table_t:s0
+ txx     | cmin     |     -4 | unconfined_u:object_r:sepgsql_table_t:s0
+ txx     | xmin     |     -3 | unconfined_u:object_r:sepgsql_table_t:s0
+ txx     | oid      |     -2 | unconfined_u:object_r:sepgsql_ro_table_t:s0
+ txx     | ctid     |     -1 | unconfined_u:object_r:sepgsql_table_t:s0
+ txx     | x        |      1 | system_u:object_r:sepgsql_table_t:s0:c3
+ txx     | z        |      2 | system_u:object_r:sepgsql_table_t:s0:c4
+ txx     | xx       |      3 | unconfined_u:object_r:sepgsql_table_t:s0
+ ty      | tableoid |     -7 | unconfined_u:object_r:sepgsql_table_t:s0
+ ty      | cmax     |     -6 | unconfined_u:object_r:sepgsql_table_t:s0
+ ty      | xmax     |     -5 | unconfined_u:object_r:sepgsql_table_t:s0
+ ty      | cmin     |     -4 | unconfined_u:object_r:sepgsql_table_t:s0
+ ty      | xmin     |     -3 | unconfined_u:object_r:sepgsql_table_t:s0
+ ty      | ctid     |     -1 | unconfined_u:object_r:sepgsql_table_t:s0
+ ty      | y        |      1 | system_u:object_r:sepgsql_table_t:s0:c2
+ ty      | z        |      2 | unconfined_u:object_r:sepgsql_table_t:s0
+ tyy     | tableoid |     -7 | unconfined_u:object_r:sepgsql_table_t:s0
+ tyy     | cmax     |     -6 | unconfined_u:object_r:sepgsql_table_t:s0
+ tyy     | xmax     |     -5 | unconfined_u:object_r:sepgsql_table_t:s0
+ tyy     | cmin     |     -4 | unconfined_u:object_r:sepgsql_table_t:s0
+ tyy     | xmin     |     -3 | unconfined_u:object_r:sepgsql_table_t:s0
+ tyy     | ctid     |     -1 | unconfined_u:object_r:sepgsql_table_t:s0
+ tyy     | y        |      1 | system_u:object_r:sepgsql_table_t:s0:c2
+ tyy     | z        |      2 | unconfined_u:object_r:sepgsql_table_t:s0
+ tyy     | yy       |      3 | unconfined_u:object_r:sepgsql_table_t:s0
+(36 rows)
+
+-- disallow to modify system catalog by hand
+UPDATE pg_class SET relsecon = NULL
+       WHERE relname = 't1';						-- to be denied
+ERROR:  SELinux: permission denied: "pg_class" is a system catalog
+UPDATE pg_attribute SET attsecon = NULL
+       WHERE attrelid = 't1'::regclass;					-- to be denied
+ERROR:  SELinux: permission denied: "pg_attribute" is a system catalog
+-- cleanups
+SET client_min_messages TO 'error';
+DROP TABLE IF EXISTS t1 CASCADE;
+DROP TABLE IF EXISTS t2 CASCADE;
+DROP TABLE IF EXISTS t3 CASCADE;
+DROP TABLE IF EXISTS t4 CASCADE;
+DROP TABLE IF EXISTS t5 CASCADE;
+DROP TABLE IF EXISTS t6 CASCADE;
+DROP TABLE IF EXISTS tx CASCADE;
+DROP TABLE IF EXISTS ty CASCADE;
+DROP TABLE IF EXISTS txx CASCADE;
+DROP TABLE IF EXISTS tyy CASCADE;
+DROP TABLE IF EXISTS txy CASCADE;
+RESET client_min_messages;
