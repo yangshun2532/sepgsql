@@ -17,10 +17,8 @@
  * SE-PostgreSQL working mode
  */
 #define SEPGSQL_MODE_DEFAULT		1
-#define SEPGSQL_MODE_PERMISSIVE		2
-#define SEPGSQL_MODE_PERMISSIVE		3
-#define SEPGSQL_MODE_INTERNAL		4
-#define SEPGSQL_MODE_DISABLED		5
+#define SEPGSQL_MODE_INTERNAL		2
+#define SEPGSQL_MODE_DISABLED		3
 
 /*
  * Internally used code of object classes
@@ -198,7 +196,8 @@
  */
 extern bool sepgsql_is_enabled(void);
 extern bool sepgsql_get_enforce(void);
-extern const char *sepgsql_show_mode(void);
+extern int  sepgsql_get_mode(void);
+extern int  sepgsql_set_mode(int new_mode);
 
 extern void sepgsql_audit_log(bool denied,
 							  char *scontext,
@@ -227,5 +226,17 @@ extern char *sepgsql_compute_create(char *scontext,
  * hooks.c
  */
 extern void sepgsql_register_hooks(void);
+
+/*
+ * label.c
+ */
+extern char *sepgsql_get_client_label(void);
+extern char *sepgsql_set_client_label(char *new_label);
+extern char *sepgsql_get_unlabeled_label(void);
+extern char *sepgsql_get_label(Oid relOid, Oid objOid, int32 subId);
+
+extern Datum sepgsql_getcon(PG_FUNCTION_ARGS);
+extern Datum sepgsql_mcstrans_in(PG_FUNCTION_ARGS);
+extern Datum sepgsql_mcstrans_out(PG_FUNCTION_ARGS);
 
 #endif /* SEPGSQL_H */

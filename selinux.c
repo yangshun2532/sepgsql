@@ -10,33 +10,37 @@
  */
 #include "postgres.h"
 
+#include "lib/stringinfo.h"
 #include "miscadmin.h"
+#include "utils/guc.h"
+
 #include "sepgsql.h"
 
+PG_MODULE_MAGIC;
+
+/* Entrypoint of the module */
+void _PG_init(void);
+
 /*
- * GUC: sepgsql_mode = [default|enforcing|permissive|disabled]
+ * GUC: sepgsql_mode = [default|internal|disabled]
  *
  * SEPGSQL_MODE_DEFAULT     : follows on system setting
- * SEPGSQL_MODE_ENFORCING	: in enforcing mode now
- * SEPGSQL_MODE_PERMISSIVE	: in permissive move now
- * SEPGSQL_MODE_INTERNAL	: same as permissive, except for no audit logs.
+ * SEPGSQL_MODE_INTERNAL	: same as permissive mode, except for no audit logs.
  * SEPGSQL_MODE_DISABLED	: feature is disabled
  */
-int sepgsql_mode;
+static int sepgsql_mode;
 
-const struct config_enum_entry sepgsql_mode_option = {
+const struct config_enum_entry sepgsql_mode_options[] = {
 	{"default",		SEPGSQL_MODE_DEFAULT,		false},
-	{"enforcing",	SEPGSQL_MODE_ENFORCING,		false},
-	{"permissive",	SEPGSQL_MODE_PERMISSIVE,	false},
 	{"internal",	SEPGSQL_MODE_INTERNAL,		true},
 	{"disabled",	SEPGSQL_MODE_DISABLED,		false},
-	{NULL, 0, false}
+	{NULL,			0,							false}
 };
 
 /*
  * GUC: sepgsql_debug_audit = [on | off]
  */
-bool sepgsql_debug_audit;
+static bool sepgsql_debug_audit;
 
 /*
  * selinux_catalog
@@ -296,23 +300,44 @@ static struct
 bool
 sepgsql_is_enabled(void)
 {
-	if (sepgsql_mode == SEPGSQL_MODE_DISABLED)
-		return false;
-
-	return true;
+	return (sepgsql_mode != SEPGSQL_MODE_DISABLED ? true : false);
 }
 
 bool
 sepgsql_get_enforce(void)
 {
-	if (sepgsql_mode == SEPGSQL_MODE_DEFAULT)
-	{
-		return security_getenforce() == 1 ? true : false;
-	}
-	else if (sepgsql_mode == SEPGSQL_MODE_ENFORCING)
+	if (sepgsql_mode == SEPGSQL_MODE_DEFAULT && security_getenforce() == 1)
 		return true;
 
 	return false;
+}
+
+int
+sepgsql_get_mode(void)
+{
+	return sepgsql_mode;
+}
+
+int
+sepgsql_set_mode(int new_mode)
+{
+	int		old_mode = sepgsql_mode;
+
+	sepgsql_mode = new_mode;
+
+	return old_mode;
+}
+
+static const char *
+sepgsql_show_mode(void)
+{
+	if (!sepgsql_is_enabled())
+		return "disabled";
+
+	if (sepgsql_get_enforce())
+		return "enforcing";
+
+	return "permissive";
 }
 
 /*
@@ -336,30 +361,30 @@ sepgsql_get_enforce(void)
  */
 void
 sepgsql_audit_log(bool denied,
-				  const char *scontext,
-				  const char *tcontext,
+				  char *scontext,
+				  char *tcontext,
 				  uint16 tclass,
 				  uint32 audited,
 				  const char *audit_name)
 {
 	StringInfoData	buf;
-	const char	   *tclass_name;
-	const char	   *perm_name;
+	const char	   *class_name;
+	const char	   *av_name;
 	int				i;
 
 	/* lookup name of the object class */
-	tclass_name = selinux_catalog[tclass].class_name;
+	class_name = selinux_catalog[tclass].class_name;
 
 	/* lookup name of the permissions */
 	initStringInfo(&buf);
 	appendStringInfo(&buf, "%s {",
 					 (denied ? "denied" : "allowed"));
-	for (i=0; selinux_catalog[tclass].perms[i].perm_name; i++)
+	for (i=0; selinux_catalog[tclass].av[i].av_name; i++)
 	{
 		if (audited & (1UL << i))
 		{
-			perm_name = selinux_catalog[tclass].perms[i].perm_name;
-			appendStringInfo(&buf, " %s", perm_name);
+			av_name = selinux_catalog[tclass].av[i].av_name;
+			appendStringInfo(&buf, " %s", av_name);
 		}
 	}
 	appendStringInfo(&buf, " }");
@@ -368,7 +393,7 @@ sepgsql_audit_log(bool denied,
 	 * Call external audit module, if loaded
 	 */
 	appendStringInfo(&buf, " scontext=%s tcontext=%s tclass=%s",
-					 scontext, tcontext, tclass_name);
+					 scontext, tcontext, class_name);
 	if (audit_name)
 		appendStringInfo(&buf, " name=%s", audit_name);
 
@@ -389,8 +414,8 @@ sepgsql_audit_log(bool denied,
  * to suggest a set of allowed actions in this object class.
  */
 void
-sepgsql_compute_avd(const char *scontext,
-					const char *tcontext,
+sepgsql_compute_avd(char *scontext,
+					char *tcontext,
 					uint16 tclass,
 					struct av_decision *avd)
 {
@@ -443,29 +468,29 @@ sepgsql_compute_avd(const char *scontext,
 	 */
 	memset(avd, 0, sizeof(struct av_decision));
 
-	for (i=0; selinux_catalog[tclass].perms[i].perm_name; i++)
+	for (i=0; selinux_catalog[tclass].av[i].av_name; i++)
 	{
-		access_vector_t		perm_code_ex;
-		const char *perm_name = selinux_catalog[tclass].perms[i].perm_name;
-		uint32		perm_code = selinux_catalog[tclass].perms[i].perm_code;
+		access_vector_t	av_code_ex;
+		const char	   *av_name = selinux_catalog[tclass].av[i].av_name;
+		uint32			av_code = selinux_catalog[tclass].av[i].av_code;
 
-		perm_code_ex = string_to_av_perm(tclass_ex, perm_name);
-		if (perm_code_ex == 0)
+		av_code_ex = string_to_av_perm(tclass_ex, av_name);
+		if (av_code_ex == 0)
 		{
 			/* fill up undefined permissions */
 			if (!deny_unknown)
-				avd->allowed |= perm_code;
-			avd->auditdeny |= perm_code;
+				avd->allowed |= av_code;
+			avd->auditdeny |= av_code;
 
 			continue;
 		}
 
-		if (avd_ex.allowed & perm_code_ex)
-			avd->allowed |= perm_code;
-		if (avd_ex.auditallow & perm_code_ex)
-			avd->auditallow |= perm_code;
-		if (avd_ex.auditdeny & perm_code_ex)
-			avd->auditdeny |= perm_code;
+		if (avd_ex.allowed & av_code_ex)
+			avd->allowed |= av_code;
+		if (avd_ex.auditallow & av_code_ex)
+			avd->auditallow |= av_code;
+		if (avd_ex.auditdeny & av_code_ex)
+			avd->auditdeny |= av_code;
 	}
 
 	return;
@@ -554,8 +579,8 @@ sepgsql_compute_create(char *scontext, char *tcontext, uint16 tclass)
  * abort    : true, if it raises an error on access violation
  */
 bool
-sepgsql_compute_perms(const char *scontext,
-					  const char *tcontext,
+sepgsql_compute_perms(char *scontext,
+					  char *tcontext,
 					  uint16 tclass,
 					  uint32 required,
 					  const char *audit_name,
@@ -617,10 +642,10 @@ _PG_init(void)
 	 * the case when shared_preload_libraries handling.
 	 */
 	if (!process_shared_preload_libraries_in_progress)
-		elog(ERROR,
-			 (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-			  errmsg("Not allowed to load SE-PostgreSQL module, "
-					 "except for shared_preload_libraries")));
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("Not allowed to load SE-PostgreSQL module, "
+						"except for shared_preload_libraries")));
 
 	/*
 	 * sepgsql_mode = [enforcing|permissive|disabled]
@@ -635,12 +660,12 @@ _PG_init(void)
 							 "SE-PostgreSQL working mode",
 							 NULL,
 							 &sepgsql_mode,
-							 SEPGSQL_MODE_DEFAULT,
-							 sepgsql_mode_option,
+							 SEPGSQL_MODE_INTERNAL,
+							 sepgsql_mode_options,
 							 PGC_INTERNAL,
 							 0,
 							 NULL,
-							 NULL);
+							 sepgsql_show_mode);
 
 	/*
 	 * sepgsql_debug_audit = [on | off]
@@ -654,32 +679,25 @@ _PG_init(void)
 	DefineCustomBoolVariable("sepgsql_debug_audit",
 							 "Turn on/off audit logs for debugging purpose",
 							 NULL,
-							 &sepostgresql_debug_audit,
+							 &sepgsql_debug_audit,
 							 false,
 							 PGC_USERSET,
 							 0,
 							 NULL,
 							 NULL);
-
 	/*
 	 * check availability of SELinux on the platform.
 	 * If disabled, SE-PostgreSQL is also disabled, and security
 	 * hooks will not be registered.
 	 */
-	if (sepgsql_mode != SEPGSQL_MODE_DISABLED)
+	Assert(sepgsql_mode == SEPGSQL_MODE_INTERNAL);
+	if (is_selinux_enabled() < 1)
+		sepgsql_mode = SEPGSQL_MODE_DISABLED;
+	else
 	{
-		if (is_selinux_enabled() < 1)
-			sepgsql_mode = SEPGSQL_MODE_DISABLED;
-		else
-			sepgsql_register_hooks();
+		/*
+		 * If SELinux is available, register all the security hooks.
+		 */
+		sepgsql_register_hooks();
 	}
-}
-
-/*
- * Module unload callback
- */
-void
-_PG_fini(void)
-{
-	/* should never be called */
 }
