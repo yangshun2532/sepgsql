@@ -34,16 +34,12 @@ extern void *mbtree_create(void *handle);
 /*
  * mblock.c - memory block management
  */
-#define offset_to_addr(handle,offset)			\
-	((void *)((unsigned long)(handle) + (offset)))
-#define addr_to_offset(handle,addr)				\
-	((uint64_t)((unsigned long)(addr) - (unsigned long)(handle)))
-
+extern uint64_t mblock_addr_to_offset(void *handle, void *addr);
+extern void *mblock_offset_to_addr(void *handle, uint64_t offset);
 extern void *mblock_alloc(void *handle, size_t size);
 extern void  mblock_free(void *handle, void *ptr);
 extern void  mblock_reset(void *handle);
 extern void  mblock_dump(void *handle);
-extern void *mblock_init(int fdesc, size_t segment_size, bool debug,
-						 bool (*callback_mchunk)(void *data, size_t size));
+extern void *mblock_init(int fdesc, size_t block_size, size_t super_size);
 
 #endif
