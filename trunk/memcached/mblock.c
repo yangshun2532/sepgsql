@@ -7,7 +7,6 @@
  *
  */
 #include <assert.h>
-#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,64 +18,93 @@
 #include "selinux_engine.h"
 
 #define MBLOCK_MIN_BITS		7		/* 128byte */
-#define MBLOCK_MAX_BITS		23		/* 8MB */
+#define MBLOCK_MAX_BITS		25		/* 32MB */
 #define MBLOCK_MIN_SIZE		(1<<MBLOCK_MIN_BITS)
 #define MBLOCK_MAX_SIZE		(1<<MBLOCK_MAX_BITS)
-#define MBLOCK_HEAD_MAGIC	0x20100414
 
+#define offset_to_addr(mhead,offset)			\
+	((void *)((unsigned long)(mhead) + (offset)))
+#define addr_to_offset(mhead,addr)				\
+	((uint64_t)((unsigned long)(addr) - (unsigned long)(mhead)))
 #define offset_of(type, member)					\
 	((unsigned long) &((type *)0)->member)
 #define container_of(ptr, type, member)			\
 	(type *)(((char *)ptr) - offset_of(type, member))
 
+/*
+ * Dual-linked list structure
+ */
 typedef struct {
-	uint64_t	next;
 	uint64_t	prev;
+	uint64_t	next;
 } mblock_list;
 
+/*
+ * mblock_head
+ *
+ * Header structure of the memory block
+ */
+#define MBLOCK_HEAD_MAGIC	"MBLOCK_20100629"
 typedef struct {
-	uint32_t	magic;
-	uint32_t	flags;
-	uint64_t	segment_size;	/* segment size of the block */
+	uint8_t		magic[16];
+	uint64_t	block_size;		/* total size of the block */
+	uint64_t	super_size;		/* size of the super block */
 
-	mblock_list	active_list[MBLOCK_MAX_BITS + 1];
 	mblock_list	free_list[MBLOCK_MAX_BITS + 1];
 
 	/* statical information */
 	uint32_t	num_active[MBLOCK_MAX_BITS + 1];
 	uint32_t	num_free[MBLOCK_MAX_BITS + 1];
 
-	pthread_mutex_t	lock;
+	/* super block */
+	uint8_t		super_block[0];
 } mblock_head;
 
+/*
+ * mblock_chunk
+ *
+ * chunk structure of the memory block
+ */
 typedef struct {
-	mblock_list	list;
-	uint16_t	flags;
-	uint8_t		data[0];
+	uint64_t		flags;
+
+	union {
+		uint8_t		data[1];	/* only available when active chunk */
+		mblock_list	list;		/* only available when free chunk */
+	};
 } mblock_chunk;
 
-#define MCHUNK_INDEX_MASK		0x003f
-#define MCHUNK_FLAGS_ACTIVE		0x0040
+#define MCHUNK_IS_ACTIVE		0x8000
+#define MCHUNK_CLASS_MASK		0x7fff
 
-#define mchunk_next(mc)		(mc)->list.next
-#define mchunk_prev(mc)		(mc)->list.prev
-#define mchunk_index(mc)	((mc)->flags & MCHUNK_INDEX_MASK)
-#define mchunk_active(mc)	((mc)->flags & MCHUNK_FLAGS_ACTIVE)
+#define mchunk_is_active(mc)	((mc)->flags & MCHUNK_IS_ACTIVE ? true : false)
+#define mchunk_get_class(mc)	((mc)->flags & MCHUNK_CLASS_MASK)
+#define mchunk_get_size(mc)		((1<<mchunk_get_class(mc)) - offset_of(mblock_chunk, data))
+#define mchunk_get_data(mc)		((mc)->data)
+#define mchunk_get_next(mc)		((mc)->list.next)
+#define mchunk_get_prev(mc)		((mc)->list.prev)
 
+/*
+ * mblock_list operations
+ *
+ *
+ *
+ *
+ */
 static inline bool
-mblock_list_is_empty(mblock_head *mhead, mblock_list *list)
+mblist_is_empty(mblock_head *mhead, mblock_list *list)
 {
 	return offset_to_addr(mhead, list->next) == list;
 }
 
 static inline void
-mblock_list_init(mblock_head *mhead, mblock_list *list)
+mblist_init(mblock_head *mhead, mblock_list *list)
 {
 	list->next = list->prev = addr_to_offset(mhead, list);
 }
 
 static inline void
-mblock_list_add(mblock_head *mhead, mblock_list *base, mblock_list *list)
+mblist_add(mblock_head *mhead, mblock_list *base, mblock_list *list)
 {
 	mblock_list	   *nlist = offset_to_addr(mhead, base->next);
 
@@ -87,7 +115,7 @@ mblock_list_add(mblock_head *mhead, mblock_list *base, mblock_list *list)
 }
 
 static inline void
-mblock_list_del(mblock_head *mhead, mblock_list *list)
+mblist_del(mblock_head *mhead, mblock_list *list)
 {
 	mblock_list	   *plist = offset_to_addr(mhead, list->prev);
 	mblock_list    *nlist = offset_to_addr(mhead, list->next);
@@ -97,6 +125,11 @@ mblock_list_del(mblock_head *mhead, mblock_list *list)
 	list->next = list->prev = addr_to_offset(mhead, list);
 }
 
+/*
+ * ffs_uint64
+ *
+ * It returns least bit of the given value.
+ */
 static inline int
 ffs_uint64(uint64_t value)
 {
@@ -137,6 +170,11 @@ ffs_uint64(uint64_t value)
 	return ret;
 }
 
+/*
+ * fls_uint64
+ *
+ * It returns highest bit number of the given value.
+ */
 static inline int
 fls_uint64(uint64_t value)
 {
@@ -177,219 +215,237 @@ fls_uint64(uint64_t value)
 	return ret;
 }
 
+/*
+ * mblock_divide_chunk
+ *
+ * It tries to divide a free memory chunk in the given class.
+ * If no available free chunk is in this class, it recursively
+ * tries to divide upper class.
+ * Then, it returns true, if successfully divided.
+ */
 static bool
-mblock_divide_chunk(mblock_head *mhead, int index)
+mblock_divide_chunk(mblock_head *mhead, int mclass)
 {
 	mblock_chunk   *mchunk1;
 	mblock_chunk   *mchunk2;
+	mblock_list	   *list;
 	uint64_t		offset;
 
-	assert(index != MBLOCK_MIN_BITS);
+	assert(mclass > MBLOCK_MIN_BITS && mclass <= MBLOCK_MAX_BITS);
 
-	if (mblock_list_is_empty(mhead, &mhead->free_list[index]))
+	if (mblist_is_empty(mhead, &mhead->free_list[mclass]))
 	{
-		if (index == MBLOCK_MAX_BITS)
+		if (mclass == MBLOCK_MAX_BITS)
 			return false;
 		else
-			if (!mblock_divide_chunk(mhead, index + 1))
+			if (!mblock_divide_chunk(mhead, mclass + 1))
 				return false;
 	}
-	mchunk1 = offset_to_addr(mhead, mhead->free_list[index].next);
-	assert(mchunk_index(mchunk1) == index);
+	list = offset_to_addr(mhead, mhead->free_list[mclass].next);
+	mchunk1 = container_of(list, mblock_chunk, list);
+	assert(mchunk_get_class(mchunk1) == mclass);
 
 	/* detach from free list */
-	mblock_list_del(mhead, &mchunk1->list);
-	mhead->num_free[index]--;
+	mblist_del(mhead, &mchunk1->list);
+	mhead->num_free[mclass]--;
 
 	offset = addr_to_offset(mhead, mchunk1);
-	index--;
-
-	mchunk2 = offset_to_addr(mhead, offset + (1 << index));
+	mclass--;
+	mchunk2 = offset_to_addr(mhead, offset + (1 << mclass));
 
 	/* set up smaller chunks */
-	mchunk1->flags = index;
-	mchunk2->flags = index;
+	mchunk1->flags = mclass;
+	mchunk2->flags = mclass;
 
-	mblock_list_add(mhead, &mhead->free_list[index], &mchunk1->list);
-	mhead->num_free[index]++;
+	mblist_add(mhead, &mhead->free_list[mclass], &mchunk1->list);
+	mhead->num_free[mclass]++;
 
-	mblock_list_add(mhead, &mhead->free_list[index], &mchunk2->list);
-	mhead->num_free[index]++;
+	mblist_add(mhead, &mhead->free_list[mclass], &mchunk2->list);
+	mhead->num_free[mclass]++;
 
 	return true;
 }
 
+/*
+ * mblock_alloc
+ *
+ * It allocate a memory chunk with the required size, and returns
+ * pointer of the user data. It shall be freeed using mblock_free().
+ * If no available chunk, it returns NULL.
+ */
 void *
 mblock_alloc(void *handle, size_t size)
 {
-	mblock_head	   *mhead = handle;
+	mblock_head	   *mhead = container_of(handle, mblock_head, super_block[0]);
 	mblock_chunk   *mchunk;
-	int				index;
+	mblock_list	   *list;
+	int				mclass;
 
-	index = fls_uint64(size + offset_of(mblock_chunk, data)- 1);
-	if (index > MBLOCK_MAX_BITS)
+	mclass = fls_uint64(size + offset_of(mblock_chunk, data)- 1);
+	if (mclass > MBLOCK_MAX_BITS)
 		return NULL;
-	if (index < MBLOCK_MIN_BITS)
-		index = MBLOCK_MIN_BITS;
-
-	pthread_mutex_lock(&mhead->lock);
+	if (mclass < MBLOCK_MIN_BITS)
+		mclass = MBLOCK_MIN_BITS;
 
 	/*
-	 * If freelist is empty, divide a larger chunk into two.
-	 * If unavailable anymore, we cannot allocate new chunks.
+	 * When freelist of mclass is empty, divide a larger chunk into
+	 * two. If unavailable anymore, we cannot allocate a new chunk.
 	 */
-	if (mblock_list_is_empty(mhead, &mhead->free_list[index]) &&
-		!mblock_divide_chunk(mhead, index + 1))
+	if (mblist_is_empty(mhead, &mhead->free_list[mclass]))
 	{
-		pthread_mutex_unlock(&mhead->lock);
-
-		return NULL;
+		if (!mblock_divide_chunk(mhead, mclass + 1))
+			return NULL;
 	}
-	assert(!mblock_list_is_empty(mhead, &mhead->free_list[index]));
+	assert(!mblist_is_empty(mhead, &mhead->free_list[mclass]));
 
-	mchunk = offset_to_addr(mhead, mhead->free_list[index].next);
-	assert(mchunk_index(mchunk) == index);
+	list = offset_to_addr(mhead, mhead->free_list[mclass].next);
+	mchunk = container_of(list, mblock_chunk, list);
+	assert(mchunk_get_class(mchunk) == mclass);
 
-	mblock_list_del(mhead, &mchunk->list);
-	mhead->num_free[index]--;
+	mblist_del(mhead, &mchunk->list);
+	mhead->num_free[mclass]--;
+	mhead->num_active[mclass]++;
 
-	mblock_list_add(mhead, &mhead->active_list[index], &mchunk->list);
-	mhead->num_active[index]++;
+	mchunk->flags |= MCHUNK_IS_ACTIVE;
 
-	mchunk->flags |= MCHUNK_FLAGS_ACTIVE;
-
-	pthread_mutex_unlock(&mhead->lock);
-
-	return mchunk->data;
+	return mchunk_get_data(mchunk);
 }
 
-void
-mblock_free(void *handle, void *ptr)
+/*
+ * mblock_free
+ *
+ * It release the given memory chunk, and chains to the free list.
+ * If we can consolidate two buddy chunks into one, it do that.
+ */
+void mblock_free(void *handle, void *ptr)
 {
-	mblock_head	   *mhead = handle;
+	mblock_head	   *mhead = container_of(handle, mblock_head, super_block[0]);
 	mblock_chunk   *mchunk = container_of(ptr, mblock_chunk, data);
 	mblock_chunk   *buddy;
 	uint64_t		offset = addr_to_offset(mhead, mchunk);
-	int				index = mchunk_index(mchunk);
+	int				mclass = mchunk_get_class(mchunk);
 
 	assert(offset > 0);
+	assert(mchunk_is_active(mchunk));
 
-	assert(mchunk_active(mchunk));
+	/* Mark it as a free mchunk */
+	mchunk->flags &= ~MCHUNK_IS_ACTIVE;
+	mhead->num_active[mclass]--;
 
-	pthread_mutex_lock(&mhead->lock);
-
-	/* Detach from the active list */
-	mblock_list_del(mhead, &mchunk->list);
-	mchunk->flags &= ~MCHUNK_FLAGS_ACTIVE;
-	mhead->num_active[index]--;
-
-	while (index < MBLOCK_MAX_BITS)
+	/*
+	 * If its buddy is also free, we consolidate them into one chunk.
+	 */
+	while (mclass < MBLOCK_MAX_BITS)
 	{
-		/* Is the buddy chunk also free? */
-		if (offset & (1 << index))
-		    buddy= offset_to_addr(mhead, offset & ~(1 << index));
+		if (offset & (1 << mclass))
+			buddy = offset_to_addr(mhead, offset & ~(1 << mclass));
 		else
-			buddy = offset_to_addr(mhead, offset | (1 << index));
+			buddy = offset_to_addr(mhead, offset | (1 << mclass));
 
-		/* Is it available to compound the two into one? */
-		if (mchunk_active(buddy) || mchunk_index(buddy) != index)
+		/* Is it available to consolidate the two chunks? */
+		if (mchunk_is_active(buddy) || mchunk_get_class(buddy) != mclass)
 			break;
 
-		/* If compoundable, also detach it from free list */
-		mblock_list_del(mhead, &buddy->list);
-		mhead->num_free[index]--;
+		/* If the buddy is also free, it is detached from the freelist */
+		mblist_del(mhead, &buddy->list);
+		mhead->num_free[mclass]--;
 
-		/* Compound two chunks into one */
-		index++;
-		offset &= ~((1 << index) - 1);
+		/* Do consolidation */
+		mclass++;
+		offset &= ~((1 << mclass) - 1);
 		mchunk = offset_to_addr(mhead, offset);
 
-		mchunk->flags = index;
+		mchunk->flags = mclass;
 	}
 
-	/* Add mchunk into free list */
-	mblock_list_add(mhead, &mhead->free_list[index], &mchunk->list);
-	mhead->num_free[index]++;
-
-	pthread_mutex_unlock(&mhead->lock);
+	/* Attach the mchunk into freelist */
+	mblist_add(mhead, &mhead->free_list[mclass], &mchunk->list);
+	mhead->num_free[mclass]++;
 }
 
+/*
+ * mblock_reset
+ *
+ * It initialize the given memory block. All the chunks are released, and
+ * chained to free list for the upcoming future request.
+ */
 void
 mblock_reset(void *handle)
 {
-	mblock_head	   *mhead = handle;
+	mblock_head	   *mhead = container_of(handle, mblock_head, super_block[0]);
 	mblock_chunk   *mchunk;
 	uint64_t		offset;
-	int				index;
+	int				mclass;
 
-	pthread_mutex_lock(&mhead->lock);
-
-	for (index = 0; index < MBLOCK_MAX_BITS + 1; index++)
+	for (mclass = 0; mclass <= MBLOCK_MAX_BITS; mclass++)
 	{
-		mblock_list_init(mhead, &mhead->free_list[index]);
-		mblock_list_init(mhead, &mhead->active_list[index]);
-		mhead->num_free[index] = 0;
-		mhead->num_active[index] = 0;
+		mblist_init(mhead, &mhead->free_list[mclass]);
+		mhead->num_free[mclass] = 0;
+		mhead->num_active[mclass] = 0;
 	}
 
 	/* adjust initial position */
 	for (offset = MBLOCK_MIN_SIZE;
 		 offset < sizeof(mblock_head);
 		 offset <<= 1);
+	offset = (1 << (fls_uint64(sizeof(mblock_head)) + 1));
 
-	while (mhead->segment_size - offset >= MBLOCK_MIN_SIZE)
+	while (mhead->block_size - offset >= MBLOCK_MIN_SIZE)
 	{
 		/* choose an appropriate chunk class */
-		index = ffs_uint64(offset) - 1;
-		assert(index >= MBLOCK_MIN_BITS);
+		mclass = ffs_uint64(offset) - 1;
+		assert(mclass >= MBLOCK_MIN_BITS);
 
 		/* truncate to maximum size */
-		if (index > MBLOCK_MAX_BITS)
-			index = MBLOCK_MAX_BITS;
+		if (mclass > MBLOCK_MAX_BITS)
+			mclass = MBLOCK_MAX_BITS;
 
 		/* if (offset + chunk_size) over the tail, truncate it */
-		while (mhead->segment_size < offset + (1 << index))
-			index--;
+		while (mhead->block_size < offset + (1 << mclass))
+			mclass--;
 
-		if (index < MBLOCK_MIN_BITS)
+		if (mclass < MBLOCK_MIN_BITS)
 			break;
 
 		/* chain a memory chunk to free list */
 		mchunk = offset_to_addr(mhead, offset);
-		mchunk->flags = index;
+		mchunk->flags = mclass;
 
-		mblock_list_add(mhead, &mhead->free_list[index], &mchunk->list);
-		mhead->num_free[index]++;
+		mblist_add(mhead, &mhead->free_list[mclass], &mchunk->list);
+		mhead->num_free[mclass]++;
 
-		offset += (1 << index);
+		offset += (1 << mclass);
 	}
-	pthread_mutex_unlock(&mhead->lock);
 }
 
-void
-mblock_dump(void *handle)
+/*
+ * mblock_dump
+ *
+ * It prints out current status of the memory block
+ */
+void mblock_dump(void *handle)
 {
-	mblock_head	   *mhead = handle;
+	mblock_head	   *mhead = container_of(handle, mblock_head, super_block[0]);
 	uint64_t		total_active = 0;
 	uint64_t		total_free = 0;
-	int				index;
+	int				mclass;
 
-	printf("segment_size: %" PRIu64 "\n", mhead->segment_size);
-	for (index = MBLOCK_MIN_BITS; index <= MBLOCK_MAX_BITS; index++)
+	printf("block_size: %" PRIu64 "\n", mhead->block_size);
+	for (mclass = MBLOCK_MIN_BITS; mclass <= MBLOCK_MAX_BITS; mclass++)
 	{
-		if ((1<<index) < 1024)
-			printf("%4ubyte: ", (1<<index));
-		else if ((1<<index) < 1024 * 1024)
-			printf("%6uKB: ", (1<<(index - 10)));
+		if ((1<<mclass) < 1024)
+			printf("%4ubyte: ", (1<<mclass));
+		else if ((1<<mclass) < 1024 * 1024)
+			printf("%6uKB: ", (1<<(mclass - 10)));
 		else
-			printf("%6uMB: ", (1<<(index - 20)));
+			printf("%6uMB: ", (1<<(mclass - 20)));
 
 		printf("%u of used, %u of free\n",
-			   mhead->num_active[index],
-			   mhead->num_free[index]);
+			   mhead->num_active[mclass],
+			   mhead->num_free[mclass]);
 
-		total_active += mhead->num_active[index] * (1 << index);
-		total_free += mhead->num_free[index] * (1 << index);
+		total_active += mhead->num_active[mclass] * (1 << mclass);
+		total_free += mhead->num_free[mclass] * (1 << mclass);
 	}
 
 	printf("total_active: %" PRIu64 "\n", total_active);
@@ -397,139 +453,87 @@ mblock_dump(void *handle)
 	printf("total: %" PRIu64 "\n", total_active + total_free);
 }
 
-void *
-mblock_init(int fdesc, size_t segment_size, bool debug,
-			bool (*callback_mchunk)(void *data, size_t size))
+/*
+ * mblock_addr_to_offset
+ *
+ * It translate a pointer of object on the memory block into offset value.
+ */
+uint64_t
+mblock_addr_to_offset(void *handle, void *addr)
 {
-	mblock_head	   *mhead;
-	mblock_chunk   *mchunk;
-	uint64_t		offset;
-	int				index;
+	mblock_head	   *mhead = container_of(handle, mblock_head, super_block[0]);
 
-	mhead = (mblock_head *) mmap(NULL, segment_size,
-								 PROT_READ | PROT_WRITE,
-								 fdesc < 0 ? MAP_ANONYMOUS | MAP_PRIVATE : MAP_SHARED,
-								 fdesc, 0);
+	return addr_to_offset(mhead, addr);
+}
+
+/*
+ * mblock_offset_to_addr
+ *
+ * It translate a offset value into a pointer of obejct on the memory block.
+ */
+void *
+mblock_offset_to_addr(void *handle, uint64_t offset)
+{
+	mblock_head	   *mhead = container_of(handle, mblock_head, super_block[0]);
+
+	return offset_to_addr(mhead, offset);
+}
+
+/*
+ * mblock_init
+ *
+ * It tries to acquire a memory block, and returns its handle.
+ * If @fdesc shows a valid file descriptor, it tries to map existing file.
+ * Elsewhere, it tries to map private memory and initialize it.
+ */
+void *
+mblock_init(int fdesc, size_t block_size, size_t super_size)
+{
+	mblock_head	   *mhead
+		= (mblock_head *) mmap(NULL, block_size,
+							   PROT_READ | PROT_WRITE,
+							   fdesc < 0 ? MAP_ANONYMOUS | MAP_PRIVATE : MAP_SHARED,
+							   fdesc, 0);
 	if (mhead == MAP_FAILED)
 		return NULL;
 
-	if (mhead->magic != MBLOCK_HEAD_MAGIC)
+	/*
+	 * If the given memory block is already initialized,
+	 * we run sanity check on the segment.
+	 */
+	if (strncmp(mhead->magic, MBLOCK_HEAD_MAGIC, 16) == 0)
 	{
-		/* construct memory block */
-		mhead->magic = MBLOCK_HEAD_MAGIC;
-		mhead->flags = 0;
-		mhead->segment_size = segment_size;
-
-		pthread_mutex_init(&mhead->lock, NULL);
-
-		mblock_reset(mhead);
+		if (mhead->block_size != block_size)
+		{
+			fprintf(stderr,
+					"Block size was mismatch (%" PRIu64 ", %" PRIu64 ")\n",
+					block_size, mhead->block_size);
+			goto error;
+		}
+		if (mhead->super_size < super_size)
+		{
+			fprintf(stderr,
+					"No available superblock (%" PRIu64 ", %" PRIu64 ")\n",
+					super_size, mhead->super_size);
+			goto error;
+		}
 	}
 	else
 	{
-		/* sanity checks */
-		uint32_t	num_free[MBLOCK_MAX_BITS + 1];
-		uint32_t	num_active[MBLOCK_MAX_BITS + 1];
-		uint64_t	total_free = 0;
-		uint64_t	total_active = 0;
+		strcpy(mhead->magic, MBLOCK_HEAD_MAGIC);
+		mhead->block_size = block_size;
+		mhead->super_size = super_size;
 
-		/*
-		 * XXX - we need check to prevent concurrent file using
-		 */
-		pthread_mutex_init(&mhead->lock, NULL);
-
-		if (mhead->segment_size != segment_size)
-		{
-			if (debug)
-				fprintf(stderr, "segment size mismatch (%lu, %lu)\n",
-						mhead->segment_size, segment_size);
-			goto error;
-		}
-
-		memset(num_free, 0, sizeof(num_free));
-		memset(num_active, 0, sizeof(num_active));
-
-		for (index = 0; index <= MBLOCK_MAX_BITS; index++)
-		{
-			size_t	size = (1 << index) - offset_of(mblock_chunk, data);
-
-			offset = mhead->free_list[index].next;
-			while (offset_to_addr(mhead, offset) != &mhead->free_list[index])
-			{
-				mchunk = container_of(offset_to_addr(mhead, offset),
-									  mblock_chunk, list);
-				if (mchunk_index(mchunk) != index)
-				{
-					if (debug)
-						fprintf(stderr, "unexpected chunk class (%d, %d)\n",
-								mchunk_index(mchunk), index);
-					goto error;
-				}
-				if (mchunk_active(mchunk))
-				{
-					if (debug)
-						fprintf(stderr, "active chunk in free list (0x%" PRIx64")\n", offset);
-					goto error;
-				}
-
-				total_free += (1 << index);
-				num_free[index]++;
-
-				offset = mchunk_next(mchunk);
-			}
-
-			offset = mhead->active_list[index].next;
-			while (offset_to_addr(mhead, offset) != &mhead->active_list[index])
-			{
-				mchunk = container_of(offset_to_addr(mhead, offset),
-									  mblock_chunk, list);
-				if (mchunk_index(mchunk) != index)
-				{
-					if (debug)
-						fprintf(stderr, "unexpected chunk class (%d, %d)\n",
-								mchunk_index(mchunk), index);
-					goto error;
-				}
-				if (!mchunk_active(mchunk))
-				{
-					if (debug)
-						fprintf(stderr, "free chunk in active list (0x%" PRIx64")\n", offset);
-					goto error;
-				}
-				if (callback_mchunk && !callback_mchunk(mchunk->data, size))
-				{
-					if (debug)
-						fprintf(stderr, "callback returned an error.\n");
-					goto error;
-				}
-				total_active += (1 << index);
-				num_active[index]++;
-
-				offset = mchunk_next(mchunk);
-			}
-			if (mhead->num_free[index] != num_free[index])
-			{
-				if (debug)
-					fprintf(stderr, "num of free chunk mismatch (class=%d, %u, %u)\n",
-							index, mhead->num_free[index], num_free[index]);
-				goto error;
-			}
-			if (mhead->num_active[index] != num_active[index])
-			{
-				if (debug)
-					fprintf(stderr, "num of active chunk mismatch (class=%d, %u, %u)\n",
-							index, mhead->num_active[index], num_active[index]);
-				goto error;
-			}
-		}
+		mblock_reset((void *)mhead->super_block);
 	}
-	return (void *)mhead;
+	return (void *)mhead->super_block;
 
 error:
-	munmap(mhead, segment_size);
+	munmap(mhead, block_size);
 	return NULL;
 }
 
-#if 0
+#if 1
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -562,34 +566,32 @@ int main(int argc, const char *argv[])
 		}
 	}
 
-	handle = mblock_init(fd, length, NULL);
+	handle = mblock_init(fd, length, 2048);
 	if (!handle)
 	{
 		fprintf(stderr, "failed to init mblock\n");
 		return 1;
 	}
 
-	mblock_stat(handle, buffer, sizeof(buffer));
-	puts(buffer);
+	mblock_dump(handle);
 
 	a = mblock_alloc(handle, 255);
 	b = mblock_alloc(handle, 256);
 	c = mblock_alloc(handle, 257);
 
-	mblock_stat(handle, buffer, sizeof(buffer));
-	puts(buffer);
+	mblock_dump(handle);
 
 	mblock_alloc(handle, 1);
 
-	mblock_stat(handle, buffer, sizeof(buffer));
-	puts(buffer);
+	mblock_dump(handle);
 
 	mblock_free(handle, a);
 	mblock_free(handle, b);
 	mblock_free(handle, c);
 
-	mblock_stat(handle, buffer, sizeof(buffer));
-	puts(buffer);
+	mblock_dump(handle);
+
+	printf("offset = %d\n", offset_of(mblock_chunk, data));
 
 	return 0;
 }
