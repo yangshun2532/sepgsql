@@ -740,7 +740,7 @@ mbtree_init(int fdesc, size_t block_size)
 	return mbsup;
 }
 
-#if 1
+#if 0
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
