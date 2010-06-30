@@ -533,7 +533,19 @@ error:
 	return NULL;
 }
 
-#if 1
+/*
+ * mblock_unmap
+ *
+ */
+void
+mblock_unmap(void *handle)
+{
+	mblock_head	   *mhead = container_of(handle, mblock_head, super_block[0]);
+
+	munmap(mhead, mhead->block_size);
+}
+
+#if 0
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>

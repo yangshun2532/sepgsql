@@ -8,8 +8,6 @@
 #ifndef SELINUX_ENGINE_H
 #define SELINUX_ENGINE_H
 
-#define TAG_MBTREE_NODE			0x01
-#define TAG_MBTREE_LEAF			0x02
 #define TAG_SELINUX_LABEL		0x03
 #define TAG_SELINUX_ITEM		0x04
 
@@ -18,18 +16,20 @@
  */
 typedef struct
 {
-	uint32_t	key;
+	/* internal pointer, don't touch! */
 	uint64_t	mnode;
 	int			index;
+
+	/* fetched key&item pair */
+	uint32_t	key;
+	uint64_t	item;
 } mbtree_scan;
 
-extern uint64_t mbtree_lookup(void *handle, void *mbroot,
-							  uint32_t key, mbtree_scan *scan);
-extern uint64_t mbtree_next(void *handle, mbtree_scan *scan);
-extern void mbtree_dump(void *handle, void *mbroot);
-extern bool mbtree_insert(void *handle, void *mbroot, uint32_t key, uint64_t item);
-extern bool mbtree_delete(void *handle, void *mbroot, uint32_t key, uint64_t item);
-extern void *mbtree_create(void *handle);
+extern bool mbtree_lookup(void *handle, uint32_t key, mbtree_scan *scan);
+extern void mbtree_dump(void *handle);
+extern bool mbtree_insert(void *handle, uint32_t key, uint64_t item);
+extern bool mbtree_delete(void *handle, uint32_t key, uint64_t item);
+extern void *mbtree_init(int fdesc, size_t block_size);
 
 /*
  * mblock.c - memory block management
@@ -41,5 +41,6 @@ extern void  mblock_free(void *handle, void *ptr);
 extern void  mblock_reset(void *handle);
 extern void  mblock_dump(void *handle);
 extern void *mblock_init(int fdesc, size_t block_size, size_t super_size);
+extern void  mblock_unmap(void *handle);
 
 #endif
