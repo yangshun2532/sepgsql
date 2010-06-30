@@ -17,7 +17,7 @@
 #include "memcached/engine.h"
 #include "selinux_engine.h"
 
-#define MBLOCK_MIN_BITS		7		/* 128byte */
+#define MBLOCK_MIN_BITS		6		/* 64byte */
 #define MBLOCK_MAX_BITS		25		/* 32MB */
 #define MBLOCK_MIN_SIZE		(1<<MBLOCK_MIN_BITS)
 #define MBLOCK_MAX_SIZE		(1<<MBLOCK_MAX_BITS)
@@ -46,7 +46,7 @@ typedef struct {
  */
 #define MBLOCK_HEAD_MAGIC	"MBLOCK_20100629"
 typedef struct {
-	uint8_t		magic[16];
+	char		magic[16];
 	uint64_t	block_size;		/* total size of the block */
 	uint64_t	super_size;		/* size of the super block */
 

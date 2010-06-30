@@ -32,6 +32,25 @@ extern bool mbtree_delete(void *handle, uint32_t key, uint64_t item);
 extern void *mbtree_init(int fdesc, size_t block_size);
 
 /*
+ * mhash.c - mmap based hash index
+ */
+typedef struct
+{
+	/* internal pointer, don't touch! */
+	uint64_t	entry;
+
+	/* fetched key&item pair */
+	uint32_t	key;
+	uint64_t	item;
+} mhash_scan;
+
+extern bool mhash_lookup(void *handle, uint32_t key, mhash_scan *scan);
+extern void mhash_dump(void *handle);
+extern bool mhash_insert(void *handle, uint32_t key, uint64_t item);
+extern bool mhash_delete(void *handle, uint32_t key, uint64_t item);
+extern void *mhash_init(int fdesc, size_t block_size);
+
+/*
  * mblock.c - memory block management
  */
 extern uint64_t mblock_addr_to_offset(void *handle, void *addr);

@@ -1,5 +1,5 @@
 # Installation
-PREFIX ?= $(DESTDIR)/usr
+PREFIX ?= $(DESTDIR)/usr/local/memcached
 LIBDIR ?= $(PREFIX)/lib
 INCLUDEDIR ?= $(PREFIX)/include
 
@@ -9,7 +9,7 @@ LIBRARIES ?= -lpthread -lselinux -laudit
 
 LIBSO = selinux_engine.so
 HEADERS = selinux_engine.h
-OBJS = mblock.o mbtree.o selinux_engine.o
+OBJS = mblock.o mbtree.o mhash.o selinux_engine.o
 
 all: $(LIBSO)
 
@@ -17,7 +17,7 @@ $(LIBSO): $(OBJS)
 	$(CC) $(CFLAGS) $(LDFLAGS) $(LIBRARIES) -shared -o $@ $^
 
 %.o: %.c $(HEADERS)
-	$(CC) $(CFLAGS) -I include -fPIC -c -o $@ $<
+	$(CC) $(CFLAGS) -I $(INCLUDEDIR) -fPIC -c -o $@ $<
 
 install:
 	test -d $(LIBDIR) || install -m 755 -d $(LIBDIR)
