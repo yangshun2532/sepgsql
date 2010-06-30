@@ -14,6 +14,20 @@
 
 #define MBTREE_NUM_KEYS		6	/* optimal size for 128B chunk */
 
+#define TAG_MBTREE_NODE			0x01
+#define TAG_MBTREE_LEAF			0x02
+
+/*
+ * A superblock structure of the mmap based B+ tree 
+ */
+typedef struct
+{
+	uint64_t	root;		/* offset of the root node */
+} mbtree_super;
+
+/*
+ * Node structure of the B+ tree
+ */
 typedef struct
 {
 	uint16_t	tag;		/* TAG_MBTREE_NODE or TAG_MBTREE_LEAF */
@@ -32,8 +46,15 @@ typedef struct
 	uint64_t	items[MBTREE_NUM_KEYS + 1];
 } mbtree_node;
 
+/*
+ * find_key_index
+ *
+ * It returns the index of a certain mbtree_node. The indexed key
+ * is equal or least which over the given key.
+ * (it never lower than the given key.)
+ */
 static int
-find_key_index(void *handle, mbtree_node *mnode, uint32_t key)
+find_key_index(mbtree_node *mnode, uint32_t key)
 {
 	int		min = 0;
 	int		max = mnode->nkeys;
@@ -57,10 +78,15 @@ find_key_index(void *handle, mbtree_node *mnode, uint32_t key)
 	return min;
 }
 
+/*
+ * find_item_index
+ *
+ * It returns the index which stores a certain child-node.
+ */
 static int
-find_item_index(void *handle, mbtree_node *pnode, mbtree_node *cnode)
+find_item_index(mbtree_super *mbsup, mbtree_node *pnode, mbtree_node *cnode)
 {
-	uint64_t	item = addr_to_offset(handle, cnode);
+	uint64_t	item = mblock_addr_to_offset(mbsup, cnode);
 	int			index;
 
 	assert(pnode->tag == TAG_MBTREE_NODE);
@@ -73,68 +99,90 @@ find_item_index(void *handle, mbtree_node *pnode, mbtree_node *cnode)
 }
 
 static void
-children_reparent(void *handle, mbtree_node *mnode, mbtree_node *pnode)
+children_reparent(mbtree_super *mbsup, mbtree_node *mnode, mbtree_node *pnode)
 {
-	uint64_t	new_upper = addr_to_offset(handle, pnode);
-	int			i;
+	uint64_t	new_upper = mblock_addr_to_offset(mbsup, pnode);
+	int			index;
 
-	for (i=0; i <= mnode->nkeys; i++)
+	for (index = 0; index <= mnode->nkeys; index++)
 	{
-		mbtree_node *cnode = offset_to_addr(handle, mnode->items[i]);
+		mbtree_node *cnode = mblock_offset_to_addr(mbsup, mnode->items[index]);
 
 		cnode->upper = new_upper;
 	}
 }
 
-uint64_t
-mbtree_lookup(void *handle, void *mbroot, uint32_t key, mbtree_scan *scan)
+/*
+ * mbtree_lookup
+ *
+ * It returns the item which matches with the given key.
+ */
+bool
+mbtree_lookup(void *handle, uint32_t key, mbtree_scan *scan)
 {
-	mbtree_node	   *mnode = mbroot;
+	mbtree_super   *mbsup = handle;
+	mbtree_node	   *mnode; // = mblock_offset_to_addr(mbsup, mbsup->root);
 	int				index;
 
-	while (mnode->tag == TAG_MBTREE_NODE)
+	if (scan->mnode == 0 || scan->key != key)
 	{
-		index = find_key_index(handle, mnode, key);
+		/*
+		 * If mbtree_scan is not under scanning, we try to
+		 * look up B+ tree from the root node.
+		 */
+		mnode = mblock_offset_to_addr(mbsup, mbsup->root);
 
-		mnode = offset_to_addr(handle, mnode->items[index]);
+		while (mnode->tag == TAG_MBTREE_NODE)
+		{
+			index = find_key_index(mnode, key);
+
+			mnode = mblock_offset_to_addr(mbsup, mnode->items[index]);
+		}
+		index = find_key_index(mnode, key);
+		if (mnode->keys[index] == key)
+		{
+			scan->mnode = mblock_addr_to_offset(mbsup, mnode);
+			scan->index = index;
+			scan->key = key;
+			scan->item = mnode->items[index];
+
+			return true;
+		}
 	}
-
-	index = find_key_index(handle, mnode, key);
-	if (mnode->keys[index] != key)
-		return 0;	/* not found */
-
-	if (scan)
+	else
 	{
-		scan->key = key;
-		scan->mnode = addr_to_offset(handle, mnode);
-		scan->index = index;
+		/*
+		 * If mbtree_scan is under scanning with a certain key,
+		 * we try to fetch the next item. If its key is not
+		 * matched, it returns false.
+		 */
+		mnode = mblock_offset_to_addr(mbsup, scan->mnode);
+		index = scan->index + 1;
+
+		if (mnode->nkeys == index)
+		{
+			mnode = mblock_offset_to_addr(mbsup, mnode->items[index]);
+			index = 0;
+		}
+		if (mnode->keys[index] == scan->key)
+		{
+			scan->mnode = mblock_addr_to_offset(mbsup, mnode);
+			scan->index = index;
+			scan->item = mnode->items[index];
+
+			return true;
+		}
 	}
-	return mnode->items[index];
+	return false;
 }
 
-uint64_t
-mbtree_next(void *handle, mbtree_scan *scan)
-{
-	mbtree_node	   *mnode = offset_to_addr(handle, scan->mnode);
-	int				index = scan->index + 1;
-
-	if (mnode->nkeys == index)
-	{
-		mnode = offset_to_addr(handle, mnode->items[index]);
-		index = 0;
-	}
-	if (mnode->keys[index] == scan->key)
-	{
-		scan->mnode = addr_to_offset(handle, mnode);
-		scan->index = index;
-		
-		return mnode->items[index];
-	}
-	return 0;
-}
-
+/*
+ * mbtree_dump
+ *
+ * print debug info
+ */
 static void
-mbtree_dump_node(void *handle, mbtree_node *mnode, int nestlv)
+mbtree_dump_node(mbtree_super *mbsup, mbtree_node *mnode, int nestlv)
 {
 	mbtree_node	   *cnode;
 	int				i;
@@ -142,7 +190,7 @@ mbtree_dump_node(void *handle, mbtree_node *mnode, int nestlv)
 	if (mnode->tag == TAG_MBTREE_LEAF)
 	{
 		printf("%*sleaf(0x%" PRIx64 ", nkeys=%d, upper=0x%" PRIx64 ") {\n", nestlv, "",
-			   addr_to_offset(handle, mnode), mnode->nkeys, mnode->upper);
+			   mblock_addr_to_offset(mbsup, mnode), mnode->nkeys, mnode->upper);
 		for (i=0; i < mnode->nkeys; i++)
 			printf("%*skey=%" PRIu32 ", value=%" PRIu64 "\n", nestlv + 2, "",
 				   mnode->keys[i], mnode->items[i]);
@@ -152,11 +200,11 @@ mbtree_dump_node(void *handle, mbtree_node *mnode, int nestlv)
 	else
 	{
 		printf("%*snode(0x%" PRIx64 ", nkeys=%d, upper=0x%" PRIx64 ") {\n", nestlv, "",
-			   addr_to_offset(handle, mnode), mnode->nkeys, mnode->upper);
+			   mblock_addr_to_offset(mbsup, mnode), mnode->nkeys, mnode->upper);
 		for (i=0; i <= mnode->nkeys; i++)
 		{
-			cnode = offset_to_addr(handle, mnode->items[i]);
-			mbtree_dump_node(handle, cnode, nestlv+2);
+			cnode = mblock_offset_to_addr(mbsup, mnode->items[i]);
+			mbtree_dump_node(mbsup, cnode, nestlv+2);
 
 			if (i < mnode->nkeys)
 				printf("%*s* key=%" PRIu32 "\n", nestlv + 2, "", mnode->keys[i]);
@@ -166,15 +214,21 @@ mbtree_dump_node(void *handle, mbtree_node *mnode, int nestlv)
 }
 
 void
-mbtree_dump(void *handle, void *mbroot)
+mbtree_dump(void *handle)
 {
-	mbtree_node	   *mnode = mbroot;
+	mbtree_super   *mbsup = handle;
+	mbtree_node	   *mnode = mblock_offset_to_addr(mbsup, mbsup->root);
 
-	mbtree_dump_node(handle, mnode, 0);
+	mbtree_dump_node(mbsup, mnode, 0);
 }
 
+/*
+ * mbtree_divide
+ *
+ * divide a certain node into two nodes.
+ */
 static bool
-mbtree_divide(void *handle, mbtree_node *mnode)
+mbtree_divide(mbtree_super *mbsup, mbtree_node *mnode)
 {
 	assert(mnode->nkeys == MBTREE_NUM_KEYS);
 
@@ -185,19 +239,19 @@ mbtree_divide(void *handle, mbtree_node *mnode)
 		uint32_t		pkey;
 		int				xsect;
 
-		lnode = mblock_alloc(handle, sizeof(mbtree_node));
+		lnode = mblock_alloc(mbsup, sizeof(mbtree_node));
 		if (!lnode)
 			return false;
 
-		rnode = mblock_alloc(handle, sizeof(mbtree_node));
+		rnode = mblock_alloc(mbsup, sizeof(mbtree_node));
 		if (!rnode)
 		{
-			mblock_free(handle, lnode);
+			mblock_free(mbsup, lnode);
 			return false;
 		}
 
 		lnode->tag = rnode->tag = mnode->tag;
-		lnode->upper = rnode->upper = addr_to_offset(handle, mnode);
+		lnode->upper = rnode->upper = mblock_addr_to_offset(mbsup, mnode);
 
 		xsect = mnode->nkeys / 2;
 		if (mnode->tag == TAG_MBTREE_LEAF)
@@ -208,7 +262,7 @@ mbtree_divide(void *handle, mbtree_node *mnode)
 			memcpy(lnode->items, mnode->items,
 				   sizeof(uint64_t) * xsect);
 			lnode->nkeys = xsect;
-			lnode->items[lnode->nkeys] = addr_to_offset(handle, rnode);
+			lnode->items[lnode->nkeys] = mblock_addr_to_offset(mbsup, rnode);
 
 			/* copy larger half to rnode */
 			memcpy(rnode->keys, mnode->keys + xsect,
@@ -228,7 +282,7 @@ mbtree_divide(void *handle, mbtree_node *mnode)
 			memcpy(lnode->items, mnode->items,
 				   sizeof(uint64_t) * (xsect + 1));
 			lnode->nkeys = xsect;
-			children_reparent(handle, lnode, lnode);
+			children_reparent(mbsup, lnode, lnode);
 
 			/* copy larger half to rnode */
 			memcpy(rnode->keys, mnode->keys + xsect + 1,
@@ -236,15 +290,15 @@ mbtree_divide(void *handle, mbtree_node *mnode)
 			memcpy(rnode->items, mnode->items + xsect + 1,
 				   sizeof(uint64_t) * (mnode->nkeys - xsect));
 			rnode->nkeys = mnode->nkeys - xsect - 1;
-			children_reparent(handle, rnode, rnode);
+			children_reparent(mbsup, rnode, rnode);
 			pkey = mnode->keys[xsect];
 		}
 		/* set up root node */
 		mnode->tag = TAG_MBTREE_NODE;
 		mnode->nkeys = 1;
 		mnode->keys[0] = pkey;
-		mnode->items[0] = addr_to_offset(handle, lnode);
-		mnode->items[1] = addr_to_offset(handle, rnode);
+		mnode->items[0] = mblock_addr_to_offset(mbsup, lnode);
+		mnode->items[1] = mblock_addr_to_offset(mbsup, rnode);
 	}
 	else
 	{
@@ -253,15 +307,22 @@ mbtree_divide(void *handle, mbtree_node *mnode)
 		uint32_t		pkey;
 		int				xsect, index;
 
-		pnode = offset_to_addr(handle, mnode->upper);
+		/*
+		 * In the case when non-root node, we need to make sure
+		 * the parent node has a slot to store the new node at
+		 * least. If the parent is also full, we recursively
+		 * divide the root node.
+		 * Note that @mnode might be reparented during the divide.
+		 */
+		pnode = mblock_offset_to_addr(mbsup, mnode->upper);
 		if (pnode->nkeys == MBTREE_NUM_KEYS)
 		{
-			if (!mbtree_divide(handle, pnode))
+			if (!mbtree_divide(mbsup, pnode))
 				return false;
-			/* memo: the parent might be moved */
-			pnode = offset_to_addr(handle, mnode->upper);
+			pnode = mblock_offset_to_addr(mbsup, mnode->upper);
 		}
-		nnode = mblock_alloc(handle, sizeof(mbtree_node));
+
+		nnode = mblock_alloc(mbsup, sizeof(mbtree_node));
 		if (!nnode)
 			return false;
 		nnode->tag = mnode->tag;
@@ -277,7 +338,7 @@ mbtree_divide(void *handle, mbtree_node *mnode)
 				   sizeof(uint64_t) * (mnode->nkeys - xsect + 1));
 			nnode->nkeys = mnode->nkeys - xsect;
 			mnode->nkeys = xsect;
-			mnode->items[xsect] = addr_to_offset(handle, nnode);
+			mnode->items[xsect] = mblock_addr_to_offset(mbsup, nnode);
 
 			pkey = mnode->keys[mnode->nkeys - 1];	/* key of the nnode */
 		}
@@ -291,50 +352,77 @@ mbtree_divide(void *handle, mbtree_node *mnode)
 			nnode->nkeys = mnode->nkeys - (xsect + 1);
 			mnode->nkeys = xsect;
 
-			children_reparent(handle, nnode, nnode);
+			children_reparent(mbsup, nnode, nnode);
 
 			pkey = mnode->keys[xsect];				/* key of the nnode */
 		}
 		/* insert nnode into pnode next to mnode */
-		index = find_item_index(handle, pnode, mnode);
+		index = find_item_index(mbsup, pnode, mnode);
 
 		memmove(pnode->keys + index + 1, pnode->keys + index,
 				sizeof(uint32_t) * (pnode->nkeys - index));
 		memmove(pnode->items + index + 2, pnode->items + index + 1,
 				sizeof(uint64_t) * (pnode->nkeys - index));
 		pnode->keys[index] = pkey;
-		pnode->items[index + 1] = addr_to_offset(handle, nnode);
+		pnode->items[index + 1] = mblock_addr_to_offset(mbsup, nnode);
 		pnode->nkeys++;
 	}
 	return true;
 }
 
+/*
+ * mbtree_insert
+ *
+ *
+ *
+ */
 bool
-mbtree_insert(void *handle, void *mbroot, uint32_t key, uint64_t item)
+mbtree_insert(void *handle, uint32_t key, uint64_t item)
 {
+	mbtree_super   *mbsup = handle;
 	mbtree_node	   *mnode;
-	int				index;
+	mbtree_node	   *tnode;
+	int				index, j;
 
 retry:
-	mnode = mbroot;
+	mnode = mblock_offset_to_addr(mbsup, mbsup->root);
 	while (mnode->tag == TAG_MBTREE_NODE)
 	{
-		index = find_key_index(handle, mnode, key);
+		index = find_key_index(mnode, key);
 
-		mnode = offset_to_addr(handle, mnode->items[index]);
+		mnode = mblock_offset_to_addr(mbsup, mnode->items[index]);
 	}
 	assert(mnode->tag == TAG_MBTREE_LEAF);
 
 	if (mnode->nkeys == MBTREE_NUM_KEYS)
 	{
-		if (!mbtree_divide(handle, mnode))
+		if (!mbtree_divide(mbsup, mnode))
 			return false;
+
 		goto retry;
 	}
+	index = find_key_index(mnode, key);
 
-	/* insert a key/item pair */
-	index = find_key_index(handle, mnode, key);
+	/*
+	 * Check duplication of the key/item pair
+	 */
+	j = index;
+	tnode = mnode;
+	while (j < tnode->nkeys && tnode->keys[j] == key)
+	{
+		if (tnode->items[j] == item)
+			return false;
 
+		if (++j == tnode->nkeys && tnode->items[j] != 0)
+		{
+			tnode = mblock_offset_to_addr(mbsup, tnode->items[j]);
+			j = 0;
+		}
+	}
+
+	/*
+	 * Insert a key/item pair
+	 */
 	memmove(mnode->keys + index + 1, mnode->keys + index,
 			sizeof(uint32_t) * (mnode->nkeys - index));
 	memmove(mnode->items + index + 1, mnode->items + index,
@@ -346,8 +434,14 @@ retry:
 	return true;
 }
 
+/*
+ * mbtree_merge
+ *
+ *
+ *
+ */
 static void
-mbtree_merge(void *handle, mbtree_node *mnode)
+mbtree_merge(mbtree_super *mbsup, mbtree_node *mnode)
 {
 	mbtree_node	   *pnode;
 	mbtree_node	   *cnode;
@@ -357,45 +451,48 @@ mbtree_merge(void *handle, mbtree_node *mnode)
 
 	if (mnode->nkeys > MBTREE_NUM_KEYS / 2)
 		return;
+
+	/*
+	 * If the root node has only one node (not a leaf), it tries to
+	 * use the child as a new root to reduce unnecessary depth of
+	 * the B+ tree.
+	 */
 	if (mnode->nkeys == 0 && mnode->tag == TAG_MBTREE_NODE)
 	{
 		/* only happen on root node */
 		assert(mnode->upper == 0);
+		assert(mbsup->root == mblock_addr_to_offset(mbsup, mnode));
 
-		printf("try to pull up mnode->item[0] = 0x%lx\n", mnode->items[0]);
+		cnode = mblock_offset_to_addr(mbsup, mnode->items[0]);
+		cnode->upper = 0;
+		mbsup->root = mblock_addr_to_offset(mbsup, cnode);
 
-		cnode = offset_to_addr(handle, mnode->items[0]);
+		mblock_free(mbsup, mnode);
 
-		printf("cnode->nkeys = %d\n", cnode->nkeys);
-
-		memcpy(mnode->keys, cnode->keys,
-			   sizeof(uint32_t) * cnode->nkeys);
-		memcpy(mnode->items, cnode->items,
-			   sizeof(uint64_t) * (cnode->nkeys + 1));
-		mnode->nkeys = cnode->nkeys;
-		mnode->tag = cnode->tag;
-
-		if (mnode->tag == TAG_MBTREE_NODE)
-			children_reparent(handle, mnode, mnode);
-
-		mblock_free(handle, cnode);
+		return;
 	}
 	if (mnode->upper == 0)
 		return;
 
-	pnode = offset_to_addr(handle, mnode->upper);
-	index = find_item_index(handle, pnode, mnode);
+	/*
+	 * Select two nodes to be merged. If @mnode is on the edge
+	 * of parent node, no options for its buddy. If @mnode has
+	 * buddies on left/right side, it prefer to merge with the
+	 * node which has smaller number of elements.
+	 */
+	pnode = mblock_offset_to_addr(mbsup, mnode->upper);
+	index = find_item_index(mbsup, pnode, mnode);
 	if (index == pnode->nkeys)
 		index--;
 	else if (index > 0)
 	{
-		lnode = offset_to_addr(handle, pnode->items[index - 1]);
-		rnode = offset_to_addr(handle, pnode->items[index + 1]);
+		lnode = mblock_offset_to_addr(mbsup, pnode->items[index - 1]);
+		rnode = mblock_offset_to_addr(mbsup, pnode->items[index + 1]);
 		if (lnode->nkeys < rnode->nkeys)
 			index--;
 	}
-	lnode = offset_to_addr(handle, pnode->items[index]);
-	rnode = offset_to_addr(handle, pnode->items[index + 1]);
+	lnode = mblock_offset_to_addr(mbsup, pnode->items[index]);
+	rnode = mblock_offset_to_addr(mbsup, pnode->items[index + 1]);
 	assert(lnode->tag == rnode->tag);
 
 	if (lnode->tag == TAG_MBTREE_LEAF)
@@ -409,7 +506,7 @@ mbtree_merge(void *handle, mbtree_node *mnode)
 				   sizeof(uint64_t) * (rnode->nkeys + 1));
 			lnode->nkeys += rnode->nkeys;
 
-			mblock_free(handle, rnode);
+			mblock_free(mbsup, rnode);
 
 			/* Remove rnode from pnode */
 			memmove(pnode->keys + index, pnode->keys + index + 1,
@@ -434,7 +531,7 @@ mbtree_merge(void *handle, mbtree_node *mnode)
 						sizeof(uint64_t) * nmove);
 				rnode->nkeys += nmove;
 				lnode->nkeys -= nmove;
-				lnode->items[lnode->nkeys] = addr_to_offset(handle, rnode);
+				lnode->items[lnode->nkeys] = mblock_addr_to_offset(mbsup, rnode);
 
 				pnode->keys[index] = lnode->keys[lnode->nkeys - 1];
 			}
@@ -455,7 +552,7 @@ mbtree_merge(void *handle, mbtree_node *mnode)
 						sizeof(uint64_t) * (rnode->nkeys - nmove + 1));
 				lnode->nkeys += nmove;
 				rnode->nkeys -= nmove;
-				lnode->items[lnode->nkeys] = addr_to_offset(handle, rnode);
+				lnode->items[lnode->nkeys] = mblock_addr_to_offset(mbsup, rnode);
 
 				pnode->keys[index] = lnode->keys[lnode->nkeys - 1];
 			}
@@ -473,7 +570,7 @@ mbtree_merge(void *handle, mbtree_node *mnode)
 				   sizeof(uint64_t) * (rnode->nkeys + 1));
 			lnode->nkeys += rnode->nkeys + 1;
 
-			mblock_free(handle, rnode);
+			mblock_free(mbsup, rnode);
 
 			/* Remove rnode from pnode */
 			memmove(pnode->keys + index + 1, pnode->keys + index + 2,
@@ -482,7 +579,7 @@ mbtree_merge(void *handle, mbtree_node *mnode)
 					sizeof(uint64_t) * (pnode->nkeys - index));
 			pnode->nkeys--;
 
-			children_reparent(handle, lnode, lnode);
+			children_reparent(mbsup, lnode, lnode);
 		}
 		else if (lnode->nkeys > rnode->nkeys)
 		{
@@ -503,7 +600,7 @@ mbtree_merge(void *handle, mbtree_node *mnode)
 				rnode->nkeys += nmove;
 				lnode->nkeys -= nmove;
 
-				children_reparent(handle, rnode, rnode);
+				children_reparent(mbsup, rnode, rnode);
 			}
 		}
 		else
@@ -526,42 +623,47 @@ mbtree_merge(void *handle, mbtree_node *mnode)
 				lnode->nkeys += nmove;
 				rnode->nkeys -= nmove;
 
-				children_reparent(handle, lnode, lnode);
+				children_reparent(mbsup, lnode, lnode);
 			}
 		}
 	}
 }
 
-bool
-mbtree_delete(void *handle, void *mbroot, uint32_t key, uint64_t item)
+/*
+ * mbtree_delete
+ *
+ * It tries to delete the specified key/item pair.
+ */
+static bool
+mbtree_delete_internal(mbtree_super *mbsup, mbtree_node *mnode,
+					   uint32_t key, uint64_t item)
 {
-	mbtree_node	   *mnode = mbroot;
 	mbtree_node	   *cnode;
 	int				index;
 
-	if (mnode->nkeys == 0)
-	{
-		/* only happen when root node */
-		assert(mnode->upper == 0);
-		return false;
-	}
+	/*
+	 * If @mnode is node, we walk down into next level recursively.
+	 * In the result, if it can causes the node merging, we try to
+	 * merge two nodes.
+	 */
 	if (mnode->tag == TAG_MBTREE_NODE)
 	{
-		index = find_key_index(handle, mnode, key);
+		index = find_key_index(mnode, key);
 
-		cnode = offset_to_addr(handle, mnode->items[index]);
+		cnode = mblock_offset_to_addr(mbsup, mnode->items[index]);
 
-		if (!mbtree_delete(handle, cnode, key, item))
+		if (!mbtree_delete_internal(mbsup, cnode, key, item))
 			return false;
 
-		mbtree_merge(handle, mnode);
+		mbtree_merge(mbsup, mnode);
 
 		return true;
 	}
+
 	/*
 	 * Leaf node to be removed
 	 */
-	index = find_key_index(handle, mnode, key);
+	index = find_key_index(mnode, key);
 	while (mnode->keys[index] == key)
 	{
 		/* remove an item */
@@ -573,7 +675,7 @@ mbtree_delete(void *handle, void *mbroot, uint32_t key, uint64_t item)
 					sizeof(uint64_t) * (mnode->nkeys - index));
 			mnode->nkeys--;
 
-			mbtree_merge(handle, mnode);
+			mbtree_merge(mbsup, mnode);
 
 			return true;
 		}
@@ -582,28 +684,60 @@ mbtree_delete(void *handle, void *mbroot, uint32_t key, uint64_t item)
 			if (mnode->items[mnode->nkeys] == 0)
 				break;
 
-			mnode = offset_to_addr(handle, mnode->items[mnode->nkeys]);
+			mnode = mblock_offset_to_addr(mbsup, mnode->items[mnode->nkeys]);
 			index = 0;
 		}
 	}
 	return false;	/* not found */
 }
 
-void *
-mbtree_create(void *handle)
+bool
+mbtree_delete(void *handle, uint32_t key, uint64_t item)
 {
-	mbtree_node	   *mbroot = mblock_alloc(handle, sizeof(mbtree_node));
+	mbtree_super   *mbsup = handle;
+	mbtree_node	   *mnode = mblock_offset_to_addr(mbsup, mbsup->root);
 
-	if (!mbroot)
+	if (mnode->nkeys == 0)
+	{
+		/* only happen when root node */
+		assert(mnode->upper == 0);
+		return false;
+	}
+	return mbtree_delete_internal(mbsup, mnode, key, item);
+}
+
+/*
+ * mbtree_create
+ *
+ *
+ */
+void *
+mbtree_init(int fdesc, size_t block_size)
+{
+	mbtree_super   *mbsup;
+	mbtree_node	   *mnode;
+
+	mbsup = mblock_init(fdesc, block_size, sizeof(mbtree_super));
+	if (!mbsup)
 		return NULL;
 
-	mbroot->tag = TAG_MBTREE_LEAF;
-	mbroot->nkeys = 0;
-	mbroot->upper = 0;
-	memset(mbroot->keys, 0, sizeof(mbroot->keys));
-	memset(mbroot->items, 0, sizeof(mbroot->items));
+	if (mbsup->root == 0)
+	{
+		mnode = mblock_alloc(mbsup, sizeof(mbtree_node));
+		if (!mnode)
+		{
+			mblock_unmap(mbsup);
+			return NULL;
+		}
+		mnode->tag = TAG_MBTREE_LEAF;
+		mnode->nkeys = 0;
+		mnode->upper = 0;
+		memset(mnode->keys, 0, sizeof(mnode->keys));
+		memset(mnode->items, 0, sizeof(mnode->items));
 
-	return mbroot;
+		mbsup->root = mblock_addr_to_offset(mbsup, mnode);
+	}
+	return mbsup;
 }
 
 #if 1
@@ -650,30 +784,26 @@ int main(int argc, const char *argv[])
 		return 1;
 	}
 
-	handle =  mblock_init(fd, stbuf.st_size, true, mbtree_cb);
+	handle = mbtree_init(fd, stbuf.st_size);
 	if (!handle)
 	{
 		printf("failed to init mblock\n");
 		return 1;
 	}
 
-	if (!mbroot)
-		mbroot = mbtree_create(handle);
-
 	if (argc == 4 && strcmp(argv[2], "get") == 0)
 	{
 		mbtree_scan	scan;
 		uint32_t	key;
-		uint64_t	item;
 
 		key = atol(argv[3]);
-		item = mbtree_lookup(handle, mbroot, key, &scan);
-		while (item != 0)
+		memset(&scan, 0, sizeof(scan));
+		while (mbtree_lookup(handle, key, &scan))
 		{
-			printf("==> GET key=%" PRIu32 " value=%" PRIu64 "\n", key, item);
-			item = mbtree_next(handle, &scan);
+			printf("==> GET key=%" PRIu32 " value=%" PRIu64 "\n",
+				   scan.key, scan.item);
 		}
-		mbtree_dump(handle, mbroot);
+		mbtree_dump(handle);
 		return 0;
 	}
 	else if (argc == 5 && strcmp(argv[2], "ins") == 0)
@@ -682,12 +812,12 @@ int main(int argc, const char *argv[])
 		item = atoll(argv[4]);
 
 		printf("==> INSERT (key=%" PRIu32 ", value=%" PRIu64 ")\n", key, item);
-		if (!mbtree_insert(handle, mbroot, key, item))
+		if (!mbtree_insert(handle, key, item))
 		{
 			printf("failed to mbtree_insert\n");
 			return 1;
 		}
-		mbtree_dump(handle, mbroot);
+		mbtree_dump(handle);
 		mblock_dump(handle);
 		return 0;
 	}
@@ -697,12 +827,13 @@ int main(int argc, const char *argv[])
         item = atoll(argv[4]);
 
 		printf("==> DELETE (key=%" PRIu32 ", value=%" PRIu64 ")\n", key, item);
-		if (!mbtree_delete(handle, mbroot, key, item))
+		if (!mbtree_delete(handle, key, item))
 		{
 			printf("failed to mbtree_delete\n");
 			return 1;
 		}
-		mbtree_dump(handle, mbroot);
+		mbtree_dump(handle);
+		mblock_dump(handle);
 		return 0;
 	}
 
