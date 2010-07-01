@@ -10,7 +10,7 @@
 #include <string.h>
 
 #include "memcached/engine.h"
-#include "selinux_engine.h"
+#include "memcached_selinux.h"
 
 #define MHASH_INIT_SIZE		31
 

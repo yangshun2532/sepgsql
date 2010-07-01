@@ -10,7 +10,7 @@
 #include <string.h>
 
 #include "memcached/engine.h"
-#include "selinux_engine.h"
+#include "memcached_selinux.h"
 
 #define MBTREE_NUM_KEYS		6	/* optimal size for 128B chunk */
 
