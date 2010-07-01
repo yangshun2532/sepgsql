@@ -15,7 +15,7 @@
 #include <time.h>
 
 #include "memcached/engine.h"
-#include "selinux_engine.h"
+#include "memcached_selinux.h"
 
 #define MBLOCK_MIN_BITS		6		/* 64byte */
 #define MBLOCK_MAX_BITS		25		/* 32MB */
