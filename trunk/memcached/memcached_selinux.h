@@ -48,6 +48,7 @@ typedef struct {
 #define MBTREE_NUM_KEYS		7
 			uint64_t	parent;
 			uint8_t		is_leaf;
+			uint16_t	nkeys;	
 			uint32_t	keys[MBTREE_NUM_KEYS];
 			uint64_t	items[MBTREE_NUM_KEYS + 1];
 		} btree;
@@ -58,6 +59,48 @@ typedef struct {
 		} label;
 	};
 } mchunk_t;
+
+/*
+ * mbhead_t
+ *
+ * header structure of the memory block
+ */
+#define MBLOCK_MAGIC_STRING		"@MBLOCK_20100702"
+#define MBLOCK_MIN_BITS			7	/* 128byte */
+#define MBLOCK_MAX_BITS			25	/* 32MB */
+#define MBLOCK_MIN_SIZE			(1<<MBLOCK_MIN_BITS)
+#define MBLOCK_MAX_SIZE			(1<<MBLOCK_MAX_BITS)
+
+typedef struct {
+	char		magic[16];
+	uint64_t	block_size;
+	uint64_t	super_size;
+	mlist_t		free_list[MBLOCK_MAX_BITS];
+	uint32_t	num_free[MBLOCK_MAX_BITS];
+	uint32_t	num_active[MBLOCK_MAX_BITS];
+	uint8_t		super_block[0];
+} mhead_t;
+
+#define offset_to_addr(mhead,offset)				\
+	((offset)==0 ? NULL : ((void *)((unsigned long)(mhead) + (offset))))
+#define addr_to_offset(mhead,addr)					\
+	(!(addr) ? 0 : ((uint64_t)((unsigned long)(addr) - (unsigned long)(mhead))))
+#define offset_of(type, member)						\
+	((unsigned long) &((type *)0)->member)
+#define container_of(ptr, type, member)				\
+	(type *)(((char *)ptr) - offset_of(type, member))
+
+static inline uint16_t
+mchunk_magic(mhead_t *mhead, mchunk_t *mchunk)
+{
+	uint64_t	magic = addr_to_offset(mhead,mchunk) >> MBLOCK_MIN_BITS;
+
+	magic ^= (magic >> 16);
+	magic ^= (mchunk->mclass << 4);
+	magic ^= (mchunk->tag) | (mchunk->tag << 8);
+
+	return (magic ^ 0xa55a) & 0xffff;
+}
 
 /*
  * mbtree.c - mmap based B-plus tree index
@@ -73,106 +116,21 @@ typedef struct
 	uint64_t	item;
 } mbtree_scan;
 
-extern bool  mbtree_lookup(void *handle, uint32_t key, mbtree_scan *scan);
-extern void  mbtree_dump(void *handle);
-extern bool  mbtree_insert(void *handle, uint32_t key, uint64_t item);
-extern bool  mbtree_delete(void *handle, uint32_t key, uint64_t item);
-extern void *mbtree_init(int fdesc, size_t block_size);
+extern bool     mbtree_lookup(mhead_t *mhead, uint32_t key, mbtree_scan *scan);
+extern bool     mbtree_insert(mhead_t *mhead, uint32_t key, uint64_t item);
+extern bool     mbtree_delete(mhead_t *mhead, uint32_t key, uint64_t item);
+extern void     mbtree_dump(mhead_t *mhead);
+extern mhead_t *mbtree_open(int fdesc, size_t block_size);
+extern void     mbtree_close(mhead_t *mhead);
 
 /*
  * mblock.c - memory block management
  */
-extern mchunk_t *mblock_alloc(void *handle, uint8_t tag, size_t size);
-extern void      mblock_free(void *handle, mchunk_t *mchunk);
-extern void      mblock_dump(void *handle);
-extern void      mblock_reset(void *handle);
-extern void     *mblock_map(int fdesc, size_t block_size, size_t super_size);
-extern void      mblock_unmap(void *handle);
-
-/*
- * ffs64 - returns first (smallest) bit of the value
- */
-static inline int
-ffs64(uint64_t value)
-{
-	int		ret = 1;
-
-	if (!value)
-		return 0;
-	if (!(value & 0xffffffff))
-	{
-		value >>= 32;
-		ret += 32;
-	}
-	if (!(value & 0x0000ffff))
-	{
-		value >>= 16;
-		ret += 16;
-	}
-	if (!(value & 0x000000ff))
-	{
-		value >>= 8;
-		ret += 8;
-	}
-	if (!(value & 0x0000000f))
-	{
-		value >>= 4;
-		ret += 4;
-	}
-	if (!(value & 0x00000003))
-	{
-		value >>= 2;
-		ret += 2;
-	}
-	if (!(value & 0x00000001))
-	{
-		value >>= 1;
-		ret += 1;
-	}
-	return ret;
-}
-
-/*
- * fls64 - returns last (biggest) bit of the value
- */
-static inline int
-fls64(uint64_t value)
-{
-	int		ret = 1;
-
-	if (!value)
-		return 0;
-	if (value & 0xffffffff00000000)
-	{
-		value >>= 32;
-		ret += 32;
-	}
-	if (value & 0xffff0000)
-	{
-		value >>= 16;
-		ret += 16;
-	}
-	if (value & 0xff00)
-	{
-		value >>= 8;
-		ret += 8;
-	}
-	if (value & 0xf0)
-	{
-		value >>= 4;
-		ret += 4;
-	}
-	if (value & 0xc)
-	{
-		value >>= 2;
-		ret += 2;
-	}
-	if (value & 0x2)
-	{
-		value >>= 1;
-		ret += 1;
-	}
-	return ret;
-}
+extern mchunk_t *mblock_alloc(mhead_t *mhead, uint8_t tag, size_t size);
+extern void      mblock_free(mhead_t *mhead, mchunk_t *mchunk);
+extern void      mblock_dump(mhead_t *mhead);
+extern void      mblock_reset(mhead_t *mhead);
+extern mhead_t  *mblock_map(int fdesc, size_t block_size, size_t super_size);
+extern void      mblock_unmap(mhead_t *mhead);
 
 #endif

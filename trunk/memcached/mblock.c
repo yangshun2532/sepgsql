@@ -11,46 +11,6 @@
 #include "memcached/engine.h"
 #include "memcached_selinux.h"
 
-/*
- * mbhead_t
- *
- * header structure of the memory block
- */
-#define MBLOCK_MAGIC_STRING		"@MBLOCK_20100702"
-#define MBLOCK_MIN_BITS			7	/* 128byte */
-#define MBLOCK_MAX_BITS			25	/* 32MB */
-#define MBLOCK_MIN_SIZE			(1<<MBLOCK_MIN_BITS)
-#define MBLOCK_MAX_SIZE			(1<<MBLOCK_MAX_BITS)
-
-typedef struct {
-	char		magic[16];
-	uint64_t	block_size;
-	uint64_t	super_size;
-	mlist_t		free_list[MBLOCK_MAX_BITS];
-	uint8_t		super_block[0];
-} mhead_t;
-
-#define offset_to_addr(mhead,offset)				\
-	((void *)((unsigned long)(mhead) + (offset)))
-#define addr_to_offset(mhead,addr)					\
-	((uint64_t)((unsigned long)(addr) - (unsigned long)(mhead)))
-#define offset_of(type, member)						\
-	((unsigned long) &((type *)0)->member)
-#define container_of(ptr, type, member)				\
-	(type *)(((char *)ptr) - offset_of(type, member))
-
-static uint16_t
-mchunk_magic(mhead_t *mhead, mchunk_t *mchunk)
-{
-	uint64_t	magic = addr_to_offset(mhead,mchunk) >> MBLOCK_MIN_BITS;
-
-	magic ^= (magic >> 16);
-	magic ^= (mchunk->mclass << 4);
-	magic ^= (mchunk->tag) | (mchunk->tag << 8);
-
-	return (magic ^ 0xa55a) & 0xffff;
-}
-
 static bool
 mlist_empty(mhead_t *mhead, mlist_t *list)
 {
@@ -86,6 +46,92 @@ mlist_del(mhead_t *mhead, mlist_t *list)
 	list->prev = list->next = addr_to_offset(mhead, list);
 }
 
+/*
+ * ffs64 - returns first (smallest) bit of the value
+ */
+static int
+ffs64(uint64_t value)
+{
+	int		ret = 1;
+
+	if (!value)
+		return 0;
+	if (!(value & 0xffffffff))
+	{
+		value >>= 32;
+		ret += 32;
+	}
+	if (!(value & 0x0000ffff))
+	{
+		value >>= 16;
+		ret += 16;
+	}
+	if (!(value & 0x000000ff))
+	{
+		value >>= 8;
+		ret += 8;
+	}
+	if (!(value & 0x0000000f))
+	{
+		value >>= 4;
+		ret += 4;
+	}
+	if (!(value & 0x00000003))
+	{
+		value >>= 2;
+		ret += 2;
+	}
+	if (!(value & 0x00000001))
+	{
+		value >>= 1;
+		ret += 1;
+	}
+	return ret;
+}
+
+/*
+ * fls64 - returns last (biggest) bit of the value
+ */
+static int
+fls64(uint64_t value)
+{
+	int		ret = 1;
+
+	if (!value)
+		return 0;
+	if (value & 0xffffffff00000000)
+	{
+		value >>= 32;
+		ret += 32;
+	}
+	if (value & 0xffff0000)
+	{
+		value >>= 16;
+		ret += 16;
+	}
+	if (value & 0xff00)
+	{
+		value >>= 8;
+		ret += 8;
+	}
+	if (value & 0xf0)
+	{
+		value >>= 4;
+		ret += 4;
+	}
+	if (value & 0xc)
+	{
+		value >>= 2;
+		ret += 2;
+	}
+	if (value & 0x2)
+	{
+		value >>= 1;
+		ret += 1;
+	}
+	return ret;
+}
+
 static bool
 mblock_split_chunk(mhead_t *mhead, int mclass)
 {
@@ -108,6 +154,7 @@ mblock_split_chunk(mhead_t *mhead, int mclass)
 	assert(mchunk1->mclass == mclass);
 
 	mlist_del(mhead, &mchunk1->free.list);
+	mhead->num_free[mclass]--;
 
 	offset = addr_to_offset(mhead, mchunk1);
 	mclass--;
@@ -119,15 +166,16 @@ mblock_split_chunk(mhead_t *mhead, int mclass)
 	mchunk2->magic = mchunk_magic(mhead,mchunk2);
 
 	mlist_add(mhead, &mhead->free_list[mclass], &mchunk1->free.list);
+	mhead->num_active[mclass]++;
 	mlist_add(mhead, &mhead->free_list[mclass], &mchunk2->free.list);
+	mhead->num_active[mclass]++;
 
 	return true;
 }
 
 mchunk_t *
-mblock_alloc(void *handle, uint8_t tag, size_t size)
+mblock_alloc(mhead_t *mhead, uint8_t tag, size_t size)
 {
-	mhead_t	   *mhead = container_of(handle, mhead_t, super_block[0]);
 	mchunk_t   *mchunk;
 	mlist_t    *list;
 	uint64_t	offset;
@@ -156,6 +204,8 @@ mblock_alloc(void *handle, uint8_t tag, size_t size)
 	assert(mchunk->mclass == mclass);
 
 	mlist_del(mhead, &mchunk->free.list);
+	mhead->num_free[mclass]--;
+	mhead->num_active[mclass]++;
 
 	mchunk->mclass = mclass;
 	mchunk->tag = tag;
@@ -165,14 +215,15 @@ mblock_alloc(void *handle, uint8_t tag, size_t size)
 }
 
 void
-mblock_free(void *handle, mchunk_t *mchunk)
+mblock_free(mhead_t *mhead, mchunk_t *mchunk)
 {
-	mhead_t	   *mhead = container_of(handle, mhead_t, super_block[0]);
 	mchunk_t   *buddy;
 	uint64_t	offset;
 	int			mclass = mchunk->mclass;
 
 	assert(mchunk->tag != MCHUNK_TAG_FREE);
+	mchunk->tag = MCHUNK_TAG_FREE;
+	mhead->num_active[mclass--];
 
 	/*
 	 * If its buddy is also free, we consolidate them into one.
@@ -192,6 +243,7 @@ mblock_free(void *handle, mchunk_t *mchunk)
 			break;
 
 		mlist_del(mhead, &buddy->free.list);
+		mhead->num_free[mclass]--;
 
 		mclass++;
 		offset &= ~((1 << mclass) - 1);
@@ -205,12 +257,12 @@ mblock_free(void *handle, mchunk_t *mchunk)
 	 * Attach this mchunk on the freelist[mclass]
 	 */
 	mlist_add(mhead, &mhead->free_list[mclass], &mchunk->free.list);
+	mhead->num_free[mclass]--;
 }
 
 void
-mblock_reset(void *handle)
+mblock_reset(mhead_t *mhead)
 {
-	mhead_t	   *mhead = container_of(handle, mhead_t, super_block[0]);
 	mchunk_t   *mchunk;
 	uint64_t	offset;
 	int			mclass;
@@ -218,6 +270,8 @@ mblock_reset(void *handle)
 	for (mclass = 0; mclass <= MBLOCK_MAX_BITS; mclass++)
 	{
 		mlist_init(mhead, &mhead->free_list[mclass]);
+		mhead->num_free[mclass] = 0;
+		mhead->num_active[mclass] = 0;
 	}
 
 	offset = (1 << (fls64(sizeof(mhead_t) + mhead->super_size) + 1));
@@ -244,18 +298,51 @@ mblock_reset(void *handle)
 
 		mlist_add(mhead, &mhead->free_list[mclass], &mchunk->free.list);
 
+		num_free[mclass]++;
+
 		offset += (1 << mclass);
 	}
 }
 
-void *
+void
+mblock_dump(mhead_t *mhead)
+{
+	uint64_t	total_active = 0;
+	uint64_t	total_free = 0;
+	int			mclass;
+
+	printf("block_size: %" PRIu64 "\n", mhead->block_size);
+	for (mclass = MBLOCK_MIN_BITS; mclass <= MBLOCK_MAX_BITS; mclass++)
+	{
+		if ((1<<mclass) < 1024)
+			printf("%4ubyte: ", (1<<mclass));
+		else if ((1<<mclass) < 1024 * 1024)
+			printf("%6uKB: ", (1<<(mclass - 10)));
+		else
+			printf("%6uMB: ", (1<<(mclass - 20)));
+
+		printf("%u of used, %u of free\n",
+			   mhead->num_active[mclass],
+			   mhead->num_free[mclass]);
+
+		total_active += mhead->num_active[mclass] * (1 << mclass);
+		total_free += mhead->num_free[mclass] * (1 << mclass);
+	}
+
+	printf("total_active: %" PRIu64 "\n", total_active);
+	printf("total_free: %" PRIu64 "\n", total_free);
+	printf("total: %" PRIu64 "\n", total_active + total_free);
+}
+
+mheat_t *
 mblock_map(int fdesc, size_t block_size, size_t super_size)
 {
-	mhead_t	   *mhead =
-		(mhead_t *)mmap(NULL, block_size,
-						PROT_READ | PROT_WRITE,
-						fdesc < 0 ? MAP_ANONYMOUS | MAP_PRIVATE : MAP_SHARED,
-						fdesc, 0);
+	mhead_t	   *mhead;
+
+	mhead = (mhead_t *)mmap(NULL, block_size,
+							PROT_READ | PROT_WRITE,
+							fdesc < 0 ? MAP_ANONYMOUS | MAP_PRIVATE : MAP_SHARED,
+							fdesc, 0);
 	if (mhead == MAP_FAILED)
 		return NULL;
 
@@ -277,7 +364,7 @@ mblock_map(int fdesc, size_t block_size, size_t super_size)
 		fprintf(stderr, "lack of available block size\n");
 		goto error;
 	}
-	return (void *) mhead->super_block;
+	return mhead;
 
 error:
 	munmap(mhead, block_size);
@@ -285,9 +372,7 @@ error:
 }
 
 void
-mblock_unmap(void *handle)
+mblock_unmap(mhead_t *mhead)
 {
-	mhead_t	   *mhead = container_of(handle, mhead_t, super_block[0]);
-
 	munmap(mhead, mhead->block_size);
 }
