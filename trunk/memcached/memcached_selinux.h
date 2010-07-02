@@ -45,7 +45,7 @@ typedef struct {
 		} item;
 		/* MCHUNK_TAG_BTREE */
 		struct {
-#define MBTREE_NUM_KEYS		7
+#define MBTREE_NUM_KEYS		5
 			uint64_t	parent;
 			uint8_t		is_leaf;
 			uint16_t	nkeys;	
@@ -59,6 +59,11 @@ typedef struct {
 		} label;
 	};
 } mchunk_t;
+
+#define mchunk_is_free(mc)	((mc)->tag == MCHUNK_TAG_FREE)
+#define mchunk_is_item(mc)	((mc)->tag == MCHUNK_TAG_ITEM)
+#define mchunk_is_btree(mc)	((mc)->tag == MCHUNK_TAG_BTREE)
+#define mchunk_is_label(mc)	((mc)->tag == MCHUNK_TAG_LABEL)
 
 /*
  * mbhead_t
@@ -75,9 +80,9 @@ typedef struct {
 	char		magic[16];
 	uint64_t	block_size;
 	uint64_t	super_size;
-	mlist_t		free_list[MBLOCK_MAX_BITS];
-	uint32_t	num_free[MBLOCK_MAX_BITS];
-	uint32_t	num_active[MBLOCK_MAX_BITS];
+	mlist_t		free_list[MBLOCK_MAX_BITS + 1];
+	uint32_t	num_free[MBLOCK_MAX_BITS + 1];
+	uint32_t	num_active[MBLOCK_MAX_BITS + 1];
 	uint8_t		super_block[0];
 } mhead_t;
 

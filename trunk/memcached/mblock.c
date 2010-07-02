@@ -166,9 +166,9 @@ mblock_split_chunk(mhead_t *mhead, int mclass)
 	mchunk2->magic = mchunk_magic(mhead,mchunk2);
 
 	mlist_add(mhead, &mhead->free_list[mclass], &mchunk1->free.list);
-	mhead->num_active[mclass]++;
+	mhead->num_free[mclass]++;
 	mlist_add(mhead, &mhead->free_list[mclass], &mchunk2->free.list);
-	mhead->num_active[mclass]++;
+	mhead->num_free[mclass]++;
 
 	return true;
 }
@@ -223,7 +223,7 @@ mblock_free(mhead_t *mhead, mchunk_t *mchunk)
 
 	assert(mchunk->tag != MCHUNK_TAG_FREE);
 	mchunk->tag = MCHUNK_TAG_FREE;
-	mhead->num_active[mclass--];
+	mhead->num_active[mclass]--;
 
 	/*
 	 * If its buddy is also free, we consolidate them into one.
@@ -237,9 +237,9 @@ mblock_free(mhead_t *mhead, mchunk_t *mchunk)
 			buddy = offset_to_addr(mhead, offset | (1 << mclass));
 
 		/*
-		 * If buddy is also free, we consolidate them
+		 * If buddy is also free and same size, we consolidate them
 		 */
-		if (buddy->tag != MCHUNK_TAG_FREE)
+		if (buddy->tag != MCHUNK_TAG_FREE || buddy->mclass != mclass)
 			break;
 
 		mlist_del(mhead, &buddy->free.list);
@@ -247,7 +247,7 @@ mblock_free(mhead_t *mhead, mchunk_t *mchunk)
 
 		mclass++;
 		offset &= ~((1 << mclass) - 1);
-        mchunk = offset_to_addr(mhead, offset);
+		mchunk = offset_to_addr(mhead, offset);
 
 		mchunk->tag = MCHUNK_TAG_FREE;
 		mchunk->mclass = mclass;
@@ -257,7 +257,7 @@ mblock_free(mhead_t *mhead, mchunk_t *mchunk)
 	 * Attach this mchunk on the freelist[mclass]
 	 */
 	mlist_add(mhead, &mhead->free_list[mclass], &mchunk->free.list);
-	mhead->num_free[mclass]--;
+	mhead->num_free[mclass]++;
 }
 
 void
@@ -298,7 +298,7 @@ mblock_reset(mhead_t *mhead)
 
 		mlist_add(mhead, &mhead->free_list[mclass], &mchunk->free.list);
 
-		num_free[mclass]++;
+		mhead->num_free[mclass]++;
 
 		offset += (1 << mclass);
 	}
@@ -334,7 +334,7 @@ mblock_dump(mhead_t *mhead)
 	printf("total: %" PRIu64 "\n", total_active + total_free);
 }
 
-mheat_t *
+mhead_t *
 mblock_map(int fdesc, size_t block_size, size_t super_size)
 {
 	mhead_t	   *mhead;
@@ -376,3 +376,64 @@ mblock_unmap(mhead_t *mhead)
 {
 	munmap(mhead, mhead->block_size);
 }
+
+#if 0
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+int main(int argc, const char *argv[])
+{
+	int		i, fd = -1;
+	size_t	length = 1024 * 1024;
+	void   *handle;
+	char	buffer[1024];
+	void   *a, *b, *c;
+
+	if (argc > 2)
+	{
+		length = atol(argv[2]);
+		if (length < 1024 * 1024)
+		{
+			fprintf(stderr, "file length too short %lu\n", length);
+			return 1;
+		}
+	}
+
+	if (argc > 1)
+	{
+		fd = open(argv[1], O_RDWR | O_CREAT);
+		if (fd < 0)
+		{
+			fprintf(stderr, "failed to open %s\n", argv[1]);
+			return 1;
+		}
+	}
+
+	handle = mblock_map(fd, length, 2048);
+	if (!handle)
+	{
+		fprintf(stderr, "failed to init mblock\n");
+		return 1;
+	}
+	a = mblock_alloc(handle, MCHUNK_TAG_ITEM, 1);
+	b = mblock_alloc(handle, MCHUNK_TAG_ITEM, 256);
+	c = mblock_alloc(handle, MCHUNK_TAG_ITEM, 257);
+
+	mblock_dump(handle);
+
+	mblock_alloc(handle, MCHUNK_TAG_BTREE, 1);
+
+	mblock_dump(handle);
+
+	mblock_free(handle, a);
+	mblock_free(handle, b);
+	mblock_free(handle, c);
+
+	mblock_dump(handle);
+
+	printf("offset = %d\n", offset_of(mchunk_t, item.data));
+
+	return 0;
+}
+#endif
