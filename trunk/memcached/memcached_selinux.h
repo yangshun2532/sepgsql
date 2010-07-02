@@ -40,6 +40,7 @@ typedef struct {
 			uint16_t	flags;
 			uint16_t	keylen;
 			uint32_t	datalen;
+			uint32_t	secid;
 			uint32_t	exptime;
 			uint8_t		data[0];
 		} item;
@@ -54,6 +55,7 @@ typedef struct {
 		} btree;
 		/* MCHUNK_TAG_LABEL */
 		struct {
+			uint32_t	secid;
 			uint32_t	refcount;
 			uint8_t		label[0];
 		} label;
@@ -108,6 +110,29 @@ mchunk_magic(mhead_t *mhead, mchunk_t *mchunk)
 }
 
 /*
+ * mitems.c - memory block based item management
+ */
+struct mitem_s {
+	struct mitem_t *prev;
+	struct mitem_t *next;
+
+	int				refcnt;
+	int				flags;
+
+	mchunk_t	   *mchunk;
+};
+typedef struct mitem_s mitem_t;
+
+
+#if 0
+extern mitem_t *mitem_allocate();
+extern void     mitem_remove();
+extern mitem_t *mitem_get();
+extern void     mitem_put();
+extern bool     mitem_get_info();
+#endif
+
+/*
  * mbtree.c - mmap based B-plus tree index
  */
 typedef struct
@@ -137,5 +162,43 @@ extern void      mblock_dump(mhead_t *mhead);
 extern void      mblock_reset(mhead_t *mhead);
 extern mhead_t  *mblock_map(int fdesc, size_t block_size, size_t super_size);
 extern void      mblock_unmap(mhead_t *mhead);
+
+/*
+ * memcached_selinux.c
+ */
+typedef struct {
+	ENGINE_HANDLE_V1	engine;
+	SERVER_HANDLE_V1   *server;
+
+	pthread_rwlock_t	lock;
+	mhead_t			   *mhead;
+
+	/* config parameter */
+	struct {
+		char		   *filename;
+		size_t			block_size;
+		bool			selinux;
+		bool			enforce;
+		bool			use_cas;
+	} config;
+
+	/* mitem_t hash table */
+	struct {
+		pthread_rwlock_t	lock;
+		mitem_t		  **slot;
+		int				size;
+		int				num_actives;
+	} mitem;
+
+	/* mitem_t hash table */
+	pthread_rwlock_t	item_hash_lock;
+	mitem_t			  **item_hash_slot;
+	int					item_hash_size;
+	int					item_hash_count;
+
+	engine_info			info;
+} selinux_engine;
+
+
 
 #endif
