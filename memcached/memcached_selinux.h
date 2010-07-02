@@ -46,7 +46,7 @@ typedef struct {
 		} item;
 		/* MCHUNK_TAG_BTREE */
 		struct {
-#define MBTREE_NUM_KEYS		5
+#define MBTREE_NUM_KEYS		7
 			uint64_t	parent;
 			uint8_t		is_leaf;
 			uint16_t	nkeys;	
@@ -113,16 +113,13 @@ mchunk_magic(mhead_t *mhead, mchunk_t *mchunk)
  * mitems.c - memory block based item management
  */
 struct mitem_s {
-	struct mitem_t *prev;
-	struct mitem_t *next;
-
+	struct mitem_s *next;
+	uint32_t		hash;
 	int				refcnt;
 	int				flags;
-
 	mchunk_t	   *mchunk;
 };
 typedef struct mitem_s mitem_t;
-
 
 #if 0
 extern mitem_t *mitem_allocate();
@@ -182,11 +179,13 @@ typedef struct {
 		bool			use_cas;
 	} config;
 
-	/* mitem_t hash table */
+	/* mitem cache */
 	struct {
 		pthread_rwlock_t	lock;
 		mitem_t		  **slot;
+		mitem_t		   *free_items;
 		int				size;
+		int				num_total;
 		int				num_actives;
 	} mitem;
 
