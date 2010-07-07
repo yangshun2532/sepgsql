@@ -31,29 +31,39 @@ typedef struct {
 	uint8_t		mclass;
 	uint8_t		tag;
 	union {
-		/* MCHUNK_TAG_FREE */
+		/*
+		 * MCHUNK_TAG_FREE
+		 */
 		struct {
 			mlist_t		list;
 		} free;
-		/* MCHUNK_TAG_ITEM */
+		/*
+		 * MCHUNK_TAG_ITEM
+		 */
+#define MITEM_WITH_CAS	(1<<0)
+#define MITEM_LINKED	(1<<8)
 		struct {
-			uint16_t	flags;
+			volatile uint16_t	flags;
 			uint16_t	keylen;
 			uint32_t	datalen;
 			uint32_t	secid;
 			uint32_t	exptime;
 			uint8_t		data[0];
 		} item;
-		/* MCHUNK_TAG_BTREE */
-		struct {
+		/*
+		 * MCHUNK_TAG_BTREE
+		 */
 #define MBTREE_NUM_KEYS		7
+		struct {
 			uint64_t	parent;
 			uint8_t		is_leaf;
 			uint16_t	nkeys;	
 			uint32_t	keys[MBTREE_NUM_KEYS];
 			uint64_t	items[MBTREE_NUM_KEYS + 1];
 		} btree;
-		/* MCHUNK_TAG_LABEL */
+		/*
+		 * MCHUNK_TAG_LABEL
+		 */
 		struct {
 			uint32_t	secid;
 			uint32_t	refcount;
@@ -112,22 +122,29 @@ mchunk_magic(mhead_t *mhead, mchunk_t *mchunk)
 /*
  * mitems.c - memory block based item management
  */
-struct mitem_s {
-	struct mitem_s *next;
-	uint32_t		hash;
-	int				refcnt;
-	int				flags;
-	mchunk_t	   *mchunk;
-};
-typedef struct mitem_s mitem_t;
+typedef struct {
+	volatile uint16_t	refcnt;
+} mitem_t;
 
-#if 0
-extern mitem_t *mitem_allocate();
-extern void     mitem_remove();
-extern mitem_t *mitem_get();
-extern void     mitem_put();
-extern bool     mitem_get_info();
-#endif
+
+extern void    *mitem_get_key(selinux_engine *se, mitem_t *mitem);
+extern size_t   mitem_get_keylen(selinux_engine *se, mitem_t *mitem);
+extern void    *mitem_get_data(selinux_engine *se, mitem_t *mitem);
+extern size_t   mitem_get_datalen(selinux_engine *se, mitem_t *mitem);
+extern uint16_t mitem_get_flags(selinux_enginr *se, mitem_t *mitem);
+extern uint64_t mitem_get_cas(selinux_enginr *se, mitem_t *mitem);
+extern void		mitem_set_flags(selinux_enginr *se, mitem_t *mitem, uint16_t flags);
+extern uint64_t mitem_set_cas(selinux_enginr *se, mitem_t *mitem, uint64_t cas);
+extern int		mitem_get_mclass(selinux_engine *se, mitem_t *mitem);
+
+extern mitem_t *mitem_alloc(selinux_engine *se,
+							const void *key, size_t key_len, size_t data_len);
+extern bool     mitem_link(selinux_engine *se, mitem_t *mitem);
+extern bool     mitem_unlink(selinux_engine *se, mitem_t *mitem);
+extern mitem_t *mitem_get(selinux_engine *se, const void *key, size_t key_len);
+extern void     mitem_put(selinux_engine *se, mitem_t *mitem);
+extern void     mitem_get_info(selinux_engine *se, mitem_t *mitem,
+							   item_info *item_info);
 
 /*
  * mbtree.c - mmap based B-plus tree index
@@ -164,40 +181,24 @@ extern void      mblock_unmap(mhead_t *mhead);
  * memcached_selinux.c
  */
 typedef struct {
-	ENGINE_HANDLE_V1	engine;
-	SERVER_HANDLE_V1   *server;
+	ENGINE_HANDLE_V1		engine;
+	SERVER_HANDLE_V1	   *server;
 
-	pthread_rwlock_t	lock;
-	mhead_t			   *mhead;
+	pthread_rwlock_t		lock;
+	mhead_t				   *mhead;
+	mitem_t				   *mitems;
+	rel_time_t				startup_time;
 
-	/* config parameter */
+	/* configuration parameters */
 	struct {
-		char		   *filename;
-		size_t			block_size;
-		bool			selinux;
-		bool			enforce;
-		bool			use_cas;
+		char			   *filename;
+		size_t				block_size;
+		bool				selinux;
+		bool				enforcing;
+		bool				use_cas;
 	} config;
-
-	/* mitem cache */
-	struct {
-		pthread_rwlock_t	lock;
-		mitem_t		  **slot;
-		mitem_t		   *free_items;
-		int				size;
-		int				num_total;
-		int				num_actives;
-	} mitem;
-
-	/* mitem_t hash table */
-	pthread_rwlock_t	item_hash_lock;
-	mitem_t			  **item_hash_slot;
-	int					item_hash_size;
-	int					item_hash_count;
 
 	engine_info			info;
 } selinux_engine;
-
-
 
 #endif

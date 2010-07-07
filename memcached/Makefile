@@ -9,7 +9,7 @@ LIBRARIES ?= -lpthread -lselinux -laudit
 
 LIBSO = selinux_engine.so
 HEADERS = selinux_engine.h
-OBJS = mblock.o mbtree.o mhash.o selinux_engine.o
+OBJS = mblock.o mbtree.o mitem.o selinux_engine.o
 
 all: $(LIBSO)
 
