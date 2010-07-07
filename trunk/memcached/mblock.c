@@ -4,12 +4,15 @@
  * buddy based memory block management routines
  */
 #include <assert.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
 
 #include "memcached/engine.h"
 #include "memcached_selinux.h"
+
+pthread_mutex_t	mblock_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static bool
 mlist_empty(mhead_t *mhead, mlist_t *list)
@@ -187,6 +190,8 @@ mblock_alloc(mhead_t *mhead, uint8_t tag, size_t size)
 	if (mclass < MBLOCK_MIN_BITS)
 		mclass = MBLOCK_MIN_BITS;
 
+	pthread_mutex_lock(&mblock_lock);
+
 	/*
 	 * when free_list of the mclass is not available, it tries to split
 	 * a larger free chunk into two. If unavailable anymore, we cannot
@@ -195,7 +200,10 @@ mblock_alloc(mhead_t *mhead, uint8_t tag, size_t size)
 	if (mlist_empty(mhead, &mhead->free_list[mclass]))
 	{
 		if (!mblock_split_chunk(mhead, mclass + 1))
+		{
+			pthread_mutex_unlock(&mblock_lock);
 			return NULL;
+		}
 	}
 	assert(!mlist_empty(mhead, &mhead->free_list[mclass]));
 
@@ -211,6 +219,8 @@ mblock_alloc(mhead_t *mhead, uint8_t tag, size_t size)
 	mchunk->tag = tag;
 	mchunk->magic = mchunk_magic(mhead,mchunk);
 
+	pthread_mutex_unlock(&mblock_lock);
+
 	return mchunk;
 }
 
@@ -222,6 +232,9 @@ mblock_free(mhead_t *mhead, mchunk_t *mchunk)
 	int			mclass = mchunk->mclass;
 
 	assert(mchunk->tag != MCHUNK_TAG_FREE);
+
+	pthread_mutex_lock(&mblock_lock);
+
 	mchunk->tag = MCHUNK_TAG_FREE;
 	mhead->num_active[mclass]--;
 
@@ -258,6 +271,8 @@ mblock_free(mhead_t *mhead, mchunk_t *mchunk)
 	 */
 	mlist_add(mhead, &mhead->free_list[mclass], &mchunk->free.list);
 	mhead->num_free[mclass]++;
+
+	pthread_mutex_unlock(&mblock_lock);
 }
 
 void
@@ -266,6 +281,8 @@ mblock_reset(mhead_t *mhead)
 	mchunk_t   *mchunk;
 	uint64_t	offset;
 	int			mclass;
+
+	pthread_mutex_lock(&mblock_lock);
 
 	for (mclass = 0; mclass <= MBLOCK_MAX_BITS; mclass++)
 	{
@@ -302,6 +319,7 @@ mblock_reset(mhead_t *mhead)
 
 		offset += (1 << mclass);
 	}
+	pthread_mutex_unlock(&mblock_lock);
 }
 
 void
@@ -310,6 +328,8 @@ mblock_dump(mhead_t *mhead)
 	uint64_t	total_active = 0;
 	uint64_t	total_free = 0;
 	int			mclass;
+
+	pthread_mutex_lock(&mblock_lock);
 
 	printf("block_size: %" PRIu64 "\n", mhead->block_size);
 	for (mclass = MBLOCK_MIN_BITS; mclass <= MBLOCK_MAX_BITS; mclass++)
@@ -332,6 +352,8 @@ mblock_dump(mhead_t *mhead)
 	printf("total_active: %" PRIu64 "\n", total_active);
 	printf("total_free: %" PRIu64 "\n", total_free);
 	printf("total: %" PRIu64 "\n", total_active + total_free);
+
+	pthread_mutex_unlock(&mblock_lock);
 }
 
 mhead_t *

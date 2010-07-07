@@ -12,24 +12,6 @@
 #include "memcached/engine.h"
 #include "memcached_selinux.h"
 
-typedef struct
-{
-	ENGINE_HANDLE_V1	engine;
-	SERVER_HANDLE_V1	server;
-
-	pthread_rwlock_t	lock;
-	void			   *handle;
-	struct {
-		char		   *filename;
-		size_t			block_size;
-		char		   *hash_type;
-		bool			use_cas;
-		bool			selinux;
-		bool			enforcing;
-	} config;
-	engine_info			info;
-} selinux_engine;
-
 const engine_info *
 selinux_get_info(ENGINE_HANDLE* handle)
 {
@@ -44,6 +26,7 @@ selinux_initialize(ENGINE_HANDLE* handle,
 {
 	selinux_engine	   *se = (selinux_engine *)handle;
 	ENGINE_ERROR_CODE	rc;
+	size_t				mblock_size;
 	struct config_item	options[] = {
 		{ .key				= "filename",
 		  .datatype			= DT_STRING,
@@ -52,10 +35,6 @@ selinux_initialize(ENGINE_HANDLE* handle,
 		{ .key				= "size",
 		  .datatype			= DT_SIZE,
 		  .value.dt_size	= &se->config.block_size,
-		},
-		{ .key				= "hash_type",
-		  .datatype			= DT_STRING,
-		  .value.dt_string	= &se->config.hash_type,
 		},
 		{ .key				= "use_cas",
 		  .datatype			= DT_BOOL,
@@ -72,6 +51,9 @@ selinux_initialize(ENGINE_HANDLE* handle,
 		{ .key = NULL }
 	};
 
+	/*
+	 * Parse configurations
+	 */
 	if (config_str != NULL)
 	{
 		rc = se->server.core->parse_config(config_str, options, stderr);
@@ -79,21 +61,20 @@ selinux_initialize(ENGINE_HANDLE* handle,
 			return rc;
 	}
 
-	/* Compare-And-Set operation available? */
+	/* Adjust startup_time */
+	se->startup_time = time(NULL) - se->server.core.get_current_time();
+
+	/* CAS operation available? */
 	if (se->config.use_cas)
 		se->info.features[se->info.num_features++] = ENGINE_FEATURE_CAS;
-	/* Memory block is mapped to filesystem?  */
+	/* Persistent storage available? */
 	if (se->config.filename)
 	{
-		struct stat		st_buf;
-
-		if (stat(se->config.filename, &st_buf) != 0)
-			return ENGINE_EINVAL;
-		se->config.block_size = st_buf.st_size
-
+		if (access(se->config.filename, R_OK | W_OK) != 0)
+			return false;
 		se->info.features[se->info.num_features++] = ENGINE_FEATURE_PERSISTENT_STORAGE;
 	}
-	/* SELinux is enabled? */
+	/* SELinux is available? */
 	if (se->config.selinux)
 	{
 		if (is_selinux_enabled() == 1)
@@ -103,25 +84,28 @@ selinux_initialize(ENGINE_HANDLE* handle,
 	}
 
 	/*
-	 * Load Hash/B+Tree Index
+	 * Load B+tree index
 	 */
-	if (strcmp(se->config.index, "btree") == 0)
-		se->handle = mbtree_init(fdesc, se->config.block_size);
-	else if (strcmp(se->config.index, "hash") == 0)
-		se->handle = mhash_init(fdesc, se->config.block_size);
-	else
-		return ENGINE_ENOTSUP;
+	mblock_size = se->config.block_size * MBLOCK_MIN_SIZE / (MBLOCK_MIN_SIZE + 2);
+	mblock_size &= ~(sysconf(_SC_PAGESIZE) - 1);
 
-	if (!se->handle)
-		return ENGINE_EINVAL;
+	se->mhead = mbtree_open(-1, mblock_size);
+	if (!se->mhead)
+		return ENGINE_ENOMEM;
 
+	se->mitem = malloc(sizeof(mitem_t) * (mblock_size >> MBLOCK_MIN_BITS));
+	if (!se->mitem)
+	{
+		mbtree_close(se->mhead);
+		return ENGINE_ENOMEM;
+	}
 	return ENGINE_SUCCESS;
 }
 
 static void
 selinux_destroy(ENGINE_HANDLE *handle)
 {
-
+	/* to be implemented */
 }
 
 static ENGINE_ERROR_CODE
@@ -133,7 +117,26 @@ selinux_allocate(ENGINE_HANDLE *handle,
 				 const size_t nbytes,
 				 const int flags,
 				 const rel_time_t exptime)
-{}
+{
+	selinux_engine *se = handle;
+	mitem_t		   *mitem;
+
+	pthread_rwlock_wrlock(&se->lock);
+
+	mitem = mitem_alloc(se, key, nkey, nbytes);
+
+	mitem_set_flags(se, mitem, flags | mitem_get_flags(se, mitem));
+	mitem_set_exptime(se, mitem, se->startup_time + exptime);
+
+	pthread_rwlock_unlock(&se->lock);
+
+	if (!mitem)
+		return ENGINE_ENOMEM;
+
+	*item = mitem;
+
+	return ENGINE_SUCCESS;
+}
 
 static ENGINE_ERROR_CODE
 selinux_remove(ENGINE_HANDLE *handle,
@@ -143,15 +146,50 @@ selinux_remove(ENGINE_HANDLE *handle,
 			   uint64_t cas,
 			   uint16_t vbucket)
 {
+	selinux_engine *se = handle;
+	mitem_t		   *mitem;
+
 	if (vbucket != 0)
 		return ENGINE_ENOTSUP;
+
+	pthread_rwlock_wrlock(&se->lock);
+
+	mitem = mitem_get(se, key, nkey);
+	if (!mitem)
+	{
+		pthread_rwlock_unlock(&se->lock);
+
+		return ENGINE_KEY_ENOENT;
+	}
+	if (cas == 0 || cas == mitem_get_cas(mitem))
+	{
+		mitem_unlink(se, mitem);
+		mitem_put(se, mitem);
+	}
+	else
+	{
+		pthread_rwlock_unlock(&se->lock);
+		return ENGINE_KEY_EEXISTS;
+	}
+	pthread_rwlock_unlock(&se->lock);
+
+	return ENGINE_SUCCESS;
 }
 
 static void
 selinux_release(ENGINE_HANDLE* handle, const
 				void *cookie,
 				item* item)
-{}
+{
+	selinux_engine *se = handle;
+	mitem_t		   *mitem = item;
+
+	pthread_rwlock_rdlock(&se->lock);
+
+	mitem_put(se, mitem);
+
+	pthread_rwlock_unlock(&se->lock);
+}
 
 static ENGINE_ERROR_CODE
 selinux_get(ENGINE_HANDLE *handle,
@@ -162,13 +200,23 @@ selinux_get(ENGINE_HANDLE *handle,
 			uint16_t vbucket)
 {
 	selinux_engine *se = (selinux_engine *)handle;
+	mitem_t		   *mitem;
 
 	if (vbucket != 0)
 		return ENGINE_ENOTSUP;
 
+	pthread_rwlock_rdlock(&se->lock);
 
+	mitem = mitem_get(se, key, nkey);
 
+	pthread_rwlock_unlock(&se->lock);
 
+	if (!mitem)
+		return ENGINE_KEY_ENOENT;
+
+	*item = mitem;
+
+	return ENGINE_SUCCESS;
 }
 
 static ENGINE_ERROR_CODE
@@ -179,10 +227,124 @@ selinux_store(ENGINE_HANDLE* handle,
 			  ENGINE_STORE_OPERATION operation,
 			  uint16_t vbucket)
 {
+	ENGINE_ERROR_CODE	rc = ENGINE_NOT_STORED;
+	selinux_enginr	   *se = (selinux_engine *)handle;
+	mitem_t			   *new_item = item;
+	mitem_t			   *old_item;
+	void			   *key;
+	size_t				key_len;
+
 	if (vbucket != 0)
 		return ENGINE_ENOTSUP;
 
+	pthread_rwlock_wrlock(&se->lock);
 
+	key = mitem_get_key(se, new_item);
+	old_item = mitem_get(se, key, key_len);
+
+	switch (operation)
+	{
+		case OPERATION_ADD:
+			/*
+			 * ADD only adds a nonexistent item
+			 */
+			if (old_item == NULL)
+			{
+				mitem_link(se, new_item);
+
+				rc = ENGINE_SUCCESS;
+			}
+			break;
+
+		case OPERATION_SET:
+			mitem_link(se, new_item);
+			if (old_item != NULL)
+				mitem_unlink(se, old_item);
+
+			rc = ENGINE_SUCCESS;
+			break;
+
+		case OPERATION_REPLACE:
+			/*
+			 * REPLACE only replaces an existing value
+			 */
+			if (old_item != NULL)
+			{
+				mitem_link(se, new_item);
+				mitem_unlink(se, old_item);
+
+				rc = ENGINE_SUCCESS;
+			}
+			break;
+
+		case OPERATION_APPEND:
+		case OPERATION_PREPEND:
+			if (old_item != NULL)
+			{
+				mchunk_t   *nchunk = mitem_to_mchunk(se, new_item);
+				mchunk_t   *ochunk = mitem_to_mchunk(se, old_item);
+				mchunk_t   *mchunk;
+				mitem_t	   *mitem;
+				size_t		data_len;
+
+				data_len = ochunk->item.datalen + nchunk->item.datalen - 2;
+				mitem = mitem_alloc(se, key, key_len, data_len,
+									ochunk->item.flags, ochunk->item.exptime);
+				if (!mitem)
+					break;
+
+				mchunk = mitem_to_mchunk(se, mitem);
+
+				if (operation == OPERATION_APPEND)
+				{
+					memcpy(mchunk_get_data(se, mchunk),
+						   mchunk_get_data(se, ochunk),
+						   ochunk->item.datalen);
+					memcpy(mchunk_get_data(se, mchunk) + ochunk->item.datalen - 2,
+						   mchunk_get_data(se, nchunk),
+						   nchunk->item.datalen);
+				}
+				else
+				{
+					memcpy(mchunk_get_data(se, mchunk),
+						   mchunk_get_data(se, nchunk),
+						   nchunk->item.datalen);
+					memcpy(mchunk_get_data(se, mchunk) + nchunk->item.datalen - 2,
+						   mchunk_get_data(se, ochunk),
+						   ochunk->item.datalen);
+				}
+				mitem_link(se, mitem);
+				mitem_unlink(se, old_item);
+
+				mitem_put(se, mitem);
+
+				rc = ENGINE_SUCCESS;
+			}
+			break;
+
+		case OPERATION_CAS:
+			if (old_item != NULL)
+			{
+				if (mitem_get_cas(old_item) != mitem_get_cas(new_item))
+					rc = ENGINE_KEY_EEXISTS;
+				else
+				{
+					mitem_link(se, new_item);
+					mitem_unlink(se, old_item);
+				}
+			}
+			break;
+
+		default:
+			/* should be never happen */
+			break;
+	}
+	if (old_item)
+		mitem_put(se, old_item);
+
+	pthread_rwlock_unlock(&se->lock);
+
+	return rc;
 }
 
 static ENGINE_ERROR_CODE
@@ -199,16 +361,97 @@ selinux_arithmetic(ENGINE_HANDLE* handle,
 				   uint64_t *result,
 				   uint16_t vbucket)
 {
+	selinux_engine	   *se = (selinux_engine *)handle;
+	mitem_t			   *old_item;
+	mitem_t			   *new_item;
+	uint64_t			value;
+	char			   *data;
+	char				buffer[256];
+	size_t				length;
+	ENGINE_ERROR_CODE	rc = ENGINE_SUCCESS;
+
 	if (vbucket != 0)
 		return ENGINE_ENOTSUP;
 
+    pthread_rwlock_wrlock(&se->lock);
+
+	old_item = mitem_get(se, key, nkey);
+	if (!old_item)
+	{
+		if (!create)
+		{
+			rc = ENGINE_KEY_ENOENT;
+			goto out_unlock;
+		}
+		length = snprintf(buffer, sizeof(buffer), "%"PRIu64"\r\n",
+						  (uint64_t) initial);
+		new_item = mitem_alloc(se, key, nkey, length);
+		if (!new_item)
+		{
+			rc = ENGINE_ENOMEM;
+			goto out_unlock;
+		}
+		data = mitem_get_data(se, new_item);
+		memcpy(data, buffer, length);
+
+		mitem_set_expire(se, new_item, exptime);
+		//mitem_set_cas(se, new_item, mitem_get_cas(se, old_item));
+
+		mitem_link(se, new_item);
+
+		*result = initial;
+		*cas = mitem_get_cas(se, new_item);
+	}
+	else
+	{
+		if (!safe_strtoull(mitem_get_data(se, mitem), &value))
+		{
+			rc = ENGINE_EINVAL;
+			goto out_unlock;
+		}
+
+		if (incr)
+			value += delta;
+		else if (delta > value)
+			value = 0;
+		else
+			value -= delta;
+
+		length = snprintf(buffer, sizeof(buffer), "%"PRIu64"\r\n",
+						  (uint64_t) value);
+		new_item = mitem_alloc(se, key, nkey, length);
+		if (!new_item)
+		{
+			rc = ENGINE_ENOMEM;
+			goto out_unlock;
+		}
+		data = mitem_get_data(se, new_item);
+		memcpy(data, buffer, length);
+
+		mitem_set_expire(se, new_item, exptime);
+		mitem_set_cas(se, new_item, mitem_get_cas(se, old_item));
+
+		mitem_link(se, new_item);
+		mitem_unlink(se, old_item);
+
+		*result = value;
+		*cas = mitem_get_cas(se, mitem);
+	}
+out_unlock:
+	if (old_item)
+		mitem_put(se, old_item);
+	pthread_rwlock_unlock(&se->lock);
+
+	return rc;
 }
 
 static ENGINE_ERROR_CODE
 selinux_flush(ENGINE_HANDLE *handle,
 			  const void *cookie,
 			  time_t when)
-{}
+{
+	return ENGINE_ENOTSUP;
+}
 
 static ENGINE_ERROR_CODE
 selinux_get_stats(ENGINE_HANDLE *handle,
@@ -216,17 +459,23 @@ selinux_get_stats(ENGINE_HANDLE *handle,
 				  const char *stat_key,
 				  int nkey,
 				  ADD_STAT add_stat)
-{}
+{
+	return ENGINE_ENOTSUP;
+}
 
 static void
 selinux_reset_stats(ENGINE_HANDLE* handle,
 					const void *cookie)
-{}
+{
+
+}
 
 static void *
 selinux_get_stats_struct(ENGINE_HANDLE* handle,
 						 const void *cookie)
-{}
+{
+	return NULL;
+}
 
 static ENGINE_ERROR_CODE
 selinux_unknown_command(ENGINE_HANDLE *handle,
@@ -241,13 +490,34 @@ static void
 selinux_item_set_cas(ENGINE_HANDLE *handle,
 					 item *item,
 					 uint64_t cas)
-{}
+{
+
+
+}
 
 static bool
 selinux_get_item_info(ENGINE_HANDLE *handle,
 					  const item *item,
 					  item_info *item_info)
-{}
+{
+	mitem_t	   *mitem = item;
+
+	if (item_info->nvalue < 1)
+		return false;
+
+	item_info->cas		= mitem_get_cas(se, mitem);
+	item_info->exptime	= mitem_get_exptime(se, mitem);
+	item_info->nbytes	= mitem_get_datalen(se, mitem);
+	item_info->flags	= mitem_get_flags(se, mitem);
+	item_info->clsid	= mitem_get_mclass(se, mitem);
+	item_info->nkey		= mitem_get_keylen(se, mitem);
+	item_info->nvalue	= 1;
+	item_info->key		= mitem_get_key(se, mitem);
+	item_info->value[0].iov_base	= mitem_get_data(se, mitem);
+	item_info->value[0].iov_len		= mitem_get_datalen(se, mitem);
+
+	return true;
+}
 
 static selinux_engine selinux_engine_catalog = {
 	.engine = {
@@ -271,6 +541,8 @@ static selinux_engine selinux_engine_catalog = {
 		.get_item_info		= selinux_get_item_info,
 	},
 	.lock	= PTHREAD_RWLOCK_INITIALIZER,
+	.mhead	= NULL,
+	.mitem	= NULL,
 	.config = {
 		.filename			= NULL,
 		.block_size			= 64 * 1024 * 1024,
@@ -280,7 +552,7 @@ static selinux_engine selinux_engine_catalog = {
 		.enforcing			= true,
 	},
 	.info = {
-		.description = "Memcached/SELinux v0.1",
+		.description = "memcached/selinux v0.1",
 		.num_features = 0;
 	},
 };
