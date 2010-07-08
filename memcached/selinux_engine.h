@@ -146,6 +146,7 @@ typedef struct {
 	/* configuration parameters */
 	struct {
 		char			   *filename;
+		int					fdesc;
 		size_t				block_size;
 		bool				selinux;
 		bool				enforcing;
@@ -162,10 +163,11 @@ extern void    *mitem_get_data(selinux_engine *se, mitem_t *mitem);
 extern size_t   mitem_get_datalen(selinux_engine *se, mitem_t *mitem);
 extern uint16_t mitem_get_flags(selinux_engine *se, mitem_t *mitem);
 extern uint64_t mitem_get_cas(selinux_engine *se, mitem_t *mitem);
-extern uint32_t	mitem_get_exptime(selinux_engine *se, mitem_t *mitem);
 extern void		mitem_set_flags(selinux_engine *se, mitem_t *mitem, uint16_t flags);
 extern void		mitem_set_cas(selinux_engine *se, mitem_t *mitem, uint64_t cas);
+extern uint32_t	mitem_get_exptime(selinux_engine *se, mitem_t *mitem);
 extern void		mitem_set_exptime(selinux_engine *se, mitem_t *mitem, uint32_t exptime);
+extern bool		mitem_is_expired(selinux_engine *se, mitem_t *mitem);
 extern int		mitem_get_mclass(selinux_engine *se, mitem_t *mitem);
 
 extern mitem_t *mitem_alloc(selinux_engine *se,
