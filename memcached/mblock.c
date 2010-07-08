@@ -181,7 +181,6 @@ mblock_alloc(mhead_t *mhead, uint8_t tag, size_t size)
 {
 	mchunk_t   *mchunk;
 	mlist_t    *list;
-	uint64_t	offset;
 	int			mclass;
 
 	mclass = fls64(size);

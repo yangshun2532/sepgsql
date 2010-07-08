@@ -9,15 +9,15 @@ LIBRARIES ?= -lpthread -lselinux -laudit
 
 LIBSO = selinux_engine.so
 HEADERS = selinux_engine.h
-OBJS = mblock.o mbtree.o mitem.o selinux_engine.o
+OBJS = mblock.o mbtree.o mitems.o memcached_selinux.o
 
 all: $(LIBSO)
 
 $(LIBSO): $(OBJS)
 	$(CC) $(CFLAGS) $(LDFLAGS) $(LIBRARIES) -shared -o $@ $^
 
-%.o: %.c $(HEADERS)
-	$(CC) $(CFLAGS) -I $(INCLUDEDIR) -fPIC -c -o $@ $<
+.c.o: $(HEADERS)
+	$(CC) -I $(INCLUDEDIR) -fPIC $(CFLAGS) -c -o $@ $<
 
 install:
 	test -d $(LIBDIR) || install -m 755 -d $(LIBDIR)

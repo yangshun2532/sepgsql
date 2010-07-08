@@ -16,7 +16,7 @@
 static inline mchunk_t *
 mitem_to_mchunk(selinux_engine *se, mitem_t *mitem)
 {
-	int		index = mitem - se->mitem;
+	int		index = mitem - se->mitems;
 
 	return offset_to_addr(se->mhead, index << MBLOCK_MIN_BITS);
 }
@@ -26,13 +26,13 @@ mchunk_to_mitem(selinux_engine *se, mchunk_t *mchunk)
 {
 	uint64_t	offset = addr_to_offset(se->mhead, mchunk);
 
-	return &se->mitem[offset >> MBLOCK_MIN_BITS];
+	return &se->mitems[offset >> MBLOCK_MIN_BITS];
 }
 
 static inline void *
 mchunk_get_key(mchunk_t *mchunk)
 {
-	char   *result = mchunk->item.data;
+	char   *result = (char *)mchunk->item.data;
 
 	if (mchunk->item.flags & MITEM_WITH_CAS)
 		result += sizeof(uint64_t);
@@ -93,7 +93,7 @@ mitem_get_datalen(selinux_engine *se, mitem_t *mitem)
 }
 
 uint16_t
-mitem_get_flags(selinux_enginr *se, mitem_t *mitem)
+mitem_get_flags(selinux_engine *se, mitem_t *mitem)
 {
 	mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
 
@@ -101,7 +101,7 @@ mitem_get_flags(selinux_enginr *se, mitem_t *mitem)
 }
 
 uint64_t
-mitem_get_cas(selinux_enginr *se, mitem_t *mitem)
+mitem_get_cas(selinux_engine *se, mitem_t *mitem)
 {
 	mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
 
@@ -109,7 +109,7 @@ mitem_get_cas(selinux_enginr *se, mitem_t *mitem)
 }
 
 void
-mitem_set_flags(selinux_enginr *se, mitem_t *mitem, uint16_t flags)
+mitem_set_flags(selinux_engine *se, mitem_t *mitem, uint16_t flags)
 {
 	mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
 
@@ -117,19 +117,35 @@ mitem_set_flags(selinux_enginr *se, mitem_t *mitem, uint16_t flags)
 }
 
 void
-mitem_set_cas(selinux_enginr *se, mitem_t *mitem, uint64_t cas)
+mitem_set_cas(selinux_engine *se, mitem_t *mitem, uint64_t cas)
 {
 	mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
 
 	mchunk_set_cas(mchunk, cas);
 }
 
-int
-mitem_get_mclass(selinux_enginr *se, mitem_t *mitem)
+uint32_t
+mitem_get_exptime(selinux_engine *se, mitem_t *mitem)
 {
 	mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
 
-	return mchunk->item.mclass;
+	return mchunk->item.exptime;
+}
+
+void
+mitem_set_exptime(selinux_engine *se, mitem_t *mitem, uint32_t exptime)
+{
+	mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
+
+	mchunk->item.exptime = exptime;
+}
+
+int
+mitem_get_mclass(selinux_engine *se, mitem_t *mitem)
+{
+	mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
+
+	return mchunk->mclass;
 }
 
 /*
@@ -185,11 +201,11 @@ mitem_link(selinux_engine *se, mitem_t *mitem)
 	uint32_t	hkey;
 	uint64_t	hitem;
 
-	assert(mchunk->item.flags & MITEM_LINKED == 0);
+	assert((mchunk->item.flags & MITEM_LINKED) == 0);
 	assert(mitem->refcnt > 0);
 
-	hkey = se->server.core->hash(mchunk_get_key(mchunk),
-								 mchunk->item.keylen, 0);
+	hkey = se->server->core->hash(mchunk_get_key(mchunk),
+								  mchunk->item.keylen, 0);
 	hitem = addr_to_offset(se->mhead, mchunk);
 
 	if (!mbtree_insert(se->mhead, hkey, hitem))
@@ -213,11 +229,11 @@ mitem_unlink(selinux_engine *se, mitem_t *mitem)
 	uint32_t	hkey;
 	uint64_t	hitem;
 
-	assert(mchunk->item.flags & MITEM_LINKED != 0);
+	assert((mchunk->item.flags & MITEM_LINKED) != 0);
 	assert(mitem->refcnt > 0);
 
-	hkey = se->server.core->hash(mchunk_get_key(mchunk),
-								 mchunk->item.keylen, 0);
+	hkey = se->server->core->hash(mchunk_get_key(mchunk),
+								  mchunk->item.keylen, 0);
 	hitem = addr_to_offset(se->mhead, mchunk);
 
 	if (!mbtree_delete(se->mhead, hkey, hitem))
@@ -240,14 +256,15 @@ mitem_get(selinux_engine *se, const void *key, size_t key_len)
 {
 	mitem_t	   *mitem;
 	mchunk_t   *mchunk;
+	uint32_t	hkey;
 	mbtree_scan	scan;
 
-	hkey = se->server.core->hash(key, key_len, 0);
+	hkey = se->server->core->hash(key, key_len, 0);
 
 	memset(&scan, 0, sizeof(scan));
 	while (mbtree_lookup(se->mhead, hkey, &scan))
 	{
-		mchunk = offset_to_addr(se->mhead, scan->item);
+		mchunk = offset_to_addr(se->mhead, scan.item);
 
 		if (mchunk_is_item(mchunk) &&
 			mchunk->item.keylen == key_len &&
@@ -255,7 +272,7 @@ mitem_get(selinux_engine *se, const void *key, size_t key_len)
 		{
 			mitem = mchunk_to_mitem(se, mchunk);
 
-			__sync_fetch_and_add(mitem->refcnt, 1);
+			__sync_fetch_and_add(&mitem->refcnt, 1);
 
 			return mitem;
 		}
@@ -272,11 +289,11 @@ mitem_get(selinux_engine *se, const void *key, size_t key_len)
 void
 mitem_put(selinux_engine *se, mitem_t *mitem)
 {
-	if (__sync_sub_and_fetch(mitem->refcnt, 1) == 0)
+	if (__sync_sub_and_fetch(&mitem->refcnt, 1) == 0)
 	{
 		mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
 
-		if (mchunk->item.flags & MITEM_LINKED == 0)
+		if ((mchunk->item.flags & MITEM_LINKED) == 0)
 			mblock_free(se->mhead, mchunk);
 	}
 }

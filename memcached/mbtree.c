@@ -671,7 +671,7 @@ mbtree_open(int fdesc, size_t block_size)
 void
 mbtree_close(mhead_t *mhead)
 {
-	munmap(mhead, mhead->block_size);
+	mblock_unmap(mhead);
 }
 
 #if 1
