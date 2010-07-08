@@ -202,7 +202,7 @@ mitem_link(selinux_engine *se, mitem_t *mitem)
 	assert((mchunk->item.flags & MITEM_LINKED) == 0);
 	assert(mitem->refcnt > 0);
 
-	hkey = se->server->core->hash(mchunk_get_key(mchunk),
+	hkey = se->server.core->hash(mchunk_get_key(mchunk),
 								  mchunk->item.keylen, 0);
 	hitem = addr_to_offset(se->mhead, mchunk);
 
@@ -230,7 +230,7 @@ mitem_unlink(selinux_engine *se, mitem_t *mitem)
 	assert((mchunk->item.flags & MITEM_LINKED) != 0);
 	assert(mitem->refcnt > 0);
 
-	hkey = se->server->core->hash(mchunk_get_key(mchunk),
+	hkey = se->server.core->hash(mchunk_get_key(mchunk),
 								  mchunk->item.keylen, 0);
 	hitem = addr_to_offset(se->mhead, mchunk);
 
@@ -241,8 +241,6 @@ mitem_unlink(selinux_engine *se, mitem_t *mitem)
 
 	return true;
 }
-
-
 
 /*
  * mitem_get
@@ -257,7 +255,7 @@ mitem_get(selinux_engine *se, const void *key, size_t key_len)
 	uint32_t	hkey;
 	mbtree_scan	scan;
 
-	hkey = se->server->core->hash(key, key_len, 0);
+	hkey = se->server.core->hash(key, key_len, 0);
 
 	memset(&scan, 0, sizeof(scan));
 	while (mbtree_lookup(se->mhead, hkey, &scan))

@@ -132,11 +132,11 @@ typedef struct mitem_s
 } mitem_t;
 
 /*
- * memcached_selinux.c
+ * interfaces.c
  */
 typedef struct {
 	ENGINE_HANDLE_V1		engine;
-	SERVER_HANDLE_V1	   *server;
+	SERVER_HANDLE_V1		server;
 
 	pthread_rwlock_t		lock;
 	mhead_t				   *mhead;
@@ -150,6 +150,7 @@ typedef struct {
 		bool				selinux;
 		bool				enforcing;
 		bool				use_cas;
+		bool				debug;
 	} config;
 
 	engine_info			info;

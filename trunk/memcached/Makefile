@@ -3,7 +3,7 @@ PREFIX ?= $(DESTDIR)/usr/local/memcached
 LIBDIR ?= $(PREFIX)/lib
 INCLUDEDIR ?= $(PREFIX)/include
 
-CFLAGS ?= -Wall
+CFLAGS ?= -g -Wall
 LDFLAGS ?= -rdynamic
 LIBRARIES ?= -lpthread -lselinux -laudit
 
@@ -19,7 +19,7 @@ $(LIBSO): $(OBJS)
 .c.o:
 	$(CC) -I $(INCLUDEDIR) -fPIC $(CFLAGS) -c -o $@ $<
 
-install:
+install: $(LIBSO)
 	test -d $(LIBDIR) || install -m 755 -d $(LIBDIR)
 	install -m 755 $(LIBSO) $(LIBDIR)
 
