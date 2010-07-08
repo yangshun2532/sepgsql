@@ -6,11 +6,40 @@
  *
  *
  */
+#include <assert.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <selinux/selinux.h>
 #include "selinux_engine.h"
+
+#if 1
+/* copy from util.c */
+#include <ctype.h>
+bool safe_strtoull(const char *str, uint64_t *out) {
+    assert(out != NULL);
+    errno = 0;
+    *out = 0;
+    char *endptr;
+    unsigned long long ull = strtoull(str, &endptr, 10);
+    if (errno == ERANGE)
+        return false;
+    if (isspace(*endptr) || (*endptr == '\0' && endptr != str)) {
+        if ((long long) ull < 0) {
+            /* only check for negative signs in the uncommon case when
+             * the unsigned number is so big that it's negative as a
+             * signed number. */
+            if (strchr(str, '-') != NULL) {
+                return false;
+            }
+        }
+        *out = ull;
+        return true;
+    }
+    return false;
+}
+#endif
 
 const engine_info *
 selinux_get_info(ENGINE_HANDLE* handle)
@@ -48,6 +77,10 @@ selinux_initialize(ENGINE_HANDLE* handle,
 		  .datatype			= DT_BOOL,
 		  .value.dt_bool	= &se->config.enforcing,
 		},
+		{ .key				= "debug",
+		  .datatype			= DT_BOOL,
+		  .value.dt_bool	= &se->config.debug,
+		},
 		{ .key = NULL }
 	};
 
@@ -56,13 +89,13 @@ selinux_initialize(ENGINE_HANDLE* handle,
 	 */
 	if (config_str != NULL)
 	{
-		rc = se->server->core->parse_config(config_str, options, stderr);
+		rc = se->server.core->parse_config(config_str, options, stderr);
 		if (rc != ENGINE_SUCCESS)
 			return rc;
 	}
 
 	/* Adjust startup_time */
-	se->startup_time = time(NULL) - se->server->core->get_current_time();
+	se->startup_time = time(NULL) - se->server.core->get_current_time();
 
 	/* CAS operation available? */
 	if (se->config.use_cas)
@@ -396,6 +429,8 @@ selinux_arithmetic(ENGINE_HANDLE* handle,
 
 		mitem_link(se, new_item);
 
+		mitem_put(se, new_item);
+
 		*result = initial;
 		*cas = mitem_get_cas(se, new_item);
 	}
@@ -492,8 +527,8 @@ selinux_get_item_info(ENGINE_HANDLE *handle,
 					  const item *item,
 					  item_info *item_info)
 {
-	selinux_engine *se = (selinux_engine *)se;
-	mitem_t	   *mitem = (mitem_t *)item;
+	selinux_engine *se	= (selinux_engine *)handle;
+	mitem_t	   *mitem	= (mitem_t *)item;
 
 	if (item_info->nvalue < 1)
 		return false;
@@ -542,6 +577,7 @@ static selinux_engine selinux_engine_catalog = {
 		.use_cas			= true,
 		.selinux			= true,
 		.enforcing			= true,
+		.debug				= true,
 	},
 	.info = {
 		.description = "memcached/selinux v0.1",
