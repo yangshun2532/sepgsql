@@ -8,10 +8,13 @@
  */
 #include <assert.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <selinux/selinux.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include "selinux_engine.h"
 
 #if 1
@@ -125,7 +128,13 @@ selinux_initialize(ENGINE_HANDLE* handle,
 	mblock_size = se->config.block_size * MBLOCK_MIN_SIZE / (MBLOCK_MIN_SIZE + 2);
 	mblock_size &= ~(sysconf(_SC_PAGESIZE) - 1);
 
-	se->mhead = mbtree_open(-1, mblock_size);
+	if (se->config.filename)
+	{
+		se->config.fdesc = open(se->config.filename, O_RDWR);
+		if (se->config.fdesc < 0)
+			return ENGINE_EINVAL;
+	}
+	se->mhead = mbtree_open(se->config.fdesc, mblock_size);
 	if (!se->mhead)
 		return ENGINE_ENOMEM;
 
@@ -141,7 +150,13 @@ selinux_initialize(ENGINE_HANDLE* handle,
 static void
 selinux_destroy(ENGINE_HANDLE *handle)
 {
-	/* to be implemented */
+	selinux_engine *se = (selinux_engine *)handle;
+
+	free(se->mitems);
+
+	mbtree_close(se->mhead);
+
+	close(se->config.fdesc);
 }
 
 static ENGINE_ERROR_CODE
@@ -162,7 +177,7 @@ selinux_allocate(ENGINE_HANDLE *handle,
 	mitem = mitem_alloc(se, key, nkey, nbytes);
 
 	mitem_set_flags(se, mitem, flags | mitem_get_flags(se, mitem));
-	mitem_set_exptime(se, mitem, se->startup_time + exptime);
+	mitem_set_exptime(se, mitem, exptime);
 
 	pthread_rwlock_unlock(&se->lock);
 
@@ -237,14 +252,38 @@ selinux_get(ENGINE_HANDLE *handle,
 {
 	selinux_engine *se = (selinux_engine *)handle;
 	mitem_t		   *mitem;
+	bool			lock_is_exclusive = false;
 
 	if (vbucket != 0)
 		return ENGINE_ENOTSUP;
 
 	pthread_rwlock_rdlock(&se->lock);
-
+retry:
 	mitem = mitem_get(se, key, nkey);
 
+	/*
+	 * If the required item is already expired, we unlink it and report
+	 * users that no item were not found with this key.
+	 */
+	if (mitem != NULL && mitem_is_expired(se, mitem))
+	{
+		/*
+		 * We cannot unlink the item with read-lock, so we retry same
+		 * steps with write-lock again. Then, it will be unlinked, or
+		 * other thread may already unlink it.
+		 */
+		if (!lock_is_exclusive)
+		{
+			mitem_put(se, mitem);
+			pthread_rwlock_unlock(&se->lock);
+			lock_is_exclusive = true;
+			pthread_rwlock_wrlock(&se->lock);
+			goto retry;
+		}
+		mitem_unlink(se, mitem);
+		mitem_put(se, mitem);
+		mitem = NULL;
+	}
 	pthread_rwlock_unlock(&se->lock);
 
 	if (!mitem)
@@ -279,11 +318,18 @@ selinux_store(ENGINE_HANDLE* handle,
 	key_len = mitem_get_keylen(se, new_item);
 	old_item = mitem_get(se, key, key_len);
 
+	if (old_item != NULL && mitem_is_expired(se, old_item))
+	{
+		mitem_unlink(se, old_item);
+		mitem_put(se, old_item);
+		old_item = NULL;
+	}
+
 	switch (operation)
 	{
 		case OPERATION_ADD:
 			/*
-			 * ADD only adds a nonexistent item
+			 * ADD only adds a nonexistent item.
 			 */
 			if (old_item == NULL)
 			{
@@ -573,6 +619,7 @@ static selinux_engine selinux_engine_catalog = {
 	.mitems	= NULL,
 	.config = {
 		.filename			= NULL,
+		.fdesc				= -1,
 		.block_size			= 64 * 1024 * 1024,
 		.use_cas			= true,
 		.selinux			= true,

@@ -58,6 +58,33 @@ mchunk_set_cas(mchunk_t *mchunk, uint64_t cas)
 		*((uint64_t *) mchunk->item.data) = cas;
 }
 
+#define mchunk_dump(out,se,hkey,hitem,mchunk)	\
+	__mchunk_dump((out),__FUNCTION__,__LINE__,(se),(hkey),(hitem),(mchunk))
+static void
+__mchunk_dump(FILE *out, const char *funcname, int lineno,
+			  selinux_engine *se, uint32_t hkey, uint64_t hitem, mchunk_t *mchunk)
+{
+	if (mchunk->tag == MCHUNK_TAG_ITEM)
+	{
+		fprintf(out,
+				"%s:%d hkey=0x%08" PRIx32 ", hitem=0x%08" PRIx64 ", "
+				"mclass=%d, tag=%d, secid=%" PRIu32 ", "
+				"key='%.*s', value='%.*s', "
+				"cas=%" PRIu64 ", flags=0x%04x, exptime=%" PRIu32 "\n",
+				funcname, lineno, hkey, hitem,
+				mchunk->mclass, mchunk->tag, mchunk->item.secid,
+				mchunk->item.keylen, (char *)mchunk_get_key(mchunk),
+				mchunk->item.datalen - 2, (char *)mchunk_get_data(mchunk),
+				mchunk_get_cas(mchunk), mchunk->item.flags, mchunk->item.exptime);
+	}
+	else
+	{
+		fprintf(out, "%s:%d "
+				"hkey=0x%08" PRIx32 ", hitem=0x%08" PRIx64 ", mclass=%d, tag=%d\n",
+				funcname, lineno, hkey, hitem, mchunk->mclass, mchunk->tag);
+	}
+}
+
 void *
 mitem_get_key(selinux_engine *se, mitem_t *mitem)
 {
@@ -122,12 +149,39 @@ mitem_set_cas(selinux_engine *se, mitem_t *mitem, uint64_t cas)
 	mchunk_set_cas(mchunk, cas);
 }
 
+bool
+mitem_is_expired(selinux_engine *se, mitem_t *mitem)
+{
+	mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
+	uint32_t	exptime = mchunk->item.exptime;
+	uint32_t	curtime;
+
+	if (exptime > 0)
+	{
+		curtime = se->startup_time + se->server.core->get_current_time();
+
+		if (se->config.debug)
+			fprintf(stderr, "%s:%d mchunk=%08" PRIx64 ", "
+					"exptime=%" PRIu32 ", curtime=%" PRIu32 "\n",
+					__FUNCTION__, __LINE__,
+					addr_to_offset(se->mhead, mchunk),
+					exptime, curtime);
+
+		if (exptime < curtime)
+			return true;
+	}
+	return false;
+}
+
 uint32_t
 mitem_get_exptime(selinux_engine *se, mitem_t *mitem)
 {
 	mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
 
-	return mchunk->item.exptime;
+	if (mchunk->item.exptime == 0)
+		return 0;
+
+	return mchunk->item.exptime - se->startup_time;
 }
 
 void
@@ -135,7 +189,10 @@ mitem_set_exptime(selinux_engine *se, mitem_t *mitem, uint32_t exptime)
 {
 	mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
 
-	mchunk->item.exptime = exptime;
+	if (exptime == 0)
+		mchunk->item.exptime = 0;
+	else
+		mchunk->item.exptime = exptime + se->startup_time;
 }
 
 int
@@ -183,6 +240,9 @@ mitem_alloc(selinux_engine *se,
 
 	mitem->refcnt = 1;
 
+	if (se->config.debug)
+		mchunk_dump(stderr, se, 0, addr_to_offset(se->mhead, mchunk), mchunk);
+
 	return mitem;
 }
 
@@ -205,6 +265,9 @@ mitem_link(selinux_engine *se, mitem_t *mitem)
 	hkey = se->server.core->hash(mchunk_get_key(mchunk),
 								  mchunk->item.keylen, 0);
 	hitem = addr_to_offset(se->mhead, mchunk);
+
+	if (se->config.debug)
+		mchunk_dump(stderr,se,hkey,hitem,mchunk);
 
 	if (!mbtree_insert(se->mhead, hkey, hitem))
 		return false;
@@ -233,6 +296,9 @@ mitem_unlink(selinux_engine *se, mitem_t *mitem)
 	hkey = se->server.core->hash(mchunk_get_key(mchunk),
 								  mchunk->item.keylen, 0);
 	hitem = addr_to_offset(se->mhead, mchunk);
+
+	if (se->config.debug)
+		mchunk_dump(stderr,se,hkey,hitem,mchunk);
 
 	if (!mbtree_delete(se->mhead, hkey, hitem))
 		return false;
@@ -266,12 +332,21 @@ mitem_get(selinux_engine *se, const void *key, size_t key_len)
 			mchunk->item.keylen == key_len &&
 			memcmp(mchunk_get_key(mchunk), key, key_len) == 0)
 		{
+			if (se->config.debug)
+				mchunk_dump(stderr, se, scan.key, scan.item, mchunk);
+
 			mitem = mchunk_to_mitem(se, mchunk);
 
 			__sync_fetch_and_add(&mitem->refcnt, 1);
 
 			return mitem;
 		}
+
+		if (se->config.debug)
+			fprintf(stderr,
+					"%s:%d hkey=0x%08" PRIx32 ", hitem=0x%08" PRIx64 ", mclass=%d tag=%d",
+					__FUNCTION__, __LINE__,
+					scan.key, scan.item, mchunk->mclass, mchunk->tag);
 	}
 	/* not found */
 	return NULL;
@@ -285,6 +360,12 @@ mitem_get(selinux_engine *se, const void *key, size_t key_len)
 void
 mitem_put(selinux_engine *se, mitem_t *mitem)
 {
+	if (se->config.debug)
+		fprintf(stderr, "%s:%d offset=%p refcnt=%d\n",
+				__FUNCTION__, __LINE__,
+				addr_to_offset(se->mhead, mitem_to_mchunk(se,mitem)),
+				mitem->refcnt);
+
 	if (__sync_sub_and_fetch(&mitem->refcnt, 1) == 0)
 	{
 		mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);

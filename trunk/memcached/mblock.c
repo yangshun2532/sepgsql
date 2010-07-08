@@ -226,6 +226,7 @@ mblock_free(mhead_t *mhead, mchunk_t *mchunk)
 {
 	mchunk_t   *buddy;
 	uint64_t	offset;
+	uint64_t	offset_buddy;
 	int			mclass = mchunk->mclass;
 
 	assert(mchunk->tag != MCHUNK_TAG_FREE);
@@ -242,9 +243,14 @@ mblock_free(mhead_t *mhead, mchunk_t *mchunk)
 	while (mclass < MBLOCK_MAX_BITS)
 	{
 		if (offset & (1 << mclass))
-			buddy = offset_to_addr(mhead, offset & ~(1 << mclass));
+			offset_buddy = offset & ~(1 << mclass);
 		else
-			buddy = offset_to_addr(mhead, offset | (1 << mclass));
+			offset_buddy = offset | (1 << mclass);
+
+		/* offset should not be on the mhead structure */
+		if (offset_buddy < sizeof(mhead_t) + mhead->super_size)
+			break;
+		buddy = offset_to_addr(mhead, offset_buddy);
 
 		/*
 		 * If buddy is also free and same size, we consolidate them

@@ -83,7 +83,8 @@ mbtree_lookup(mhead_t *mhead, uint32_t key, mbtree_scan *scan)
 			mchunk = offset_to_addr(mhead, mchunk->btree.items[index]);
 		}
 		index = find_key_index(mchunk, key);
-		if (mchunk->btree.keys[index] == key)
+		if (index < mchunk->btree.nkeys &&
+			mchunk->btree.keys[index] == key)
 		{
 			scan->mnode = addr_to_offset(mhead, mchunk);
 			scan->index = index;
@@ -546,6 +547,8 @@ do_mbtree_delete(mhead_t *mhead, mchunk_t *mchunk,
 	{
 		if (mchunk->btree.items[index] == item)
 		{
+			fprintf(stderr,"delete hkey = %u hitem = 0x%lx\n", key, item);
+
 			memmove(mchunk->btree.keys + index,
 					mchunk->btree.keys + index + 1,
 					sizeof(uint32_t) * (mchunk->btree.nkeys - index - 1));
