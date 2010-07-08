@@ -10,10 +10,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <selinux/selinux.h>
-
-#include "memcached/engine.h"
-#include "memcached/util.h"
-#include "memcached_selinux.h"
+#include "selinux_engine.h"
 
 const engine_info *
 selinux_get_info(ENGINE_HANDLE* handle)

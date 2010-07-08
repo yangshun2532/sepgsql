@@ -9,9 +9,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-
-#include "memcached/engine.h"
-#include "memcached_selinux.h"
+#include "selinux_engine.h"
 
 static inline mchunk_t *
 mitem_to_mchunk(selinux_engine *se, mitem_t *mitem)

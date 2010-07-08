@@ -9,6 +9,8 @@
 #define SELINUX_ENGINE_H
 
 #include <pthread.h>
+#include "memcached/engine.h"
+#include "memcached/util.h"
 
 /*
  * mlist_t - dual linked list on the memory block
