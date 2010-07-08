@@ -8,9 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
-
-#include "memcached/engine.h"
-#include "memcached_selinux.h"
+#include "selinux_engine.h"
 
 pthread_mutex_t	mblock_lock = PTHREAD_MUTEX_INITIALIZER;
 

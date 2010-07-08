@@ -7,9 +7,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-
-#include "memcached/engine.h"
-#include "memcached_selinux.h"
+#include "selinux_engine.h"
 
 static int
 find_key_index(mchunk_t *mchunk, uint32_t key)
