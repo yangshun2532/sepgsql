@@ -324,8 +324,12 @@ mitem_get(selinux_engine *se, const void *key, size_t key_len)
 	hkey = se->server.core->hash(key, key_len, 0);
 
 	memset(&scan, 0, sizeof(scan));
-	while (mbtree_lookup(se->mhead, hkey, &scan))
+	scan.key = hkey;
+	while (mbtree_lookup(se->mhead, &scan))
 	{
+		if (scan.key != hkey)
+			break;
+
 		mchunk = offset_to_addr(se->mhead, scan.item);
 
 		if (mchunk_is_item(mchunk) &&
@@ -361,7 +365,7 @@ void
 mitem_put(selinux_engine *se, mitem_t *mitem)
 {
 	if (se->config.debug)
-		fprintf(stderr, "%s:%d offset=%p refcnt=%d\n",
+		fprintf(stderr, "%s:%d offset=0x%08" PRIx64 " refcnt=%d\n",
 				__FUNCTION__, __LINE__,
 				addr_to_offset(se->mhead, mitem_to_mchunk(se,mitem)),
 				mitem->refcnt);
@@ -372,5 +376,56 @@ mitem_put(selinux_engine *se, mitem_t *mitem)
 
 		if ((mchunk->item.flags & MITEM_LINKED) == 0)
 			mblock_free(se->mhead, mchunk);
+	}
+}
+
+/*
+ * mitem_flush
+ *
+ * NOTE: caller shall hold write-lock
+ */
+void
+mitem_flush(selinux_engine *se, time_t when)
+{
+	mchunk_t	   *mchunk;
+	mitem_t		   *mitem;
+	mbtree_scan		scan;
+	rel_time_t		oldest;
+	bool			result;
+
+	if (when == 0)
+		oldest = se->server.core->get_current_time() + se->startup_time - 1;
+	else
+		oldest = se->startup_time + when - 1;
+
+	memset(&scan, 0, sizeof(scan));
+	while (mbtree_lookup(se->mhead, &scan))
+	{
+		mchunk = offset_to_addr(se->mhead, scan.item);
+
+		if (!mchunk_is_item(mchunk))
+			continue;
+
+		if (mchunk->item.exptime >= oldest)
+			continue;
+
+		assert((mchunk->item.flags & MITEM_LINKED) != 0);
+
+		if (se->config.debug)
+			mchunk_dump(stderr, se, scan.key, scan.item, mchunk);
+
+		/* instead of mitem_get() */
+		mitem = mchunk_to_mitem(se, mchunk);
+		__sync_fetch_and_add(&mitem->refcnt, 1);
+
+		result = mbtree_delete(se->mhead, scan.key, scan.item);
+		assert(result == true);
+
+		mchunk->item.flags &= ~MITEM_LINKED;
+
+		mitem_put(se, mitem);
+
+		/* B+tree might be modified yet */
+		scan.mnode = 0;
 	}
 }
