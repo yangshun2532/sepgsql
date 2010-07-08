@@ -530,7 +530,15 @@ selinux_flush(ENGINE_HANDLE *handle,
 			  const void *cookie,
 			  time_t when)
 {
-	return ENGINE_ENOTSUP;
+	selinux_engine	   *se = (selinux_engine *)handle;
+
+	pthread_rwlock_wrlock(&se->lock);
+
+	mitem_flush(se, when);
+
+	pthread_rwlock_unlock(&se->lock);
+
+	return ENGINE_SUCCESS;
 }
 
 static ENGINE_ERROR_CODE

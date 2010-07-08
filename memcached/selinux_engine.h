@@ -176,24 +176,20 @@ extern bool     mitem_link(selinux_engine *se, mitem_t *mitem);
 extern bool     mitem_unlink(selinux_engine *se, mitem_t *mitem);
 extern mitem_t *mitem_get(selinux_engine *se, const void *key, size_t key_len);
 extern void     mitem_put(selinux_engine *se, mitem_t *mitem);
-extern void     mitem_get_info(selinux_engine *se, mitem_t *mitem,
-							   item_info *item_info);
+extern void		mitem_flush(selinux_engine *se, time_t when);
 
 /*
  * mbtree.c - mmap based B-plus tree index
  */
 typedef struct
 {
-	/* internal pointer, don't touch! */
 	uint64_t	mnode;
 	int			index;
-
-	/* fetched key&item pair */
 	uint32_t	key;
 	uint64_t	item;
 } mbtree_scan;
 
-extern bool     mbtree_lookup(mhead_t *mhead, uint32_t key, mbtree_scan *scan);
+extern bool     mbtree_lookup(mhead_t *mhead, mbtree_scan *scan);
 extern bool     mbtree_insert(mhead_t *mhead, uint32_t key, uint64_t item);
 extern bool     mbtree_delete(mhead_t *mhead, uint32_t key, uint64_t item);
 extern void     mbtree_dump(mhead_t *mhead);
