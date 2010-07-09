@@ -94,7 +94,7 @@ mbtree_lookup(mhead_t *mhead, mbtree_scan *scan)
 	else
 	{
 		mchunk = offset_to_addr(mhead, scan->mnode);
-		assert(mchunk_is_btree(mchunk) && !mchunk->btree.is_leaf);
+		assert(mchunk_is_btree(mchunk) && mchunk->btree.is_leaf);
 		index = scan->index + 1;
 
 		if (index == mchunk->btree.nkeys)
@@ -111,62 +111,6 @@ mbtree_lookup(mhead_t *mhead, mbtree_scan *scan)
 	}
 	return true;
 }
-
-#if 0
-bool
-mbtree_lookup(mhead_t *mhead, uint32_t key, mbtree_scan *scan)
-{
-	mchunk_t   *mchunk;
-	int			index;
-
-	if (scan->mnode == 0 || scan->key != key)
-	{
-		mchunk = (mchunk_t *)mhead->super_block;
-		assert(mchunk->tag == MCHUNK_TAG_BTREE);
-
-		while (!mchunk->btree.is_leaf)
-		{
-			index = find_key_index(mchunk, key);
-
-			mchunk = offset_to_addr(mhead, mchunk->btree.items[index]);
-		}
-		index = find_key_index(mchunk, key);
-		if (index < mchunk->btree.nkeys &&
-			mchunk->btree.keys[index] == key)
-		{
-			scan->mnode = addr_to_offset(mhead, mchunk);
-			scan->index = index;
-			scan->key = key;
-			scan->item = mchunk->btree.items[index];
-
-			return true;
-		}
-	}
-	else
-	{
-		mchunk = offset_to_addr(mhead, scan->mnode);
-		assert(mchunk_is_btree(mchunk) && !mchunk->btree.is_leaf);
-		index = scan->index + 1;
-
-		if (index == mchunk->btree.nkeys)
-		{
-			mchunk = offset_to_addr(mhead, mchunk->btree.items[index]);
-			if (!mchunk)
-				return false;
-			index = 0;
-		}
-		if (mchunk->btree.keys[index] == scan->key)
-		{
-			scan->mnode = addr_to_offset(mhead, mchunk);
-			scan->index = index;
-			scan->item = mchunk->btree.items[index];
-
-			return true;
-		}
-	}
-	return false;
-}
-#endif
 
 static bool
 mbtree_split(mhead_t *mhead, mchunk_t *mchunk)
@@ -597,9 +541,11 @@ do_mbtree_delete(mhead_t *mhead, mchunk_t *mchunk,
 	{
 		if (mchunk->btree.items[index] == item)
 		{
+/*
 			fprintf(stderr,
 					"delete hkey=0x%08" PRIx32 ", "
 					"hitem=0x%08" PRIx64 "\n", key, item);
+*/
 
 			memmove(mchunk->btree.keys + index,
 					mchunk->btree.keys + index + 1,
