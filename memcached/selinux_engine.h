@@ -96,6 +96,7 @@ typedef struct {
 	mlist_t		free_list[MBLOCK_MAX_BITS + 1];
 	uint32_t	num_free[MBLOCK_MAX_BITS + 1];
 	uint32_t	num_active[MBLOCK_MAX_BITS + 1];
+	uint32_t	last_secid;
 	uint8_t		super_block[0];
 } mhead_t;
 
