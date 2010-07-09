@@ -47,7 +47,7 @@ bool safe_strtoull(const char *str, uint64_t *out) {
 const engine_info *
 selinux_get_info(ENGINE_HANDLE* handle)
 {
-	selinux_engine *se = (selinux_engine *)handle;
+	selinux_engine_t *se = (selinux_engine_t *)handle;
 
 	return &se->info;
 }
@@ -56,7 +56,7 @@ static ENGINE_ERROR_CODE
 selinux_initialize(ENGINE_HANDLE* handle,
 				   const char *config_str)
 {
-	selinux_engine	   *se = (selinux_engine *)handle;
+	selinux_engine_t   *se = (selinux_engine_t *)handle;
 	ENGINE_ERROR_CODE	rc;
 	size_t				mblock_size;
 	struct config_item	options[] = {
@@ -79,6 +79,10 @@ selinux_initialize(ENGINE_HANDLE* handle,
 		{ .key				= "enforcing",
 		  .datatype			= DT_BOOL,
 		  .value.dt_bool	= &se->config.enforcing,
+		},
+		{ .key				= "reclaim",
+		  .datatype			= DT_BOOL,
+		  .value.dt_bool	= &se->config.reclaim,
 		},
 		{ .key				= "debug",
 		  .datatype			= DT_BOOL,
@@ -144,13 +148,34 @@ selinux_initialize(ENGINE_HANDLE* handle,
 		mbtree_close(se->mhead);
 		return ENGINE_ENOMEM;
 	}
+	memset(se->mitems, 0, sizeof(mitem_t) * (mblock_size >> MBLOCK_MIN_BITS));
+
+	/*
+	 * Dump configuration
+	 */
+	fprintf(stderr,
+			"selinux_engine.config.filename = %s\n"
+			"selinux_engine.config.size = %" PRIu64 "\n"
+			"selinux_engine.config.use_cas = %s\n"
+			"selinux_engine.config.selinux = %s\n"
+			"selinux_engine.config.enforcing = %s\n"
+			"selinux_engine.config.reclaim = %s\n"
+			"selinux_engine.config.debug = %s\n",
+			se->config.filename ? se->config.filename : "(null)",
+			se->config.block_size,
+			se->config.use_cas ? "true" : "false",
+			se->config.selinux ? "true" : "false",
+			se->config.enforcing ? "true" : "false",
+			se->config.reclaim ? "true" : "false",
+			se->config.debug ? "true" : "false");
+
 	return ENGINE_SUCCESS;
 }
 
 static void
 selinux_destroy(ENGINE_HANDLE *handle)
 {
-	selinux_engine *se = (selinux_engine *)handle;
+	selinux_engine_t   *se = (selinux_engine_t *)handle;
 
 	free(se->mitems);
 
@@ -169,16 +194,20 @@ selinux_allocate(ENGINE_HANDLE *handle,
 				 const int flags,
 				 const rel_time_t exptime)
 {
-	selinux_engine *se = (selinux_engine *)handle;
-	mitem_t		   *mitem;
+	selinux_engine_t   *se = (selinux_engine_t *)handle;
+	mitem_t			   *mitem;
+
+	if (nbytes >= MBLOCK_MAX_SIZE - sizeof(mchunk_t))
+		return ENGINE_E2BIG;
 
 	pthread_rwlock_wrlock(&se->lock);
 
 	mitem = mitem_alloc(se, key, nkey, nbytes);
-
-	mitem_set_flags(se, mitem, flags | mitem_get_flags(se, mitem));
-	mitem_set_exptime(se, mitem, exptime);
-
+	if (mitem)
+	{
+		mitem_set_flags(se, mitem, flags | mitem_get_flags(se, mitem));
+		mitem_set_exptime(se, mitem, exptime);
+	}
 	pthread_rwlock_unlock(&se->lock);
 
 	if (!mitem)
@@ -197,8 +226,8 @@ selinux_remove(ENGINE_HANDLE *handle,
 			   uint64_t cas,
 			   uint16_t vbucket)
 {
-	selinux_engine *se = (selinux_engine *)handle;
-	mitem_t		   *mitem;
+	selinux_engine_t   *se = (selinux_engine_t *)handle;
+	mitem_t			   *mitem;
 
 	if (vbucket != 0)
 		return ENGINE_ENOTSUP;
@@ -232,8 +261,8 @@ selinux_release(ENGINE_HANDLE* handle, const
 				void *cookie,
 				item* item)
 {
-	selinux_engine *se = (selinux_engine *)handle;
-	mitem_t		   *mitem = item;
+	selinux_engine_t   *se = (selinux_engine_t *)handle;
+	mitem_t			   *mitem = item;
 
 	pthread_rwlock_rdlock(&se->lock);
 
@@ -250,9 +279,9 @@ selinux_get(ENGINE_HANDLE *handle,
 			const int nkey,
 			uint16_t vbucket)
 {
-	selinux_engine *se = (selinux_engine *)handle;
-	mitem_t		   *mitem;
-	bool			lock_is_exclusive = false;
+	selinux_engine_t   *se = (selinux_engine_t *)handle;
+	mitem_t			   *mitem;
+	bool				lock_is_exclusive = false;
 
 	if (vbucket != 0)
 		return ENGINE_ENOTSUP;
@@ -284,6 +313,11 @@ retry:
 		mitem_put(se, mitem);
 		mitem = NULL;
 	}
+	if (!mitem)
+		__sync_add_and_fetch(&se->stats.num_misses, 1);
+	else
+		__sync_add_and_fetch(&se->stats.num_hits, 1);
+
 	pthread_rwlock_unlock(&se->lock);
 
 	if (!mitem)
@@ -303,7 +337,7 @@ selinux_store(ENGINE_HANDLE* handle,
 			  uint16_t vbucket)
 {
 	ENGINE_ERROR_CODE	rc = ENGINE_NOT_STORED;
-	selinux_engine	   *se = (selinux_engine *)handle;
+	selinux_engine_t   *se = (selinux_engine_t *)handle;
 	mitem_t			   *new_item = item;
 	mitem_t			   *old_item;
 	void			   *key;
@@ -374,10 +408,10 @@ selinux_store(ENGINE_HANDLE* handle,
 
 				data_len = old_length + new_length - 2;
 				mitem = mitem_alloc(se, key, key_len, data_len);
-				mitem_set_exptime(se, mitem, mitem_get_exptime(se, old_item));
-
 				if (!mitem)
 					break;
+				mitem_set_exptime(se, mitem, mitem_get_exptime(se, old_item));
+
 				data = mitem_get_data(se, mitem);
 
 				if (operation == OPERATION_APPEND)
@@ -438,7 +472,7 @@ selinux_arithmetic(ENGINE_HANDLE* handle,
 				   uint64_t *result,
 				   uint16_t vbucket)
 {
-	selinux_engine	   *se = (selinux_engine *)handle;
+	selinux_engine_t   *se = (selinux_engine_t *)handle;
 	mitem_t			   *old_item;
 	mitem_t			   *new_item;
 	uint64_t			value;
@@ -530,7 +564,7 @@ selinux_flush(ENGINE_HANDLE *handle,
 			  const void *cookie,
 			  time_t when)
 {
-	selinux_engine	   *se = (selinux_engine *)handle;
+	selinux_engine_t   *se = (selinux_engine_t *)handle;
 
 	pthread_rwlock_wrlock(&se->lock);
 
@@ -548,14 +582,62 @@ selinux_get_stats(ENGINE_HANDLE *handle,
 				  int nkey,
 				  ADD_STAT add_stat)
 {
-	return ENGINE_ENOTSUP;
+	selinux_engine_t   *se = (selinux_engine_t *)handle;
+	ENGINE_ERROR_CODE	ret = ENGINE_SUCCESS;
+	char				kbuf[128];
+	char				vbuf[128];
+	size_t				klen, vlen;
+
+	if (stat_key == NULL)
+	{
+		vlen = sprintf(vbuf, "%" PRIu64, se->stats.reclaimed);
+		add_stat("reclaimed",   9, vbuf, vlen, cookie);
+
+		vlen = sprintf(vbuf, "%" PRIu64, se->stats.num_hits);
+		add_stat("num_hits",    8, vbuf, vlen, cookie);
+
+		vlen = sprintf(vbuf, "%" PRIu64, se->stats.num_misses);
+		add_stat("num_misses", 10, vbuf, vlen, cookie);
+	}
+	else if (strncmp(stat_key, "chunks", 5) == 0)
+	{
+		int				mclass;
+
+		for (mclass = MBLOCK_MIN_BITS; mclass <= MBLOCK_MIN_BITS; mclass++)
+		{
+			klen = sprintf(kbuf, "%u:chunk.size", mclass);
+			vlen = sprintf(vbuf, "%" PRIu32, (1<<mclass));
+			add_stat(kbuf, klen, vbuf, vlen, cookie);
+
+			klen = sprintf(kbuf, "%u:chunk.num_free", mclass);
+			vlen = sprintf(vbuf, "%" PRIu32, se->mhead->num_free[mclass]);
+			add_stat(kbuf, klen, vbuf, vlen, cookie);
+
+			klen = sprintf(kbuf, "%u:chunk.num_actives", mclass);
+			vlen = sprintf(vbuf, "%" PRIu32, se->mhead->num_active[mclass]);
+			add_stat(kbuf, klen, vbuf, vlen, cookie);
+		}
+	}
+	else
+	{
+		ret = ENGINE_KEY_ENOENT;
+	}
+	return ENGINE_SUCCESS;
 }
 
 static void
 selinux_reset_stats(ENGINE_HANDLE* handle,
 					const void *cookie)
 {
+	selinux_engine_t   *se = (selinux_engine_t *)handle;
 
+	pthread_rwlock_wrlock(&se->lock);
+
+	se->stats.reclaimed = 0;
+	se->stats.num_hits = 0;
+	se->stats.num_misses = 0;
+
+	pthread_rwlock_unlock(&se->lock);
 }
 
 static ENGINE_ERROR_CODE
@@ -581,8 +663,8 @@ selinux_get_item_info(ENGINE_HANDLE *handle,
 					  const item *item,
 					  item_info *item_info)
 {
-	selinux_engine *se	= (selinux_engine *)handle;
-	mitem_t	   *mitem	= (mitem_t *)item;
+	selinux_engine_t   *se		= (selinux_engine_t *)handle;
+	mitem_t			   *mitem	= (mitem_t *)item;
 
 	if (item_info->nvalue < 1)
 		return false;
@@ -601,7 +683,7 @@ selinux_get_item_info(ENGINE_HANDLE *handle,
 	return true;
 }
 
-static selinux_engine selinux_engine_catalog = {
+static selinux_engine_t selinux_engine_catalog = {
 	.engine = {
 		.interface = {
 			.interface = 1
@@ -625,6 +707,10 @@ static selinux_engine selinux_engine_catalog = {
 	.lock	= PTHREAD_RWLOCK_INITIALIZER,
 	.mhead	= NULL,
 	.mitems	= NULL,
+	.scan = {
+		.key = 0,
+		.item = 0,
+	},
 	.config = {
 		.filename			= NULL,
 		.fdesc				= -1,
@@ -632,6 +718,7 @@ static selinux_engine selinux_engine_catalog = {
 		.use_cas			= true,
 		.selinux			= true,
 		.enforcing			= true,
+		.reclaim			= false,
 		.debug				= true,
 	},
 	.info = {
@@ -645,18 +732,18 @@ create_instance(uint64_t interface,
 				GET_SERVER_API get_server_api,
 				ENGINE_HANDLE** handle)
 {
-	selinux_engine	   *se;
+	selinux_engine_t   *se;
 	SERVER_HANDLE_V1   *server = get_server_api();
 
 	if (interface != 1 || !server)
 		return ENGINE_ENOTSUP;
 
-	se = malloc(sizeof(selinux_engine) +
+	se = malloc(sizeof(selinux_engine_t) +
 				sizeof(feature_info) * LAST_REGISTERED_ENGINE_FEATURE);
 	if (!se)
 		return ENGINE_ENOMEM;
 
-	memcpy(se, &selinux_engine_catalog, sizeof(selinux_engine));
+	memcpy(se, &selinux_engine_catalog, sizeof(selinux_engine_t));
 	memcpy(&se->server, server, sizeof(SERVER_HANDLE_V1));
 
 	*handle = (ENGINE_HANDLE *)&se->engine;

@@ -12,6 +12,8 @@
 #include "memcached/engine.h"
 #include "memcached/util.h"
 
+typedef struct selinux_engine_s selinux_engine_t;
+
 /*
  * mlist_t - dual linked list on the memory block
  */
@@ -131,52 +133,28 @@ typedef struct mitem_s
 	volatile uint16_t	refcnt;
 } mitem_t;
 
-/*
- * interfaces.c
- */
-typedef struct {
-	ENGINE_HANDLE_V1		engine;
-	SERVER_HANDLE_V1		server;
+#define MITEM_IS_HOT	0x0001
 
-	pthread_rwlock_t		lock;
-	mhead_t				   *mhead;
-	mitem_t				   *mitems;
-	rel_time_t				startup_time;
+extern void    *mitem_get_key(selinux_engine_t *se, mitem_t *mitem);
+extern size_t   mitem_get_keylen(selinux_engine_t *se, mitem_t *mitem);
+extern void    *mitem_get_data(selinux_engine_t *se, mitem_t *mitem);
+extern size_t   mitem_get_datalen(selinux_engine_t *se, mitem_t *mitem);
+extern uint16_t mitem_get_flags(selinux_engine_t *se, mitem_t *mitem);
+extern uint64_t mitem_get_cas(selinux_engine_t *se, mitem_t *mitem);
+extern void		mitem_set_flags(selinux_engine_t *se, mitem_t *mitem, uint16_t flags);
+extern void		mitem_set_cas(selinux_engine_t *se, mitem_t *mitem, uint64_t cas);
+extern uint32_t	mitem_get_exptime(selinux_engine_t *se, mitem_t *mitem);
+extern void		mitem_set_exptime(selinux_engine_t *se, mitem_t *mitem, uint32_t exptime);
+extern bool		mitem_is_expired(selinux_engine_t *se, mitem_t *mitem);
+extern int		mitem_get_mclass(selinux_engine_t *se, mitem_t *mitem);
 
-	/* configuration parameters */
-	struct {
-		char			   *filename;
-		int					fdesc;
-		size_t				block_size;
-		bool				selinux;
-		bool				enforcing;
-		bool				use_cas;
-		bool				debug;
-	} config;
-
-	engine_info			info;
-} selinux_engine;
-
-extern void    *mitem_get_key(selinux_engine *se, mitem_t *mitem);
-extern size_t   mitem_get_keylen(selinux_engine *se, mitem_t *mitem);
-extern void    *mitem_get_data(selinux_engine *se, mitem_t *mitem);
-extern size_t   mitem_get_datalen(selinux_engine *se, mitem_t *mitem);
-extern uint16_t mitem_get_flags(selinux_engine *se, mitem_t *mitem);
-extern uint64_t mitem_get_cas(selinux_engine *se, mitem_t *mitem);
-extern void		mitem_set_flags(selinux_engine *se, mitem_t *mitem, uint16_t flags);
-extern void		mitem_set_cas(selinux_engine *se, mitem_t *mitem, uint64_t cas);
-extern uint32_t	mitem_get_exptime(selinux_engine *se, mitem_t *mitem);
-extern void		mitem_set_exptime(selinux_engine *se, mitem_t *mitem, uint32_t exptime);
-extern bool		mitem_is_expired(selinux_engine *se, mitem_t *mitem);
-extern int		mitem_get_mclass(selinux_engine *se, mitem_t *mitem);
-
-extern mitem_t *mitem_alloc(selinux_engine *se,
+extern mitem_t *mitem_alloc(selinux_engine_t *se,
 							const void *key, size_t key_len, size_t data_len);
-extern bool     mitem_link(selinux_engine *se, mitem_t *mitem);
-extern bool     mitem_unlink(selinux_engine *se, mitem_t *mitem);
-extern mitem_t *mitem_get(selinux_engine *se, const void *key, size_t key_len);
-extern void     mitem_put(selinux_engine *se, mitem_t *mitem);
-extern void		mitem_flush(selinux_engine *se, time_t when);
+extern bool     mitem_link(selinux_engine_t *se, mitem_t *mitem);
+extern bool     mitem_unlink(selinux_engine_t *se, mitem_t *mitem);
+extern mitem_t *mitem_get(selinux_engine_t *se, const void *key, size_t key_len);
+extern void     mitem_put(selinux_engine_t *se, mitem_t *mitem);
+extern void		mitem_flush(selinux_engine_t *se, time_t when);
 
 /*
  * mbtree.c - mmap based B-plus tree index
@@ -205,5 +183,40 @@ extern void      mblock_dump(mhead_t *mhead);
 extern void      mblock_reset(mhead_t *mhead);
 extern mhead_t  *mblock_map(int fdesc, size_t block_size, size_t super_size);
 extern void      mblock_unmap(mhead_t *mhead);
+
+/*
+ * interfaces.c
+ */
+struct selinux_engine_s {
+	ENGINE_HANDLE_V1		engine;
+	SERVER_HANDLE_V1		server;
+
+	pthread_rwlock_t		lock;
+	mhead_t				   *mhead;
+	mitem_t				   *mitems;
+	rel_time_t				startup_time;
+	mbtree_scan				scan;
+
+	/* configuration parameters */
+	struct {
+		char			   *filename;
+		int					fdesc;
+		size_t				block_size;
+		bool				selinux;
+		bool				enforcing;
+		bool				use_cas;
+		bool				reclaim;
+		bool				debug;
+	} config;
+
+	/* runtime statics parameters */
+	struct {
+		uint64_t			reclaimed;
+		uint64_t			num_hits;
+		uint64_t			num_misses;
+	} stats;
+
+	engine_info				info;
+};
 
 #endif

@@ -12,7 +12,7 @@
 #include "selinux_engine.h"
 
 static inline mchunk_t *
-mitem_to_mchunk(selinux_engine *se, mitem_t *mitem)
+mitem_to_mchunk(selinux_engine_t *se, mitem_t *mitem)
 {
 	int		index = mitem - se->mitems;
 
@@ -20,7 +20,7 @@ mitem_to_mchunk(selinux_engine *se, mitem_t *mitem)
 }
 
 static inline mitem_t *
-mchunk_to_mitem(selinux_engine *se, mchunk_t *mchunk)
+mchunk_to_mitem(selinux_engine_t *se, mchunk_t *mchunk)
 {
 	uint64_t	offset = addr_to_offset(se->mhead, mchunk);
 
@@ -62,7 +62,7 @@ mchunk_set_cas(mchunk_t *mchunk, uint64_t cas)
 	__mchunk_dump((out),__FUNCTION__,__LINE__,(se),(hkey),(hitem),(mchunk))
 static void
 __mchunk_dump(FILE *out, const char *funcname, int lineno,
-			  selinux_engine *se, uint32_t hkey, uint64_t hitem, mchunk_t *mchunk)
+			  selinux_engine_t *se, uint32_t hkey, uint64_t hitem, mchunk_t *mchunk)
 {
 	if (mchunk->tag == MCHUNK_TAG_ITEM)
 	{
@@ -86,7 +86,7 @@ __mchunk_dump(FILE *out, const char *funcname, int lineno,
 }
 
 void *
-mitem_get_key(selinux_engine *se, mitem_t *mitem)
+mitem_get_key(selinux_engine_t *se, mitem_t *mitem)
 {
 	mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
 
@@ -94,7 +94,7 @@ mitem_get_key(selinux_engine *se, mitem_t *mitem)
 }
 
 size_t
-mitem_get_keylen(selinux_engine *se, mitem_t *mitem)
+mitem_get_keylen(selinux_engine_t *se, mitem_t *mitem)
 {
 	mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
 
@@ -102,7 +102,7 @@ mitem_get_keylen(selinux_engine *se, mitem_t *mitem)
 }
 
 void *
-mitem_get_data(selinux_engine *se, mitem_t *mitem)
+mitem_get_data(selinux_engine_t *se, mitem_t *mitem)
 {
 	mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
 	
@@ -110,7 +110,7 @@ mitem_get_data(selinux_engine *se, mitem_t *mitem)
 }
 
 size_t
-mitem_get_datalen(selinux_engine *se, mitem_t *mitem)
+mitem_get_datalen(selinux_engine_t *se, mitem_t *mitem)
 {
 	mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
 
@@ -118,7 +118,7 @@ mitem_get_datalen(selinux_engine *se, mitem_t *mitem)
 }
 
 uint16_t
-mitem_get_flags(selinux_engine *se, mitem_t *mitem)
+mitem_get_flags(selinux_engine_t *se, mitem_t *mitem)
 {
 	mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
 
@@ -126,7 +126,7 @@ mitem_get_flags(selinux_engine *se, mitem_t *mitem)
 }
 
 uint64_t
-mitem_get_cas(selinux_engine *se, mitem_t *mitem)
+mitem_get_cas(selinux_engine_t *se, mitem_t *mitem)
 {
 	mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
 
@@ -134,7 +134,7 @@ mitem_get_cas(selinux_engine *se, mitem_t *mitem)
 }
 
 void
-mitem_set_flags(selinux_engine *se, mitem_t *mitem, uint16_t flags)
+mitem_set_flags(selinux_engine_t *se, mitem_t *mitem, uint16_t flags)
 {
 	mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
 
@@ -142,7 +142,7 @@ mitem_set_flags(selinux_engine *se, mitem_t *mitem, uint16_t flags)
 }
 
 void
-mitem_set_cas(selinux_engine *se, mitem_t *mitem, uint64_t cas)
+mitem_set_cas(selinux_engine_t *se, mitem_t *mitem, uint64_t cas)
 {
 	mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
 
@@ -150,7 +150,7 @@ mitem_set_cas(selinux_engine *se, mitem_t *mitem, uint64_t cas)
 }
 
 bool
-mitem_is_expired(selinux_engine *se, mitem_t *mitem)
+mitem_is_expired(selinux_engine_t *se, mitem_t *mitem)
 {
 	mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
 	uint32_t	exptime = mchunk->item.exptime;
@@ -174,7 +174,7 @@ mitem_is_expired(selinux_engine *se, mitem_t *mitem)
 }
 
 uint32_t
-mitem_get_exptime(selinux_engine *se, mitem_t *mitem)
+mitem_get_exptime(selinux_engine_t *se, mitem_t *mitem)
 {
 	mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
 
@@ -185,7 +185,7 @@ mitem_get_exptime(selinux_engine *se, mitem_t *mitem)
 }
 
 void
-mitem_set_exptime(selinux_engine *se, mitem_t *mitem, uint32_t exptime)
+mitem_set_exptime(selinux_engine_t *se, mitem_t *mitem, uint32_t exptime)
 {
 	mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
 
@@ -196,11 +196,79 @@ mitem_set_exptime(selinux_engine *se, mitem_t *mitem, uint32_t exptime)
 }
 
 int
-mitem_get_mclass(selinux_engine *se, mitem_t *mitem)
+mitem_get_mclass(selinux_engine_t *se, mitem_t *mitem)
 {
 	mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
 
 	return mchunk->mclass;
+}
+
+/*
+ * mitem_reclaim
+ *
+ * NOTE: caller shall hold write-lock
+ */
+static int
+mitem_reclaim(selinux_engine_t *se, size_t required)
+{
+	mchunk_t	   *mchunk;
+	mitem_t		   *mitem;
+	mbtree_scan		scan;
+	size_t			reclaimed = 0;
+	int				count = 0;
+	bool			rc;
+
+	required += sizeof(mchunk_t);
+	scan.mnode = 0;
+	while (reclaimed < required)
+	{
+		if (!mbtree_lookup(se->mhead, &scan))
+		{
+			scan.key = 0;
+			scan.mnode = 0;
+			continue;
+		}
+		mchunk = offset_to_addr(se->mhead, scan.item);
+
+		if (!mchunk_is_item(mchunk))
+			continue;
+
+		/*
+		 * No need to reclaim unlinked item
+		 */
+		if ((mchunk->item.flags & MITEM_LINKED) == 0)
+			continue;
+
+		mitem = mchunk_to_mitem(se, mchunk);
+		if (mitem->refcnt & MITEM_IS_HOT)
+		{
+			/* clear hot flag */
+			__sync_and_and_fetch(&mitem->refcnt, ~MITEM_IS_HOT);
+		}
+		else
+		{
+			size_t	chunk_size = (1 << mchunk->mclass);
+
+			__sync_add_and_fetch(&mitem->refcnt, 2);
+
+			if (se->config.debug)
+				mchunk_dump(stderr, se, scan.key, scan.item, mchunk);
+
+			rc = mbtree_delete(se->mhead, scan.key, scan.item);
+			assert(rc == true);
+
+			mchunk->item.flags &= ~MITEM_LINKED;
+
+			__sync_add_and_fetch(&se->stats.reclaimed, chunk_size);
+
+			reclaimed += chunk_size;
+
+			mitem_put(se, mitem);
+
+			scan.mnode = 0;
+		}
+	}
+	return count;
 }
 
 /*
@@ -209,7 +277,7 @@ mitem_get_mclass(selinux_engine *se, mitem_t *mitem)
  * NOTE: caller shall hold write-lock
  */
 mitem_t *
-mitem_alloc(selinux_engine *se,
+mitem_alloc(selinux_engine_t *se,
 			const void *key, size_t key_len, size_t data_len)
 {
 	mitem_t	   *mitem;
@@ -223,12 +291,19 @@ mitem_alloc(selinux_engine *se,
 		flags |= MITEM_WITH_CAS;
 		length += sizeof(uint64_t);
 	}
-
+retry:
 	mchunk = mblock_alloc(se->mhead, MCHUNK_TAG_ITEM, length);
 	if (!mchunk)
+	{
+		if (se->config.reclaim)
+		{
+			mitem_reclaim(se, length);
+			goto retry;
+		}
 		return NULL;
+	}
 	mitem = mchunk_to_mitem(se, mchunk);
-	assert(mitem->refcnt == 0);
+	assert(mitem->refcnt < 2);
 
 	mchunk->item.flags = flags;
 	mchunk->item.keylen = key_len;
@@ -238,7 +313,7 @@ mitem_alloc(selinux_engine *se,
 
 	memcpy(mchunk_get_key(mchunk), key, key_len);
 
-	mitem->refcnt = 1;
+	mitem->refcnt = 2 | MITEM_IS_HOT;
 
 	if (se->config.debug)
 		mchunk_dump(stderr, se, 0, addr_to_offset(se->mhead, mchunk), mchunk);
@@ -253,7 +328,7 @@ mitem_alloc(selinux_engine *se,
  * NOTE: caller shall hold write-lock
  */
 bool
-mitem_link(selinux_engine *se, mitem_t *mitem)
+mitem_link(selinux_engine_t *se, mitem_t *mitem)
 {
 	mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
 	uint32_t	hkey;
@@ -284,7 +359,7 @@ mitem_link(selinux_engine *se, mitem_t *mitem)
  * NOTE: caller shall hold write-lock
  */
 bool
-mitem_unlink(selinux_engine *se, mitem_t *mitem)
+mitem_unlink(selinux_engine_t *se, mitem_t *mitem)
 {
 	mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
 	uint32_t	hkey;
@@ -314,7 +389,7 @@ mitem_unlink(selinux_engine *se, mitem_t *mitem)
  * NOTE: caller shall hold read-lock
  */
 mitem_t *
-mitem_get(selinux_engine *se, const void *key, size_t key_len)
+mitem_get(selinux_engine_t *se, const void *key, size_t key_len)
 {
 	mitem_t	   *mitem;
 	mchunk_t   *mchunk;
@@ -341,7 +416,8 @@ mitem_get(selinux_engine *se, const void *key, size_t key_len)
 
 			mitem = mchunk_to_mitem(se, mchunk);
 
-			__sync_fetch_and_add(&mitem->refcnt, 1);
+			__sync_fetch_and_or(&mitem->refcnt, MITEM_IS_HOT);
+			__sync_fetch_and_add(&mitem->refcnt, 2);
 
 			return mitem;
 		}
@@ -362,7 +438,7 @@ mitem_get(selinux_engine *se, const void *key, size_t key_len)
  * NOTE: caller shall hold read-lock
  */
 void
-mitem_put(selinux_engine *se, mitem_t *mitem)
+mitem_put(selinux_engine_t *se, mitem_t *mitem)
 {
 	if (se->config.debug)
 		fprintf(stderr, "%s:%d offset=0x%08" PRIx64 " refcnt=%d\n",
@@ -370,7 +446,7 @@ mitem_put(selinux_engine *se, mitem_t *mitem)
 				addr_to_offset(se->mhead, mitem_to_mchunk(se,mitem)),
 				mitem->refcnt);
 
-	if (__sync_sub_and_fetch(&mitem->refcnt, 1) == 0)
+	if (__sync_sub_and_fetch(&mitem->refcnt, 2) < 2)
 	{
 		mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
 
@@ -385,7 +461,7 @@ mitem_put(selinux_engine *se, mitem_t *mitem)
  * NOTE: caller shall hold write-lock
  */
 void
-mitem_flush(selinux_engine *se, time_t when)
+mitem_flush(selinux_engine_t *se, time_t when)
 {
 	mchunk_t	   *mchunk;
 	mitem_t		   *mitem;
@@ -416,7 +492,7 @@ mitem_flush(selinux_engine *se, time_t when)
 
 		/* instead of mitem_get() */
 		mitem = mchunk_to_mitem(se, mchunk);
-		__sync_fetch_and_add(&mitem->refcnt, 1);
+		__sync_fetch_and_add(&mitem->refcnt, 2);
 
 		result = mbtree_delete(se->mhead, scan.key, scan.item);
 		assert(result == true);
