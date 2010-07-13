@@ -219,14 +219,13 @@ mitem_get_mclass(selinux_engine_t *se, mitem_t *mitem)
  *
  * NOTE: caller shall hold write-lock
  */
-static int
+size_t
 mitem_reclaim(selinux_engine_t *se, size_t required)
 {
 	mchunk_t	   *mchunk;
 	mitem_t		   *mitem;
 	mbtree_scan		scan;
 	size_t			reclaimed = 0;
-	int				count = 0;
 	bool			rc;
 
 	required += sizeof(mchunk_t);
@@ -279,7 +278,7 @@ mitem_reclaim(selinux_engine_t *se, size_t required)
 			scan.mnode = 0;
 		}
 	}
-	return count;
+	return reclaimed;
 }
 
 /*
@@ -461,7 +460,10 @@ mitem_put(selinux_engine_t *se, mitem_t *mitem)
 		mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
 
 		if ((mchunk->item.flags & MITEM_LINKED) == 0)
+		{
+			mlabel_uninstall(se, mchunk->item.secid);
 			mblock_free(se->mhead, mchunk);
+		}
 	}
 }
 

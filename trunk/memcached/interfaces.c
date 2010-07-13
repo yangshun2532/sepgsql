@@ -260,9 +260,21 @@ selinux_release(ENGINE_HANDLE* handle, const
 {
 	selinux_engine_t   *se = (selinux_engine_t *)handle;
 	mitem_t			   *mitem = item;
+	uint16_t			flags;
 
 	pthread_rwlock_rdlock(&se->lock);
-
+	/*
+	 * When MITEM_LINKED is not set, mitem_put() may invoke
+	 * mlabel_uninstall() which can remove security label
+	 * entry, so we need to acquire write lock before the
+	 * invocation.
+	 */
+	flags = mitem_get_flags(se, mitem);
+	if ((flags & MITEM_LINKED) == 0)
+	{
+		pthread_rwlock_unlock(&se->lock);
+		pthread_rwlock_wrlock(&se->lock);
+	}
 	mitem_put(se, mitem);
 
 	pthread_rwlock_unlock(&se->lock);
@@ -654,8 +666,10 @@ selinux_item_set_cas(ENGINE_HANDLE *handle,
 					 item *item,
 					 uint64_t cas)
 {
+	selinux_engine_t   *se = (selinux_engine_t *)handle;
+	mitem_t			   *mitem = (mitem_t *)item;
 
-
+	mitem_set_cas(se, mitem, cas);
 }
 
 static bool
