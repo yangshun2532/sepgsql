@@ -101,10 +101,17 @@ mlabel_install(selinux_engine_t *se, const char *label)
 	}
 
 	length = offset_of(mchunk_t, item.data[0]) + strlen(label) + 1;
+retry:
 	mchunk = mblock_alloc(se->mhead, MCHUNK_TAG_LABEL, length);
 	if (!mchunk)
+	{
+		if (se->config.reclaim)
+		{
+			mitem_reclaim(se, length);
+			goto retry;
+		}
 		return 0;
-
+	}
 	mchunk->label.secid = get_new_secid(se);
 	mchunk->label.refcount = 1;
 	strcpy(mchunk->label.value, label);
@@ -142,7 +149,12 @@ mlabel_uninstall(selinux_engine_t *se, uint32_t secid)
 
 	mchunk = mlabel_lookup_secid(se, secid);
 	if (!mchunk)
+	{
+		if (se->config.debug)
+			fprintf(stderr, "%s:%d no label entry for secid=%" PRIu32 "\n",
+					__FUNCTION__, __LINE__, secid);
 		return false;
+	}
 
 	if (--mchunk->label.refcount == 0)
 	{

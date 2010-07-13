@@ -150,6 +150,7 @@ extern uint32_t	mitem_get_secid(selinux_engine_t *se, mitem_t *mitem);
 extern void		mitem_put_secid(selinux_engine_t *se, mitem_t *mitem);
 extern int		mitem_get_mclass(selinux_engine_t *se, mitem_t *mitem);
 
+extern size_t	mitem_reclaim(selinux_engine_t *se, size_t required);
 extern mitem_t *mitem_alloc(selinux_engine_t *se,
 							const void *key, size_t key_len, size_t data_len,
 							uint32_t secid, int flags, rel_time_t exptime);
