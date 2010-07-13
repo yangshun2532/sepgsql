@@ -196,18 +196,15 @@ selinux_allocate(ENGINE_HANDLE *handle,
 {
 	selinux_engine_t   *se = (selinux_engine_t *)handle;
 	mitem_t			   *mitem;
+	uint32_t			secid = 0;
 
 	if (nbytes >= MBLOCK_MAX_SIZE - sizeof(mchunk_t))
 		return ENGINE_E2BIG;
 
 	pthread_rwlock_wrlock(&se->lock);
 
-	mitem = mitem_alloc(se, key, nkey, nbytes);
-	if (mitem)
-	{
-		mitem_set_flags(se, mitem, flags | mitem_get_flags(se, mitem));
-		mitem_set_exptime(se, mitem, exptime);
-	}
+	mitem = mitem_alloc(se, key, nkey, nbytes, secid, flags, exptime);
+
 	pthread_rwlock_unlock(&se->lock);
 
 	if (!mitem)
@@ -407,10 +404,12 @@ selinux_store(ENGINE_HANDLE* handle,
 				size_t		new_length	= mitem_get_datalen(se, new_item);
 
 				data_len = old_length + new_length - 2;
-				mitem = mitem_alloc(se, key, key_len, data_len);
+				mitem = mitem_alloc(se, key, key_len, data_len,
+									0, //mitem_get_secid(se, old_item),
+									mitem_get_flags(se, old_item),
+									mitem_get_exptime(se, old_item));
 				if (!mitem)
 					break;
-				mitem_set_exptime(se, mitem, mitem_get_exptime(se, old_item));
 
 				data = mitem_get_data(se, mitem);
 
@@ -476,6 +475,7 @@ selinux_arithmetic(ENGINE_HANDLE* handle,
 	mitem_t			   *old_item;
 	mitem_t			   *new_item;
 	uint64_t			value;
+	uint32_t			secid = 0;
 	char			   *data;
 	char				buffer[256];
 	size_t				length;
@@ -496,7 +496,7 @@ selinux_arithmetic(ENGINE_HANDLE* handle,
 		}
 		length = snprintf(buffer, sizeof(buffer), "%"PRIu64"\r\n",
 						  (uint64_t) initial);
-		new_item = mitem_alloc(se, key, nkey, length);
+		new_item = mitem_alloc(se, key, nkey, length, secid, 0, exptime);
 		if (!new_item)
 		{
 			rc = ENGINE_ENOMEM;
@@ -504,8 +504,6 @@ selinux_arithmetic(ENGINE_HANDLE* handle,
 		}
 		data = mitem_get_data(se, new_item);
 		memcpy(data, buffer, length);
-
-		mitem_set_exptime(se, new_item, exptime);
 
 		mitem_link(se, new_item);
 
@@ -531,7 +529,10 @@ selinux_arithmetic(ENGINE_HANDLE* handle,
 
 		length = snprintf(buffer, sizeof(buffer), "%"PRIu64"\r\n",
 						  (uint64_t) value);
-		new_item = mitem_alloc(se, key, nkey, length);
+		new_item = mitem_alloc(se, key, nkey, length,
+							   0, //mitem_get_secid(se, old_item),
+							   mitem_get_flags(se, old_item),
+							   mitem_get_exptime(se, old_item));
 		if (!new_item)
 		{
 			rc = ENGINE_ENOMEM;
@@ -540,7 +541,6 @@ selinux_arithmetic(ENGINE_HANDLE* handle,
 		data = mitem_get_data(se, new_item);
 		memcpy(data, buffer, length);
 
-		mitem_set_exptime(se, new_item, exptime);
 		mitem_set_cas(se, new_item, mitem_get_cas(se, old_item));
 
 		mitem_link(se, new_item);

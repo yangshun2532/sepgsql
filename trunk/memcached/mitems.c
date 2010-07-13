@@ -134,14 +134,6 @@ mitem_get_cas(selinux_engine_t *se, mitem_t *mitem)
 }
 
 void
-mitem_set_flags(selinux_engine_t *se, mitem_t *mitem, uint16_t flags)
-{
-	mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
-
-	mchunk->item.flags = flags;
-}
-
-void
 mitem_set_cas(selinux_engine_t *se, mitem_t *mitem, uint64_t cas)
 {
 	mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
@@ -184,15 +176,34 @@ mitem_get_exptime(selinux_engine_t *se, mitem_t *mitem)
 	return mchunk->item.exptime - se->startup_time;
 }
 
-void
-mitem_set_exptime(selinux_engine_t *se, mitem_t *mitem, uint32_t exptime)
+uint32_t
+mitem_get_secid(selinux_engine_t *se, mitem_t *mitem)
 {
 	mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
+	bool		rc;
 
-	if (exptime == 0)
-		mchunk->item.exptime = 0;
-	else
-		mchunk->item.exptime = exptime + se->startup_time;
+	if (mchunk->item.secid == 0)
+		return 0;
+
+	rc = mlabel_duplicate(se, mchunk->item.secid);
+	assert(rc == true);
+
+	return mchunk->item.secid;
+}
+
+void
+mitem_put_secid(selinux_engine_t *se, mitem_t *mitem)
+{
+	mchunk_t   *mchunk = mitem_to_mchunk(se, mitem);
+	bool		rc;
+
+	if (mchunk->item.secid == 0)
+		return;
+
+	rc = mlabel_uninstall(se, mchunk->item.secid);
+	assert(rc == true);
+
+	return;
 }
 
 int
@@ -278,19 +289,19 @@ mitem_reclaim(selinux_engine_t *se, size_t required)
  */
 mitem_t *
 mitem_alloc(selinux_engine_t *se,
-			const void *key, size_t key_len, size_t data_len)
+			const void *key, size_t key_len, size_t data_len,
+			uint32_t secid, int flags, rel_time_t exptime)
 {
 	mitem_t	   *mitem;
 	mchunk_t   *mchunk;
 	size_t		length;
-	uint16_t	flags = 0;
+
+	if (se->config.use_cas)
+		flags |= MITEM_WITH_CAS;
 
 	length = offset_of(mchunk_t, item.data[0]) + key_len + data_len;
-	if (se->config.use_cas)
-	{
-		flags |= MITEM_WITH_CAS;
+	if ((flags & MITEM_WITH_CAS) != 0)
 		length += sizeof(uint64_t);
-	}
 retry:
 	mchunk = mblock_alloc(se->mhead, MCHUNK_TAG_ITEM, length);
 	if (!mchunk)
@@ -308,8 +319,8 @@ retry:
 	mchunk->item.flags = flags;
 	mchunk->item.keylen = key_len;
 	mchunk->item.datalen = data_len;
-	mchunk->item.secid = 0;		/* should be copied from older item */
-	mchunk->item.exptime = 0;
+	mchunk->item.secid = secid;
+	mchunk->item.exptime = exptime;
 
 	memcpy(mchunk_get_key(mchunk), key, key_len);
 
@@ -323,7 +334,6 @@ retry:
 
 /*
  * mitem_link
- *
  *
  * NOTE: caller shall hold write-lock
  */
