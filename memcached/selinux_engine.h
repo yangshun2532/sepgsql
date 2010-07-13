@@ -73,7 +73,7 @@ typedef struct {
 		struct {
 			uint32_t	secid;
 			uint32_t	refcount;
-			uint8_t		label[0];
+			char		value[1];
 		} label;
 	};
 } mchunk_t;
@@ -142,15 +142,17 @@ extern void    *mitem_get_data(selinux_engine_t *se, mitem_t *mitem);
 extern size_t   mitem_get_datalen(selinux_engine_t *se, mitem_t *mitem);
 extern uint16_t mitem_get_flags(selinux_engine_t *se, mitem_t *mitem);
 extern uint64_t mitem_get_cas(selinux_engine_t *se, mitem_t *mitem);
-extern void		mitem_set_flags(selinux_engine_t *se, mitem_t *mitem, uint16_t flags);
 extern void		mitem_set_cas(selinux_engine_t *se, mitem_t *mitem, uint64_t cas);
 extern uint32_t	mitem_get_exptime(selinux_engine_t *se, mitem_t *mitem);
-extern void		mitem_set_exptime(selinux_engine_t *se, mitem_t *mitem, uint32_t exptime);
+
 extern bool		mitem_is_expired(selinux_engine_t *se, mitem_t *mitem);
+extern uint32_t	mitem_get_secid(selinux_engine_t *se, mitem_t *mitem);
+extern void		mitem_put_secid(selinux_engine_t *se, mitem_t *mitem);
 extern int		mitem_get_mclass(selinux_engine_t *se, mitem_t *mitem);
 
 extern mitem_t *mitem_alloc(selinux_engine_t *se,
-							const void *key, size_t key_len, size_t data_len);
+							const void *key, size_t key_len, size_t data_len,
+							uint32_t secid, int flags, rel_time_t exptime);
 extern bool     mitem_link(selinux_engine_t *se, mitem_t *mitem);
 extern bool     mitem_unlink(selinux_engine_t *se, mitem_t *mitem);
 extern mitem_t *mitem_get(selinux_engine_t *se, const void *key, size_t key_len);
@@ -184,6 +186,13 @@ extern void      mblock_dump(mhead_t *mhead);
 extern void      mblock_reset(mhead_t *mhead);
 extern mhead_t  *mblock_map(int fdesc, size_t block_size, size_t super_size);
 extern void      mblock_unmap(mhead_t *mhead);
+
+/*
+ * mlabel.c - 
+ */
+extern uint32_t	mlabel_install(selinux_engine_t *se, const char *label);
+extern bool		mlabel_uninstall(selinux_engine_t *se, uint32_t secid);
+extern bool		mlabel_duplicate(selinux_engine_t *se, uint32_t secid);
 
 /*
  * interfaces.c
