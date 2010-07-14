@@ -10,14 +10,22 @@
  */
 #include "postgres.h"
 
+#include "access/heapam.h"
+#include "access/genam.h"
 #include "access/sysattr.h"
 #include "catalog/catalog.h"
+#include "catalog/indexing.h"
 #include "catalog/pg_attribute.h"
 #include "catalog/pg_class.h"
+#include "catalog/pg_inherits.h"
+#include "commands/seclabel.h"
 #include "executor/executor.h"
 #include "nodes/bitmapset.h"
 #include "miscadmin.h"
 #include "utils/acl.h"
+#include "utils/fmgroids.h"
+#include "utils/rel.h"
+#include "utils/tqual.h"
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
 
@@ -251,6 +259,150 @@ sepgsql_executor_check_perms(List *rangeTables)
 	sepgsql_relation_privileges(rangeTables, true);
 }
 
+
+/*
+ * sepgsql_relation_relabel
+ *
+ * It validates the given security label and privileges to relabel.
+ */
+static void
+sepgsql_relation_relabel(Oid relOid, AttrNumber attnum, const char *label,
+						 bool recurse, int expected_parents)
+{
+	Relation	pg_inherit;
+	SysScanDesc	scan;
+	ScanKeyData	keys[1];
+	HeapTuple	tuple;
+	char	   *tcontext;
+	uint16		tclass;
+
+	/* security label validation */
+	if (!label || security_check_context((security_context_t)label) < 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_NAME),
+				 errmsg("invalid security label: \"%s\"", label)));
+
+	/*
+	 * when user tries to relabel a relation with inheritances without
+	 * recursion option, we need to prevent this operation because of
+	 * security label consistency in the inheritance tree.
+	 */
+	if (!recurse && expected_parents == 0)
+	{
+		pg_inherit = heap_open(InheritsRelationId, AccessShareLock);
+
+		ScanKeyInit(&keys[0],
+					Anum_pg_inherits_inhparent,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum(relOid));
+
+		scan = systable_beginscan(pg_inherit,
+								  InheritsParentIndexId, true,
+								  SnapshotNow, 1, keys);
+
+		tuple = systable_getnext(scan);
+		if (HeapTupleIsValid(tuple))
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+					 errmsg("inherited relations also must be relabeled")));
+
+		heap_close(pg_inherit, AccessShareLock);
+	}
+
+	/*
+	 * If the relation is inherited from multiple origins, forbid the
+	 * relabeling. When it is top-level call, expected_parents will be
+	 * 0. Elsewhere, it will be the number of parents the current relation
+     * has within the inheritance hierarchy being processed.
+	 */
+	if (attnum == InvalidAttrNumber)
+	{
+		pg_inherit = heap_open(InheritsRelationId, AccessShareLock);
+
+		ScanKeyInit(&keys[0],
+					Anum_pg_inherits_inhrelid,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum(relOid));
+
+		scan = systable_beginscan(pg_inherit,
+								  InheritsRelidSeqnoIndexId, true,
+								  SnapshotNow, 1, keys);
+		while (HeapTupleIsValid(tuple = systable_getnext(scan)))
+			expected_parents--;
+
+		systable_endscan(scan);
+
+		heap_close(pg_inherit, AccessShareLock);
+
+		if (expected_parents < 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+					 errmsg("cannot rename inherited relation \"%s\"",
+							get_rel_name(relOid))));
+	}
+	else
+	{
+		int		inhcount;
+
+		tuple = SearchSysCache2(ATTNUM,
+								ObjectIdGetDatum(relOid),
+								Int16GetDatum(attnum));
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "cache lookup failed for attribute %d of relation %u",
+				 attnum, relOid);
+
+		inhcount = ((Form_pg_attribute) GETSTRUCT(tuple))->attinhcount;
+
+		if (inhcount > expected_parents)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
+					 errmsg("cannot rename inherited column \"%s\"",
+							get_attname(relOid, attnum))));
+
+		ReleaseSysCache(tuple);
+	}
+
+	/*
+	 * what is the appropriate object class?
+	 */
+	switch (get_rel_relkind(relOid))
+	{
+		case RELKIND_RELATION:
+			tclass = SEPG_CLASS_DB_TABLE;
+			break;
+
+		case RELKIND_SEQUENCE:
+			tclass = SEPG_CLASS_DB_SEQUENCE;
+			break;
+
+		default:
+			tclass = SEPG_CLASS_DB_TUPLE;
+			break;
+	}
+
+	/*
+	 * check db_table/db_column:{setattr relabelfrom} permission
+	 */
+	tcontext = sepgsql_get_label(RelationRelationId, relOid, attnum);
+
+	sepgsql_compute_perms(sepgsql_get_client_label(),
+						  tcontext,
+						  tclass,
+						  SEPG_DB_TABLE__SETATTR |
+						  SEPG_DB_TABLE__RELABELFROM,
+						  get_rel_name(relOid),
+						  true);
+	/*
+	 * check db_table/db_column:{relabelto} permission
+	 */
+	sepgsql_compute_perms(sepgsql_get_client_label(),
+						  (security_context_t)label,
+						  tclass,
+						  SEPG_DB_TABLE__RELABELTO,
+						  get_rel_name(relOid),
+						  true);
+}
+
 /*
  * sepgsql_register_hooks
  *
@@ -260,4 +412,5 @@ void
 sepgsql_register_hooks(void)
 {
 	ExecutorCheckPerms_hook = sepgsql_executor_check_perms;
+	check_relation_relabel_hook = sepgsql_relation_relabel;
 }
