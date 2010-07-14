@@ -16,6 +16,7 @@
 #include "catalog/indexing.h"
 #include "catalog/pg_description.h"
 #include "catalog/pg_shdescription.h"
+#include "commands/seclabel.h"
 #include "libpq/libpq-be.h"
 #include "miscadmin.h"
 #include "utils/builtins.h"
@@ -104,106 +105,6 @@ sepgsql_get_unlabeled_label(void)
 }
 
 /*
- * sepgsql_get_local_label
- *
- * It returns a security label of the specified local database object,
- * or NULL if unlabeled.
- */
-static char *
-sepgsql_get_local_label(Oid classOid, Oid objOid, int32 subId)
-{
-	Relation		rel;
-	SysScanDesc		scan;
-	ScanKeyData		skey[3];
-	HeapTuple		tuple;
-	char		   *seclabel = NULL;
-
-    /* Use the index to search for a matching old tuple */
-    ScanKeyInit(&skey[0],
-                Anum_pg_description_objoid,
-                BTEqualStrategyNumber, F_OIDEQ,
-                ObjectIdGetDatum(objOid));
-    ScanKeyInit(&skey[1],
-                Anum_pg_description_classoid,
-                BTEqualStrategyNumber, F_OIDEQ,
-                ObjectIdGetDatum(classOid));
-    ScanKeyInit(&skey[2],
-                Anum_pg_description_objsubid,
-                BTEqualStrategyNumber, F_INT4EQ,
-                Int32GetDatum(subId));
-
-	rel = heap_open(DescriptionRelationId, AccessShareLock);
-
-	scan = systable_beginscan(rel, DescriptionObjIndexId, true,
-							  SnapshotNow, 3, skey);
-
-	tuple = systable_getnext(scan);
-	if (HeapTupleIsValid(tuple))
-	{
-		Datum		value;
-		bool		isnull;
-
-		value = heap_getattr(tuple, Anum_pg_description_description,
-							 RelationGetDescr(rel), &isnull);
-		if (!isnull)
-			seclabel = TextDatumGetCString(value);
-	}
-    systable_endscan(scan);
-
-    heap_close(rel, AccessShareLock);
-
-    return seclabel;
-}
-
-/*
- * sepgsql_get_shared_label
- *
- * It returns a security label of the specified shared database object,
- * or NULL if unlabeled.
- */
-static char *
-sepgsql_get_shared_label(Oid classOid, Oid objOid)
-{
-	Relation		rel;
-	SysScanDesc		scan;
-	ScanKeyData		skey[2];
-	HeapTuple		tuple;
-	char		   *seclabel = NULL;
-
-	/* Use the index to search for a matching old tuple */
-	ScanKeyInit(&skey[0],
-				Anum_pg_description_objoid,
-				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(objOid));
-	ScanKeyInit(&skey[1],
-				Anum_pg_description_classoid,
-				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(classOid));
-
-	rel = heap_open(SharedDescriptionRelationId, AccessShareLock);
-
-	scan = systable_beginscan(rel, SharedDescriptionObjIndexId, true,
-							  SnapshotNow, 2, skey);
-
-	tuple = systable_getnext(scan);
-	if (HeapTupleIsValid(tuple))
-	{
-		Datum		value;
-		bool		isnull;
-
-		value = heap_getattr(tuple, Anum_pg_shdescription_description,
-							 RelationGetDescr(rel), &isnull);
-		if (!isnull)
-			seclabel = TextDatumGetCString(value);
-	}
-	systable_endscan(scan);
-
-	heap_close(rel, AccessShareLock);
-
-	return seclabel;
-}
-
-/*
  * sepgsql_get_label
  *
  * It returns a security context of the specified database object.
@@ -213,12 +114,7 @@ sepgsql_get_shared_label(Oid classOid, Oid objOid)
 char *
 sepgsql_get_label(Oid relOid, Oid objOid, int32 subId)
 {
-	char   *tcontext;
-
-	if (IsSharedRelation(relOid))
-		tcontext = sepgsql_get_shared_label(relOid, objOid);
-	else
-		tcontext = sepgsql_get_local_label(relOid, objOid, subId);
+	char   *tcontext = GetSecurityLabel(relOid, objOid, subId);
 
 	if (!tcontext || security_check_context(tcontext) < 0)
 		tcontext = sepgsql_get_unlabeled_label();
