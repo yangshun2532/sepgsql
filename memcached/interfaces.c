@@ -142,13 +142,11 @@ selinux_initialize(ENGINE_HANDLE* handle,
 	if (!se->mhead)
 		return ENGINE_ENOMEM;
 
-	se->mitems = malloc(sizeof(mitem_t) * (mblock_size >> MBLOCK_MIN_BITS));
-	if (!se->mitems)
+	if (!mcache_init(se))
 	{
 		mbtree_close(se->mhead);
 		return ENGINE_ENOMEM;
 	}
-	memset(se->mitems, 0, sizeof(mitem_t) * (mblock_size >> MBLOCK_MIN_BITS));
 
 	/*
 	 * Dump configuration
@@ -176,9 +174,24 @@ static void
 selinux_destroy(ENGINE_HANDLE *handle)
 {
 	selinux_engine_t   *se = (selinux_engine_t *)handle;
+	mcache_t		   *mcache, *next;
+	int					index;
 
-	free(se->mitems);
+	for (index = 0; index < se->mcache.size; index++)
+	{
+		for (mcache = se->mcache.slots[index]; mcache; mcache = next)
+		{
+			next = mcache->next;
 
+			free(mcache);
+		}
+	}
+	for (mcache = se->mcache.free_list; mcache; mcache = next)
+	{
+		next = mcache->next;
+
+		free(mcache);
+	}
 	mbtree_close(se->mhead);
 
 	close(se->config.fdesc);
@@ -195,7 +208,7 @@ selinux_allocate(ENGINE_HANDLE *handle,
 				 const rel_time_t exptime)
 {
 	selinux_engine_t   *se = (selinux_engine_t *)handle;
-	mitem_t			   *mitem;
+	mcache_t		   *mcache;
 	uint32_t			secid = 0;
 
 	if (nbytes >= MBLOCK_MAX_SIZE - sizeof(mchunk_t))
@@ -203,14 +216,14 @@ selinux_allocate(ENGINE_HANDLE *handle,
 
 	pthread_rwlock_wrlock(&se->lock);
 
-	mitem = mitem_alloc(se, key, nkey, nbytes, secid, flags, exptime);
+	mcache = mcache_alloc(se, key, nkey, nbytes, secid, flags, exptime);
 
 	pthread_rwlock_unlock(&se->lock);
 
-	if (!mitem)
+	if (!mcache)
 		return ENGINE_ENOMEM;
 
-	*item = mitem;
+	*item = mcache;
 
 	return ENGINE_SUCCESS;
 }
@@ -224,33 +237,31 @@ selinux_remove(ENGINE_HANDLE *handle,
 			   uint16_t vbucket)
 {
 	selinux_engine_t   *se = (selinux_engine_t *)handle;
-	mitem_t			   *mitem;
+	mcache_t		   *mcache;
+	ENGINE_ERROR_CODE	rc = ENGINE_SUCCESS;
 
 	if (vbucket != 0)
 		return ENGINE_ENOTSUP;
 
 	pthread_rwlock_wrlock(&se->lock);
 
-	mitem = mitem_get(se, key, nkey);
-	if (!mitem)
+	mcache = mcache_get(se, key, nkey);
+	if (!mcache)
 	{
 		pthread_rwlock_unlock(&se->lock);
 
 		return ENGINE_KEY_ENOENT;
 	}
-	if (cas == 0 || cas == mitem_get_cas(se, mitem))
-	{
-		mitem_unlink(se, mitem);
-		mitem_put(se, mitem);
-	}
+	if (cas == 0 || cas == mcache_get_cas(mcache))
+		mcache_unlink(se, mcache);
 	else
-	{
-		pthread_rwlock_unlock(&se->lock);
-		return ENGINE_KEY_EEXISTS;
-	}
+		rc = ENGINE_KEY_EEXISTS;
+
+	mcache_put(se, mcache);
+
 	pthread_rwlock_unlock(&se->lock);
 
-	return ENGINE_SUCCESS;
+	return rc;
 }
 
 static void
@@ -259,23 +270,22 @@ selinux_release(ENGINE_HANDLE* handle, const
 				item* item)
 {
 	selinux_engine_t   *se = (selinux_engine_t *)handle;
-	mitem_t			   *mitem = item;
+	mcache_t		   *mcache = (mcache_t *)item;
 	uint16_t			flags;
 
 	pthread_rwlock_rdlock(&se->lock);
 	/*
-	 * When MITEM_LINKED is not set, mitem_put() may invoke
-	 * mlabel_uninstall() which can remove security label
-	 * entry, so we need to acquire write lock before the
-	 * invocation.
+	 * If MITEM_LINKED is not set, mitem_put() may also unlink
+	 * a security label associated, so it needs to be writer
+	 * locked.
 	 */
-	flags = mitem_get_flags(se, mitem);
+	flags = mcache_get_flags(mcache);
 	if ((flags & MITEM_LINKED) == 0)
 	{
 		pthread_rwlock_unlock(&se->lock);
 		pthread_rwlock_wrlock(&se->lock);
 	}
-	mitem_put(se, mitem);
+	mcache_put(se, mcache);
 
 	pthread_rwlock_unlock(&se->lock);
 }
@@ -289,7 +299,7 @@ selinux_get(ENGINE_HANDLE *handle,
 			uint16_t vbucket)
 {
 	selinux_engine_t   *se = (selinux_engine_t *)handle;
-	mitem_t			   *mitem;
+	mcache_t		   *mcache;
 	bool				lock_is_exclusive = false;
 
 	if (vbucket != 0)
@@ -297,13 +307,13 @@ selinux_get(ENGINE_HANDLE *handle,
 
 	pthread_rwlock_rdlock(&se->lock);
 retry:
-	mitem = mitem_get(se, key, nkey);
+	mcache = mcache_get(se, key, nkey);
 
 	/*
 	 * If the required item is already expired, we unlink it and report
 	 * users that no item were not found with this key.
 	 */
-	if (mitem != NULL && mitem_is_expired(se, mitem))
+	if (mcache != NULL && mcache_is_expired(se, mcache))
 	{
 		/*
 		 * We cannot unlink the item with read-lock, so we retry same
@@ -312,27 +322,27 @@ retry:
 		 */
 		if (!lock_is_exclusive)
 		{
-			mitem_put(se, mitem);
+			mcache_put(se, mcache);
 			pthread_rwlock_unlock(&se->lock);
 			lock_is_exclusive = true;
 			pthread_rwlock_wrlock(&se->lock);
 			goto retry;
 		}
-		mitem_unlink(se, mitem);
-		mitem_put(se, mitem);
-		mitem = NULL;
+		mcache_unlink(se, mcache);
+		mcache_put(se, mcache);
+		mcache = NULL;
 	}
-	if (!mitem)
+	if (!mcache)
 		__sync_add_and_fetch(&se->stats.num_misses, 1);
 	else
 		__sync_add_and_fetch(&se->stats.num_hits, 1);
 
 	pthread_rwlock_unlock(&se->lock);
 
-	if (!mitem)
+	if (!mcache)
 		return ENGINE_KEY_ENOENT;
 
-	*item = mitem;
+	*item = mcache;
 
 	return ENGINE_SUCCESS;
 }
@@ -347,8 +357,8 @@ selinux_store(ENGINE_HANDLE* handle,
 {
 	ENGINE_ERROR_CODE	rc = ENGINE_NOT_STORED;
 	selinux_engine_t   *se = (selinux_engine_t *)handle;
-	mitem_t			   *new_item = item;
-	mitem_t			   *old_item;
+	mcache_t		   *new_cache = item;
+	mcache_t		   *old_cache;
 	void			   *key;
 	size_t				key_len;
 
@@ -357,15 +367,15 @@ selinux_store(ENGINE_HANDLE* handle,
 
 	pthread_rwlock_wrlock(&se->lock);
 
-	key = mitem_get_key(se, new_item);
-	key_len = mitem_get_keylen(se, new_item);
-	old_item = mitem_get(se, key, key_len);
+	key = mcache_get_key(new_cache);
+	key_len = mcache_get_keylen(new_cache);
+	old_cache = mcache_get(se, key, key_len);
 
-	if (old_item != NULL && mitem_is_expired(se, old_item))
+	if (old_cache != NULL && mcache_is_expired(se, old_cache))
 	{
-		mitem_unlink(se, old_item);
-		mitem_put(se, old_item);
-		old_item = NULL;
+		mcache_unlink(se, old_cache);
+		mcache_put(se, old_cache);
+		old_cache = NULL;
 	}
 
 	switch (operation)
@@ -374,18 +384,18 @@ selinux_store(ENGINE_HANDLE* handle,
 			/*
 			 * ADD only adds a nonexistent item.
 			 */
-			if (old_item == NULL)
+			if (old_cache == NULL)
 			{
-				mitem_link(se, new_item);
+				mcache_link(se, new_cache);
 
 				rc = ENGINE_SUCCESS;
 			}
 			break;
 
 		case OPERATION_SET:
-			mitem_link(se, new_item);
-			if (old_item != NULL)
-				mitem_unlink(se, old_item);
+			mcache_link(se, new_cache);
+			if (old_cache != NULL)
+				mcache_unlink(se, old_cache);
 
 			rc = ENGINE_SUCCESS;
 			break;
@@ -394,10 +404,10 @@ selinux_store(ENGINE_HANDLE* handle,
 			/*
 			 * REPLACE only replaces an existing value
 			 */
-			if (old_item != NULL)
+			if (old_cache != NULL)
 			{
-				mitem_link(se, new_item);
-				mitem_unlink(se, old_item);
+				mcache_link(se, new_cache);
+				mcache_unlink(se, old_cache);
 
 				rc = ENGINE_SUCCESS;
 			}
@@ -405,25 +415,25 @@ selinux_store(ENGINE_HANDLE* handle,
 
 		case OPERATION_APPEND:
 		case OPERATION_PREPEND:
-			if (old_item != NULL)
+			if (old_cache != NULL)
 			{
-				mitem_t	   *mitem;
+				mcache_t   *mcache;
 				void	   *data;
 				size_t		data_len;
-				void	   *old_data	= mitem_get_data(se, old_item);
-				size_t		old_length	= mitem_get_datalen(se, old_item);
-				void	   *new_data	= mitem_get_data(se, new_item);
-				size_t		new_length	= mitem_get_datalen(se, new_item);
+				void	   *old_data	= mcache_get_data(old_cache);
+				size_t		old_length	= mcache_get_datalen(old_cache);
+				void	   *new_data	= mcache_get_data(new_cache);
+				size_t		new_length	= mcache_get_datalen(new_cache);
 
 				data_len = old_length + new_length - 2;
-				mitem = mitem_alloc(se, key, key_len, data_len,
-									0, //mitem_get_secid(se, old_item),
-									mitem_get_flags(se, old_item),
-									mitem_get_exptime(se, old_item));
-				if (!mitem)
+				mcache = mcache_alloc(se, key, key_len, data_len,
+									  mcache_get_secid(old_cache),
+									  mcache_get_flags(old_cache),
+									  mcache_get_exptime(se, old_cache));
+				if (!mcache)
 					break;
 
-				data = mitem_get_data(se, mitem);
+				data = mcache_get_data(mcache);
 
 				if (operation == OPERATION_APPEND)
 				{
@@ -435,24 +445,24 @@ selinux_store(ENGINE_HANDLE* handle,
 					memcpy(data, new_data, new_length);
 					memcpy(data + new_length - 2, old_data, old_length);
 				}
-				mitem_link(se, mitem);
-				mitem_unlink(se, old_item);
+				mcache_link(se, mcache);
+				mcache_unlink(se, old_cache);
 
-				mitem_put(se, mitem);
+				mcache_put(se, mcache);
 
 				rc = ENGINE_SUCCESS;
 			}
 			break;
 
 		case OPERATION_CAS:
-			if (old_item != NULL)
+			if (old_cache != NULL)
 			{
-				if (mitem_get_cas(se, old_item) != mitem_get_cas(se, new_item))
+				if (mcache_get_cas(old_cache) != mcache_get_cas(new_cache))
 					rc = ENGINE_KEY_EEXISTS;
 				else
 				{
-					mitem_link(se, new_item);
-					mitem_unlink(se, old_item);
+					mcache_link(se, new_cache);
+					mcache_unlink(se, old_cache);
 				}
 			}
 			break;
@@ -461,8 +471,8 @@ selinux_store(ENGINE_HANDLE* handle,
 			/* should be never happen */
 			break;
 	}
-	if (old_item)
-		mitem_put(se, old_item);
+	if (old_cache)
+		mcache_put(se, old_cache);
 
 	pthread_rwlock_unlock(&se->lock);
 
@@ -484,8 +494,8 @@ selinux_arithmetic(ENGINE_HANDLE* handle,
 				   uint16_t vbucket)
 {
 	selinux_engine_t   *se = (selinux_engine_t *)handle;
-	mitem_t			   *old_item;
-	mitem_t			   *new_item;
+	mcache_t		   *old_cache;
+	mcache_t		   *new_cache;
 	uint64_t			value;
 	uint32_t			secid = 0;
 	char			   *data;
@@ -498,8 +508,8 @@ selinux_arithmetic(ENGINE_HANDLE* handle,
 
     pthread_rwlock_wrlock(&se->lock);
 
-	old_item = mitem_get(se, key, nkey);
-	if (!old_item)
+	old_cache = mcache_get(se, key, nkey);
+	if (!old_cache)
 	{
 		if (!create)
 		{
@@ -508,25 +518,25 @@ selinux_arithmetic(ENGINE_HANDLE* handle,
 		}
 		length = snprintf(buffer, sizeof(buffer), "%"PRIu64"\r\n",
 						  (uint64_t) initial);
-		new_item = mitem_alloc(se, key, nkey, length, secid, 0, exptime);
-		if (!new_item)
+		new_cache = mcache_alloc(se, key, nkey, length, secid, 0, exptime);
+		if (!new_cache)
 		{
 			rc = ENGINE_ENOMEM;
 			goto out_unlock;
 		}
-		data = mitem_get_data(se, new_item);
+		data = mcache_get_data(new_cache);
 		memcpy(data, buffer, length);
 
-		mitem_link(se, new_item);
+		mcache_link(se, new_cache);
 
-		mitem_put(se, new_item);
+		mcache_put(se, new_cache);
 
 		*result = initial;
-		*cas = mitem_get_cas(se, new_item);
+		*cas = mcache_get_cas(new_cache);
 	}
 	else
 	{
-		if (!safe_strtoull(mitem_get_data(se, old_item), &value))
+		if (!safe_strtoull(mcache_get_data(old_cache), &value))
 		{
 			rc = ENGINE_EINVAL;
 			goto out_unlock;
@@ -541,31 +551,31 @@ selinux_arithmetic(ENGINE_HANDLE* handle,
 
 		length = snprintf(buffer, sizeof(buffer), "%"PRIu64"\r\n",
 						  (uint64_t) value);
-		new_item = mitem_alloc(se, key, nkey, length,
-							   0, //mitem_get_secid(se, old_item),
-							   mitem_get_flags(se, old_item),
-							   mitem_get_exptime(se, old_item));
-		if (!new_item)
+		new_cache = mcache_alloc(se, key, nkey, length,
+								 mcache_get_secid(old_cache),
+								 mcache_get_flags(old_cache),
+								 mcache_get_exptime(se, old_cache));
+		if (!new_cache)
 		{
 			rc = ENGINE_ENOMEM;
 			goto out_unlock;
 		}
-		data = mitem_get_data(se, new_item);
+		data = mcache_get_data(new_cache);
 		memcpy(data, buffer, length);
 
-		mitem_set_cas(se, new_item, mitem_get_cas(se, old_item));
+		mcache_set_cas(new_cache, mcache_get_cas(old_cache));
 
-		mitem_link(se, new_item);
-		mitem_unlink(se, old_item);
+		mcache_link(se, new_cache);
+		mcache_unlink(se, old_cache);
 
-		mitem_put(se, new_item);
+		mcache_put(se, new_cache);
 
 		*result = value;
-		*cas = mitem_get_cas(se, new_item);
+		*cas = mcache_get_cas(new_cache);
 	}
 out_unlock:
-	if (old_item)
-		mitem_put(se, old_item);
+	if (old_cache)
+		mcache_put(se, old_cache);
 	pthread_rwlock_unlock(&se->lock);
 
 	return rc;
@@ -580,7 +590,7 @@ selinux_flush(ENGINE_HANDLE *handle,
 
 	pthread_rwlock_wrlock(&se->lock);
 
-	mitem_flush(se, when);
+	mcache_flush(se, when);
 
 	pthread_rwlock_unlock(&se->lock);
 
@@ -666,10 +676,9 @@ selinux_item_set_cas(ENGINE_HANDLE *handle,
 					 item *item,
 					 uint64_t cas)
 {
-	selinux_engine_t   *se = (selinux_engine_t *)handle;
-	mitem_t			   *mitem = (mitem_t *)item;
+	mcache_t		   *mcache = item;
 
-	mitem_set_cas(se, mitem, cas);
+	mcache_set_cas(mcache, cas);
 }
 
 static bool
@@ -678,21 +687,21 @@ selinux_get_item_info(ENGINE_HANDLE *handle,
 					  item_info *item_info)
 {
 	selinux_engine_t   *se		= (selinux_engine_t *)handle;
-	mitem_t			   *mitem	= (mitem_t *)item;
+	mcache_t		   *mcache	= (mcache_t *)item;
 
 	if (item_info->nvalue < 1)
 		return false;
 
-	item_info->cas		= mitem_get_cas(se, mitem);
-	item_info->exptime	= mitem_get_exptime(se, mitem);
-	item_info->nbytes	= mitem_get_datalen(se, mitem);
-	item_info->flags	= mitem_get_flags(se, mitem);
-	item_info->clsid	= mitem_get_mclass(se, mitem);
-	item_info->nkey		= mitem_get_keylen(se, mitem);
+	item_info->cas		= mcache_get_cas(mcache);
+	item_info->exptime	= mcache_get_exptime(se, mcache);
+	item_info->nbytes	= mcache_get_datalen(mcache);
+	item_info->flags	= mcache_get_flags(mcache);
+	item_info->clsid	= mcache_get_mclass(mcache);
+	item_info->nkey		= mcache_get_keylen(mcache);
 	item_info->nvalue	= 1;
-	item_info->key		= mitem_get_key(se, mitem);
-	item_info->value[0].iov_base	= mitem_get_data(se, mitem);
-	item_info->value[0].iov_len		= mitem_get_datalen(se, mitem);
+	item_info->key		= mcache_get_key(mcache);
+	item_info->value[0].iov_base	= mcache_get_data(mcache);
+	item_info->value[0].iov_len		= mcache_get_datalen(mcache);
 
 	return true;
 }
@@ -720,7 +729,6 @@ static selinux_engine_t selinux_engine_catalog = {
 	},
 	.lock	= PTHREAD_RWLOCK_INITIALIZER,
 	.mhead	= NULL,
-	.mitems	= NULL,
 	.scan = {
 		.key = 0,
 		.item = 0,
