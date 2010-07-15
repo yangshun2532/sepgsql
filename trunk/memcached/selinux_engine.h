@@ -9,6 +9,8 @@
 #define SELINUX_ENGINE_H
 
 #include <pthread.h>
+#include <selinux/selinux.h>
+#include <selinux/avc.h>
 #include "memcached/engine.h"
 #include "memcached/util.h"
 
@@ -127,38 +129,44 @@ mchunk_magic(mhead_t *mhead, mchunk_t *mchunk)
 #define mchunk_is_label(mc)	((mc)->tag == MCHUNK_TAG_LABEL)
 
 /*
- * mitems.c - memory block based item management
+ * mcache.c - local item/label management
  */
-typedef struct mitem_s
+typedef struct mcache_s mcache_t;
+struct mcache_s
 {
-	volatile uint16_t	refcnt;
-} mitem_t;
+	mcache_t	   *next;
+	volatile int	refcnt;
+	bool			is_hot;
+	const char	   *label;
+	mchunk_t	   *mchunk;
+};
 
-#define MITEM_IS_HOT	0x0001
+extern void		*mcache_get_key(mcache_t *mcache);
+extern size_t	 mcache_get_keylen(mcache_t *mcache);
+extern void		*mcache_get_data(mcache_t *mcache);
+extern size_t	 mcache_get_datalen(mcache_t *mcache);
+extern uint64_t	 mcache_get_cas(mcache_t *mcache);
+extern void		 mcache_set_cas(mcache_t *mcache, uint64_t cas);
+extern uint16_t	 mcache_get_flags(mcache_t *mcache);
+extern uint32_t	 mcache_get_secid(mcache_t *mcache);
+extern int		 mcache_get_mclass(mcache_t *mcache);
+extern bool		 mcache_is_expired(selinux_engine_t *se, mcache_t *mcache);
+extern uint32_t	 mcache_get_exptime(selinux_engine_t *se, mcache_t *mcache);
+extern mcache_t *mcache_alloc(selinux_engine_t *se,
+							  const void *key, size_t key_len, size_t data_len,
+							  uint32_t secid, int flags, rel_time_t exptime);
+extern bool		 mcache_link(selinux_engine_t *se, mcache_t *mcache);
+extern bool		 mcache_unlink(selinux_engine_t *se, mcache_t *mcache);
+extern mcache_t *mcache_get(selinux_engine_t *se, const void *key, size_t key_len);
+extern void		 mcache_put(selinux_engine_t *se, mcache_t *mcache);
+extern void		 mcache_flush(selinux_engine_t *se, time_t when);
+extern bool		 mcache_init(selinux_engine_t *se);
 
-extern void    *mitem_get_key(selinux_engine_t *se, mitem_t *mitem);
-extern size_t   mitem_get_keylen(selinux_engine_t *se, mitem_t *mitem);
-extern void    *mitem_get_data(selinux_engine_t *se, mitem_t *mitem);
-extern size_t   mitem_get_datalen(selinux_engine_t *se, mitem_t *mitem);
-extern uint16_t mitem_get_flags(selinux_engine_t *se, mitem_t *mitem);
-extern uint64_t mitem_get_cas(selinux_engine_t *se, mitem_t *mitem);
-extern void		mitem_set_cas(selinux_engine_t *se, mitem_t *mitem, uint64_t cas);
-extern uint32_t	mitem_get_exptime(selinux_engine_t *se, mitem_t *mitem);
-
-extern bool		mitem_is_expired(selinux_engine_t *se, mitem_t *mitem);
-extern uint32_t	mitem_get_secid(selinux_engine_t *se, mitem_t *mitem);
-extern void		mitem_put_secid(selinux_engine_t *se, mitem_t *mitem);
-extern int		mitem_get_mclass(selinux_engine_t *se, mitem_t *mitem);
-
-extern size_t	mitem_reclaim(selinux_engine_t *se, size_t required);
-extern mitem_t *mitem_alloc(selinux_engine_t *se,
-							const void *key, size_t key_len, size_t data_len,
-							uint32_t secid, int flags, rel_time_t exptime);
-extern bool     mitem_link(selinux_engine_t *se, mitem_t *mitem);
-extern bool     mitem_unlink(selinux_engine_t *se, mitem_t *mitem);
-extern mitem_t *mitem_get(selinux_engine_t *se, const void *key, size_t key_len);
-extern void     mitem_put(selinux_engine_t *se, mitem_t *mitem);
-extern void		mitem_flush(selinux_engine_t *se, time_t when);
+extern mchunk_t *mlabel_lookup_secid(selinux_engine_t *se, uint32_t secid);
+extern mchunk_t *mlabel_lookup_label(selinux_engine_t *se, const char *label);
+extern uint32_t	 mlabel_get(selinux_engine_t *se, const char *label);
+extern bool		 mlabel_put(selinux_engine_t *se, uint32_t secid);
+extern bool		 mlabel_copy(selinux_engine_t *se, uint32_t secid);
 
 /*
  * mbtree.c - mmap based B-plus tree index
@@ -189,13 +197,6 @@ extern mhead_t  *mblock_map(int fdesc, size_t block_size, size_t super_size);
 extern void      mblock_unmap(mhead_t *mhead);
 
 /*
- * mlabel.c - 
- */
-extern uint32_t	mlabel_install(selinux_engine_t *se, const char *label);
-extern bool		mlabel_uninstall(selinux_engine_t *se, uint32_t secid);
-extern bool		mlabel_duplicate(selinux_engine_t *se, uint32_t secid);
-
-/*
  * interfaces.c
  */
 struct selinux_engine_s {
@@ -204,9 +205,21 @@ struct selinux_engine_s {
 
 	pthread_rwlock_t		lock;
 	mhead_t				   *mhead;
-	mitem_t				   *mitems;
-	rel_time_t				startup_time;
 	mbtree_scan				scan;
+
+	rel_time_t				startup_time;
+
+	/* mcache status */
+	struct {
+		mcache_t		  **slots;
+		pthread_mutex_t	   *locks;
+		int					size;
+		volatile int		lru_hint;
+		mcache_t		   *free_list;
+		pthread_mutex_t		free_lock;
+		uint32_t			num_actives;
+		uint32_t			num_frees;
+	} mcache;
 
 	/* configuration parameters */
 	struct {
