@@ -214,6 +214,7 @@ extern bool		mselinux_check_arithmetic(selinux_engine_t *se, const void *cookie,
 										  mcache_t *mcache);
 extern bool		mselinux_check_flush(selinux_engine_t *se, const void *cookie);
 extern bool		mselinux_init(selinux_engine_t *se);
+extern void		mselinux_fini(selinux_engine_t *se);
 
 /*
  * interfaces.c
@@ -223,6 +224,7 @@ struct selinux_engine_s {
 	SERVER_HANDLE_V1		server;
 
 	pthread_rwlock_t		lock;
+	pthread_t				thread;
 	mhead_t				   *mhead;
 	mbtree_scan				scan;
 
@@ -246,7 +248,6 @@ struct selinux_engine_s {
 		int					fdesc;
 		size_t				block_size;
 		bool				selinux;
-		bool				enforcing;
 		bool				use_cas;
 		bool				reclaim;
 		bool				debug;

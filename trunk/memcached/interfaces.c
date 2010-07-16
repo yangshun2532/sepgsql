@@ -76,10 +76,6 @@ selinux_initialize(ENGINE_HANDLE* handle,
 		  .datatype			= DT_BOOL,
 		  .value.dt_bool	= &se->config.selinux,
 		},
-		{ .key				= "enforcing",
-		  .datatype			= DT_BOOL,
-		  .value.dt_bool	= &se->config.enforcing,
-		},
 		{ .key				= "reclaim",
 		  .datatype			= DT_BOOL,
 		  .value.dt_bool	= &se->config.reclaim,
@@ -150,14 +146,12 @@ selinux_initialize(ENGINE_HANDLE* handle,
 			"selinux_engine.config.size = %" PRIu64 "\n"
 			"selinux_engine.config.use_cas = %s\n"
 			"selinux_engine.config.selinux = %s\n"
-			"selinux_engine.config.enforcing = %s\n"
 			"selinux_engine.config.reclaim = %s\n"
 			"selinux_engine.config.debug = %s\n",
 			se->config.filename ? se->config.filename : "(null)",
 			se->config.block_size,
 			se->config.use_cas ? "true" : "false",
 			se->config.selinux ? "true" : "false",
-			se->config.enforcing ? "true" : "false",
 			se->config.reclaim ? "true" : "false",
 			se->config.debug ? "true" : "false");
 
@@ -170,6 +164,8 @@ selinux_destroy(ENGINE_HANDLE *handle)
 	selinux_engine_t   *se = (selinux_engine_t *)handle;
 	mcache_t		   *mcache, *next;
 	int					index;
+
+	mselinux_fini(se);
 
 	for (index = 0; index < se->mcache.size; index++)
 	{
@@ -186,7 +182,8 @@ selinux_destroy(ENGINE_HANDLE *handle)
 
 		free(mcache);
 	}
-	mbtree_close(se->mhead);
+	if (se->mhead != NULL)
+		mbtree_close(se->mhead);
 
 	close(se->config.fdesc);
 }
@@ -211,6 +208,8 @@ selinux_allocate(ENGINE_HANDLE *handle,
 	pthread_rwlock_wrlock(&se->lock);
 
 	secid = mselinux_check_alloc(se, cookie, key, nkey);
+
+	fprintf(stderr, "%s: secid=%u\n", __FUNCTION__, secid);
 
 	mcache = mcache_alloc(se, key, nkey, nbytes, secid, flags, exptime);
 
@@ -771,11 +770,21 @@ static selinux_engine_t selinux_engine_catalog = {
 		.item_set_cas		= selinux_item_set_cas,
 		.get_item_info		= selinux_get_item_info,
 	},
-	.lock	= PTHREAD_RWLOCK_INITIALIZER,
-	.mhead	= NULL,
+	.lock					= PTHREAD_RWLOCK_INITIALIZER,
+	.thread					= 0,
+	.mhead					= NULL,
 	.scan = {
-		.key = 0,
-		.item = 0,
+		.key				= 0,
+		.item				= 0,
+	},
+	.mcache = {
+		.slots				= NULL,
+		.locks				= NULL,
+		.lru_hint			= 0,
+		.free_list			= NULL,
+		.free_lock			= PTHREAD_MUTEX_INITIALIZER,
+		.num_actives		= 0,
+		.num_frees			= 0,
 	},
 	.config = {
 		.filename			= NULL,
@@ -783,7 +792,6 @@ static selinux_engine_t selinux_engine_catalog = {
 		.block_size			= 64 * 1024 * 1024,
 		.use_cas			= true,
 		.selinux			= true,
-		.enforcing			= true,
 		.reclaim			= false,
 		.debug				= true,
 	},
