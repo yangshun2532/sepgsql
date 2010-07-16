@@ -116,15 +116,9 @@ selinux_initialize(ENGINE_HANDLE* handle,
 		se->info.features[se->info.num_features++].feature
 			= ENGINE_FEATURE_PERSISTENT_STORAGE;
 	}
-	/* SELinux is available? */
-	if (se->config.selinux)
-	{
-		if (is_selinux_enabled() == 1)
-			se->info.features[se->info.num_features++].feature
-				= ENGINE_FEATURE_ACCESS_CONTROL;
-		else
-			se->config.selinux = false;	/* SELinux is disabled */
-	}
+	/* Initialize SELinux support */
+	if (!mselinux_init(se))
+	  return ENGINE_ENOMEM;
 
 	/*
 	 * Load B+tree index
@@ -216,6 +210,8 @@ selinux_allocate(ENGINE_HANDLE *handle,
 
 	pthread_rwlock_wrlock(&se->lock);
 
+	secid = mselinux_check_alloc(se, cookie, key, nkey);
+
 	mcache = mcache_alloc(se, key, nkey, nbytes, secid, flags, exptime);
 
 	pthread_rwlock_unlock(&se->lock);
@@ -252,10 +248,12 @@ selinux_remove(ENGINE_HANDLE *handle,
 
 		return ENGINE_KEY_ENOENT;
 	}
-	if (cas == 0 || cas == mcache_get_cas(mcache))
-		mcache_unlink(se, mcache);
-	else
+	if (cas != 0 && cas != mcache_get_cas(mcache))
 		rc = ENGINE_KEY_EEXISTS;
+	else if (!mselinux_check_delete(se, cookie, mcache))
+		rc = ENGINE_EACCESS;
+	else
+		mcache_unlink(se, mcache);
 
 	mcache_put(se, mcache);
 
@@ -332,6 +330,13 @@ retry:
 		mcache_put(se, mcache);
 		mcache = NULL;
 	}
+	if (mcache && !mselinux_check_read(se, cookie, mcache))
+	{
+		mcache_put(se, mcache);
+		pthread_rwlock_unlock(&se->lock);
+		return ENGINE_EACCESS;
+	}
+
 	if (!mcache)
 		__sync_add_and_fetch(&se->stats.num_misses, 1);
 	else
@@ -386,17 +391,35 @@ selinux_store(ENGINE_HANDLE* handle,
 			 */
 			if (old_cache == NULL)
 			{
+				if (!mselinux_check_create(se, cookie, new_cache))
+				{
+					rc = ENGINE_EACCESS;
+					break;
+				}
 				mcache_link(se, new_cache);
-
 				rc = ENGINE_SUCCESS;
 			}
 			break;
 
 		case OPERATION_SET:
-			mcache_link(se, new_cache);
-			if (old_cache != NULL)
+			if (old_cache == NULL)
+			{
+				if (!mselinux_check_create(se, cookie, new_cache))
+				{
+					rc = ENGINE_EACCESS;
+					break;
+				}
+			}
+			else
+			{
+				if (!mselinux_check_write(se, cookie, old_cache, new_cache))
+				{
+					rc = ENGINE_EACCESS;
+					break;
+				}
 				mcache_unlink(se, old_cache);
-
+			}
+			mcache_link(se, new_cache);
 			rc = ENGINE_SUCCESS;
 			break;
 
@@ -406,6 +429,11 @@ selinux_store(ENGINE_HANDLE* handle,
 			 */
 			if (old_cache != NULL)
 			{
+				if (!mselinux_check_write(se, cookie, old_cache, new_cache))
+				{
+					rc = ENGINE_EACCESS;
+					break;
+				}
 				mcache_link(se, new_cache);
 				mcache_unlink(se, old_cache);
 
@@ -424,6 +452,12 @@ selinux_store(ENGINE_HANDLE* handle,
 				size_t		old_length	= mcache_get_datalen(old_cache);
 				void	   *new_data	= mcache_get_data(new_cache);
 				size_t		new_length	= mcache_get_datalen(new_cache);
+
+				if (!mselinux_check_append(se, cookie, old_cache, new_cache))
+				{
+					rc = ENGINE_EACCESS;
+					break;
+				}
 
 				data_len = old_length + new_length - 2;
 				mcache = mcache_alloc(se, key, key_len, data_len,
@@ -459,6 +493,8 @@ selinux_store(ENGINE_HANDLE* handle,
 			{
 				if (mcache_get_cas(old_cache) != mcache_get_cas(new_cache))
 					rc = ENGINE_KEY_EEXISTS;
+				else if (!mselinux_check_write(se, cookie, old_cache, new_cache))
+					rc = ENGINE_EACCESS;
 				else
 				{
 					mcache_link(se, new_cache);
@@ -527,7 +563,10 @@ selinux_arithmetic(ENGINE_HANDLE* handle,
 		data = mcache_get_data(new_cache);
 		memcpy(data, buffer, length);
 
-		mcache_link(se, new_cache);
+		if (!mselinux_check_create(se, cookie, new_cache))
+			rc = ENGINE_EACCESS;
+		else
+			mcache_link(se, new_cache);
 
 		mcache_put(se, new_cache);
 
@@ -565,9 +604,13 @@ selinux_arithmetic(ENGINE_HANDLE* handle,
 
 		mcache_set_cas(new_cache, mcache_get_cas(old_cache));
 
-		mcache_link(se, new_cache);
-		mcache_unlink(se, old_cache);
-
+		if (!mselinux_check_arithmetic(se, cookie, old_cache))
+			rc = ENGINE_EACCESS;
+		else
+		{
+			mcache_link(se, new_cache);
+			mcache_unlink(se, old_cache);
+		}
 		mcache_put(se, new_cache);
 
 		*result = value;
@@ -590,7 +633,8 @@ selinux_flush(ENGINE_HANDLE *handle,
 
 	pthread_rwlock_wrlock(&se->lock);
 
-	mcache_flush(se, when);
+	if (!mselinux_check_flush(se, cookie))
+		mcache_flush(se, when);
 
 	pthread_rwlock_unlock(&se->lock);
 
@@ -625,7 +669,7 @@ selinux_get_stats(ENGINE_HANDLE *handle,
 	{
 		int				mclass;
 
-		for (mclass = MBLOCK_MIN_BITS; mclass <= MBLOCK_MIN_BITS; mclass++)
+		for (mclass = MBLOCK_MIN_BITS; mclass <= MBLOCK_MAX_BITS; mclass++)
 		{
 			klen = sprintf(kbuf, "%u:chunk.size", mclass);
 			vlen = sprintf(vbuf, "%" PRIu32, (1<<mclass));

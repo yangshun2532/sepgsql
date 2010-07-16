@@ -100,14 +100,15 @@ __mcache_dump(FILE *out, const char *fnname, int lineno,
 	mchunk_t   *mchunk = mcache->mchunk;
 
 	fprintf(out,
-			"%s:%d mchunk=0x%08" PRIx64 ", refcnt=%d, is_hot=%d, secid='%s', "
+			"%s:%d mchunk=0x%08" PRIx64 ", refcnt=%d, is_hot=%d, tsid='%s', "
 			"mchunk(key='%.*s', value='%.*s', cas=%" PRIu64 ", flags=0x%04x "
 			"exptime=%" PRIu32 "\n",
 			fnname, lineno,
 			addr_to_offset(se->mhead, mchunk),
-			mcache->refcnt, mcache->is_hot, mcache->label,
+			mcache->refcnt, mcache->is_hot,
+			mcache->tsid ? mcache->tsid->ctx : NULL,
 			(int)mchunk_get_keylen(mchunk), (char *)mchunk_get_key(mchunk),
-			(int)mchunk_get_datalen(mchunk), (char *)mchunk_get_data(mchunk),
+			(int)mchunk_get_datalen(mchunk) - 2, (char *)mchunk_get_data(mchunk),
 			mchunk_get_cas(mchunk), mchunk->item.flags, mchunk->item.exptime);
 }
 
@@ -256,7 +257,7 @@ mcache_reclaim(selinux_engine_t *se, int num_reclaimed)
  *
  * It tries to reclaim expired items
  */
-static void
+static bool
 mitems_reclaim(selinux_engine_t *se, size_t required)
 {
 	mchunk_t   *mchunk;
@@ -264,6 +265,7 @@ mitems_reclaim(selinux_engine_t *se, size_t required)
 	size_t		reclaimed = 0;
 	size_t		chunk_size;
 	int			ntries = 150;
+	int			count = 0;
 
 	se->scan.mnode = 0;
 	while (reclaimed < required && ntries-- > 0)
@@ -294,9 +296,15 @@ mitems_reclaim(selinux_engine_t *se, size_t required)
 		{
 			mcache_unlink(se, mcache);
 			reclaimed += chunk_size;
+			count++;
 		}
 		mcache_put(se, mcache);
 	}
+	if (se->config.debug)
+		fprintf(stderr, "%s: %d chunks (%u bytes [%u bytes req]) were reclaimed\n",
+				__FUNCTION__, count, (uint32_t)reclaimed, (uint32_t)required);
+
+	return (reclaimed < required ? false : true);
 }
 
 mcache_t *
@@ -304,11 +312,12 @@ mcache_alloc(selinux_engine_t *se,
 			 const void *key, size_t key_len, size_t data_len,
 			 uint32_t secid, int flags, rel_time_t exptime)
 {
-	mcache_t   *mcache;
-	mchunk_t   *mchunk;
-	mchunk_t   *lchunk;
-	size_t		length;
-	int			index;
+	mcache_t	   *mcache;
+	mchunk_t	   *mchunk;
+	mchunk_t	   *lchunk = NULL;
+	size_t			length;
+	security_id_t	tsid = NULL;
+	int				index;
 
 	assert((flags & MITEM_LINKED) == 0);
 	if (se->config.use_cas)
@@ -317,6 +326,34 @@ mcache_alloc(selinux_engine_t *se,
 	length = offset_of(mchunk_t, item.data[0]) + key_len + data_len;
 	if ((flags & MITEM_WITH_CAS) != 0)
 		length += sizeof(uint64_t);
+	/*
+	 * security label validation
+	 */
+	if (secid > 0)
+	{
+		lchunk = mlabel_lookup_secid(se, secid);
+		if (!lchunk)
+			secid = 0;
+		else
+			lchunk->label.refcount++;
+	}
+
+	if (se->config.selinux)
+	{
+		if (!lchunk)
+		{
+			if (avc_get_initial_sid("unlabeled", &tsid) < 0)
+				return NULL;
+		}
+		else
+		{
+			if (avc_context_to_sid_raw(lchunk->label.value, &tsid) < 0)
+			{
+				lchunk->label.refcount--;
+				return NULL;
+			}
+		}
+	}
 
 	/*
 	 * allocate from memory block
@@ -325,18 +362,19 @@ retry_1:
 	mchunk = mblock_alloc(se->mhead, MCHUNK_TAG_ITEM, length);
 	if (!mchunk)
 	{
-		if (se->config.reclaim)
-		{
-			mitems_reclaim(se, length * 5 + sizeof(mchunk_t));
+		if (se->config.reclaim && mitems_reclaim(se, length))
 			goto retry_1;
-		}
+
 		return NULL;
 	}
 	mchunk->item.flags = flags;
-	mchunk->item.exptime = exptime;
+	mchunk->item.exptime = exptime + se->startup_time;
 	mchunk->item.secid = secid;
-	if (secid > 0)
-		mlabel_copy(se, secid);
+	mchunk->item.keylen = key_len;
+	mchunk->item.datalen = data_len;
+	memcpy(mchunk_get_key(mchunk), key, key_len);
+	memset(mchunk_get_data(mchunk), 0, data_len);
+
 	/*
 	 * allocate a mcache entry
 	 */
@@ -355,10 +393,8 @@ retry_2:
 
 	mcache->refcnt = 1;
 	mcache->is_hot = true;
-	if (secid > 0 && (lchunk = mlabel_lookup_secid(se, secid)) != NULL)
-		mcache->label = lchunk->label.value;
-	else
-		mcache->label = NULL;
+	mcache->tsid = tsid;
+	mcache->mchunk = mchunk;
 
 	index = mcache_index(se, mchunk);
 
@@ -368,6 +404,9 @@ retry_2:
 	se->mcache.slots[index] = mcache;
 
 	pthread_mutex_unlock(&se->mcache.locks[index]);
+
+	if (se->config.debug)
+		mcache_dump(stderr, se, mcache);
 
 	return mcache;
 }
@@ -395,6 +434,9 @@ mcache_link(selinux_engine_t *se, mcache_t *mcache)
 
 	mcache->mchunk->item.flags |= MITEM_LINKED;
 
+	if (se->config.debug)
+		mcache_dump(stderr, se, mcache);
+
 	return true;
 }
 
@@ -421,6 +463,9 @@ mcache_unlink(selinux_engine_t *se, mcache_t *mcache)
 
 	mcache->mchunk->item.flags &= ~MITEM_LINKED;
 
+	if (se->config.debug)
+		mcache_dump(stderr, se, mcache);
+
 	return true;
 }
 
@@ -432,9 +477,11 @@ mcache_unlink(selinux_engine_t *se, mcache_t *mcache)
 static mcache_t *
 mcache_get_internal(selinux_engine_t *se, mchunk_t *mchunk)
 {
-	mcache_t   *mcache;
-	mchunk_t   *lchunk;
-	int			index = mcache_index(se, mchunk);
+	mcache_t	   *mcache;
+	mchunk_t	   *lchunk = NULL;
+	security_id_t	tsid = NULL;
+	int				index = mcache_index(se, mchunk);
+	int				rc;
 
 retry:
 	pthread_mutex_lock(&se->mcache.locks[index]);
@@ -473,11 +520,27 @@ retry:
 	/* set up mcache */
 	mcache->refcnt = 1;
 	mcache->is_hot = true;
-	if (mchunk->item.secid > 0 &&
-		(lchunk = mlabel_lookup_secid(se, mchunk->item.secid)) != NULL)
-		mcache->label = lchunk->label.value;
-	else
-		mcache->label = NULL;
+	if (se->config.selinux)
+	{
+		if (mchunk->item.secid > 0)
+			lchunk = mlabel_lookup_secid(se, mchunk->item.secid);
+
+		if (!lchunk)
+			rc = avc_get_initial_sid("unlabeled", &tsid);
+		else
+			rc = avc_context_to_sid_raw(lchunk->label.value, &tsid);
+
+		if (rc < 0)
+		{
+			pthread_mutex_lock(&se->mcache.free_lock);
+			mcache->next = se->mcache.free_list;
+			se->mcache.free_list = mcache;
+			pthread_mutex_unlock(&se->mcache.free_lock);
+
+			return NULL;
+		}
+	}
+	mcache->tsid = tsid;
 	mcache->mchunk = mchunk;
 
 	mcache->next = se->mcache.slots[index];
@@ -493,6 +556,7 @@ retry:
 mcache_t *
 mcache_get(selinux_engine_t *se, const void *key, size_t key_len)
 {
+	mcache_t   *mcache;
 	mchunk_t   *mchunk;
 	uint32_t	hkey;
 	mbtree_scan	scan;
@@ -513,7 +577,11 @@ mcache_get(selinux_engine_t *se, const void *key, size_t key_len)
 			memcmp(mchunk_get_key(mchunk), key, key_len) != 0)
 			continue;
 
-		return mcache_get_internal(se, mchunk);
+		mcache = mcache_get_internal(se, mchunk);
+		if (mcache && se->config.debug)
+			mcache_dump(stderr, se, mcache);
+
+		return mcache;
 	}
 	/* Not found */
 	return NULL;
@@ -530,6 +598,9 @@ mcache_put(selinux_engine_t *se, mcache_t *mcache)
 {
 	int		index = mcache_index(se, mcache->mchunk);
 
+	if (se->config.debug)
+		mcache_dump(stderr, se, mcache);
+
 	pthread_mutex_lock(&se->mcache.locks[index]);
 	if (--mcache->refcnt == 0)
 	{
@@ -540,7 +611,8 @@ mcache_put(selinux_engine_t *se, mcache_t *mcache)
 			/*
 			 * Release Memory Block
 			 */
-			// TODO: put_seclabel
+			if (mcache->mchunk->item.secid != 0)
+				mlabel_put(se, mcache->mchunk->item.secid);
 			mblock_free(se->mhead, mcache->mchunk);
 
 			/*
@@ -601,6 +673,8 @@ mcache_flush(selinux_engine_t *se, time_t when)
 		mcache_unlink(se, mcache);
 
 		mcache_put(se, mcache);
+
+		scan.mnode = 0;
 	}
 }
 
@@ -676,8 +750,17 @@ mlabel_lookup_secid(selinux_engine_t *se, uint32_t secid)
 		mchunk = offset_to_addr(se->mhead, scan.item);
 		if (mchunk_is_label(mchunk) &&
 			mchunk->label.secid == secid)
+		{
+			if (se->config.debug)
+				fprintf(stderr, "%s: security label '%s' (secid=%u)\n",
+						__FUNCTION__, mchunk->label.value, secid);
 			return mchunk;
+		}
 	}
+	if (se->config.debug)
+		fprintf(stderr, "%s: no valid security label (secid=%u)\n",
+				__FUNCTION__, secid);
+
 	return NULL;
 }
 
@@ -702,8 +785,17 @@ mlabel_lookup_label(selinux_engine_t *se, const char *label)
 		mchunk = offset_to_addr(se->mhead, scan.item);
 		if (mchunk_is_label(mchunk) &&
 			strcmp(mchunk->label.value, label) == 0)
+		{
+			if (se->config.debug)
+				fprintf(stderr, "%s: security label '%s' (secid=%u)\n",
+						__FUNCTION__, label, mchunk->label.secid);
 			return mchunk;
+		}
 	}
+	if (se->config.debug)
+		fprintf(stderr, "%s: no valid security label (label='%s')\n",
+				__FUNCTION__, label);
+
 	return NULL;
 }
 
@@ -760,11 +852,8 @@ retry:
 	mchunk = mblock_alloc(se->mhead, MCHUNK_TAG_LABEL, length);
 	if (!mchunk)
 	{
-		if (se->config.reclaim)
-		{
-			mitems_reclaim(se, sizeof(mchunk_t) + length * 2);
+		if (se->config.reclaim && mitems_reclaim(se, length))
 			goto retry;
-		}
 		return 0;
 	}
 	mchunk->label.secid = assign_new_secid(se);
@@ -821,23 +910,5 @@ mlabel_put(selinux_engine_t *se, uint32_t secid)
 		/* release its mchunk */
 		mblock_free(se->mhead, mchunk);
 	}
-	return true;
-}
-
-bool
-mlabel_copy(selinux_engine_t *se, uint32_t secid)
-{
-	mchunk_t   *mchunk;
-
-	mchunk = mlabel_lookup_secid(se, secid);
-	if (!mchunk)
-	{
-		if (se->config.debug)
-			fprintf(stderr, "%s:%d no label entry for secid=%u\n",
-					__FUNCTION__, __LINE__, secid);
-		return false;
-	}
-	mchunk->label.refcount++;
-
 	return true;
 }

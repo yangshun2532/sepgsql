@@ -137,7 +137,7 @@ struct mcache_s
 	mcache_t	   *next;
 	volatile int	refcnt;
 	bool			is_hot;
-	const char	   *label;
+	security_id_t	tsid;
 	mchunk_t	   *mchunk;
 };
 
@@ -166,7 +166,6 @@ extern mchunk_t *mlabel_lookup_secid(selinux_engine_t *se, uint32_t secid);
 extern mchunk_t *mlabel_lookup_label(selinux_engine_t *se, const char *label);
 extern uint32_t	 mlabel_get(selinux_engine_t *se, const char *label);
 extern bool		 mlabel_put(selinux_engine_t *se, uint32_t secid);
-extern bool		 mlabel_copy(selinux_engine_t *se, uint32_t secid);
 
 /*
  * mbtree.c - mmap based B-plus tree index
@@ -195,6 +194,26 @@ extern void      mblock_dump(mhead_t *mhead);
 extern void      mblock_reset(mhead_t *mhead);
 extern mhead_t  *mblock_map(int fdesc, size_t block_size, size_t super_size);
 extern void      mblock_unmap(mhead_t *mhead);
+
+/*
+ * selinux.c - routines to support access control
+ */
+extern uint32_t	mselinux_check_alloc(selinux_engine_t *se, const void *cookie,
+									 const void *key, size_t keylen);
+extern bool		mselinux_check_create(selinux_engine_t *se, const void *cookie,
+									  mcache_t *mcache);
+extern bool		mselinux_check_read(selinux_engine_t *se, const void *cookie,
+									mcache_t *mcache);
+extern bool		mselinux_check_write(selinux_engine_t *se, const void *cookie,
+									 mcache_t *old_cache, mcache_t *new_cache);
+extern bool		mselinux_check_append(selinux_engine_t *se, const void *cookie,
+									  mcache_t *old_cache, mcache_t *new_cache);
+extern bool		mselinux_check_delete(selinux_engine_t *se, const void *cookie,
+									  mcache_t *mcache);
+extern bool		mselinux_check_arithmetic(selinux_engine_t *se, const void *cookie,
+										  mcache_t *mcache);
+extern bool		mselinux_check_flush(selinux_engine_t *se, const void *cookie);
+extern bool		mselinux_init(selinux_engine_t *se);
 
 /*
  * interfaces.c
