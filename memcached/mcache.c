@@ -102,7 +102,7 @@ __mcache_dump(FILE *out, const char *fnname, int lineno,
 	fprintf(out,
 			"%s:%d mchunk=0x%08" PRIx64 ", refcnt=%d, is_hot=%d, tsid='%s', "
 			"mchunk(key='%.*s', value='%.*s', cas=%" PRIu64 ", flags=0x%04x "
-			"exptime=%" PRIu32 "\n",
+			"exptime=%" PRIu32 ")\n",
 			fnname, lineno,
 			addr_to_offset(se->mhead, mchunk),
 			mcache->refcnt, mcache->is_hot,
@@ -368,7 +368,7 @@ retry_1:
 		return NULL;
 	}
 	mchunk->item.flags = flags;
-	mchunk->item.exptime = exptime + se->startup_time;
+	mchunk->item.exptime = (!exptime ? 0 : exptime + se->startup_time);
 	mchunk->item.secid = secid;
 	mchunk->item.keylen = key_len;
 	mchunk->item.datalen = data_len;
