@@ -5,6 +5,7 @@
  */
 #include <assert.h>
 #include <signal.h>
+#include <string.h>
 #include <unistd.h>
 #include "selinux_engine.h"
 
@@ -14,10 +15,14 @@ static struct {
 	access_vector_t		create;
 	access_vector_t		getattr;
 	access_vector_t		setattr;
-	access_vector_t		drop;
+	access_vector_t		remove;
 	access_vector_t		read;
 	access_vector_t		write;
 	access_vector_t		append;
+	access_vector_t		arithmetic;
+	access_vector_t		relabelfrom;
+	access_vector_t		relabelto;
+	access_vector_t		flush;
 } permissions = {
 	.lock				= PTHREAD_RWLOCK_INITIALIZER,
 };
@@ -27,6 +32,7 @@ mselinux_check_alloc(selinux_engine_t *se, const void *cookie,
 					 const void *key, size_t keylen)
 {
 	static security_id_t	tsid = NULL;
+	mcache_t	   *mcache;
 	security_id_t	ssid;
 	security_id_t	nsid;
 	uint32_t		secid;
@@ -34,7 +40,27 @@ mselinux_check_alloc(selinux_engine_t *se, const void *cookie,
 	if (!se->config.selinux)
 		return 0;
 
+	/*
+	 * It the new allocation tries to replace an existing key,
+	 * we copy security id from the older chunk.
+	 */
+	mcache = mcache_get(se, key, keylen);
+	if (mcache)
+	{
+		secid = mcache->mchunk->item.secid;
+		if (secid > 0)
+		{
+			mchunk_t   *lchunk = mlabel_lookup_secid(se, secid);
+			if (!lchunk)
+				secid = 0;
+			else
+				lchunk->label.refcount++;
+		}
+		return secid;
+	}
+
 	ssid = se->server.core->get_engine_specific(cookie);
+	/* XXX - an ad-hoc assumption */
 	if (!tsid)
 		avc_context_to_sid_raw("system_u:object_r:sepgsql_db_t:s0", &tsid);
 
@@ -52,120 +78,91 @@ mselinux_check_alloc(selinux_engine_t *se, const void *cookie,
 	return secid;
 }
 
+#define	mselinux_check_common(se,cookie,mcache,av_name)				\
+	do {															\
+		security_id_t	ssid;										\
+		security_id_t	tsid;										\
+		int				rc;											\
+																	\
+		ssid = (se)->server.core->get_engine_specific((cookie));	\
+		tsid = (mcache)->tsid;										\
+																	\
+		pthread_rwlock_rdlock(&permissions.lock);					\
+																	\
+		rc = avc_has_perm(ssid, tsid,									\
+						  permissions.tclass,							\
+						  permissions.av_name,							\
+						  NULL, mcache);								\
+																		\
+		pthread_rwlock_unlock(&permissions.lock);						\
+																		\
+		if ((se)->config.debug)											\
+			fprintf(stderr, "%s: ssid=%s tsid=%s %s\n",					\
+					__FUNCTION__, ssid->ctx, tsid->ctx,					\
+					!rc ? "allowed" : "denied");						\
+																		\
+		if (rc)															\
+			return false;												\
+	} while(0)
+
 bool
 mselinux_check_create(selinux_engine_t *se, const void *cookie,
 					  mcache_t *mcache)
 {
-	security_id_t	ssid;
-	security_id_t	tsid;
-	int				rc;
-
-	if (!se->config.selinux)
-		return true;
-
-	ssid = se->server.core->get_engine_specific(cookie);
-	tsid = mcache->tsid;
-
-	pthread_rwlock_rdlock(&permissions.lock);
-
-	rc = avc_has_perm(ssid, tsid,
-					  permissions.tclass,
-					  permissions.create,
-					  NULL, mcache);
-
-	pthread_rwlock_unlock(&permissions.lock);
-
-	if (se->config.debug)
-		fprintf(stderr, "%s: ssid=%s tsid=%s {create} => %s\n",
-				__FUNCTION__, ssid->ctx, tsid->ctx, !rc ? "allowed" : "denied");
-
-	return !rc ? true : false;
+	if (se->config.selinux)
+	{
+		mselinux_check_common(se, cookie, mcache, create);
+	}
+	return true;
 }
 
 bool
 mselinux_check_read(selinux_engine_t *se, const void *cookie,
 					mcache_t *mcache)
 {
-	security_id_t	ssid;
-	security_id_t	tsid;
-	int				rc;
-
-	if (!se->config.selinux)
-		return true;
-
-	ssid = se->server.core->get_engine_specific(cookie);
-	tsid = mcache->tsid;
-
-	pthread_rwlock_rdlock(&permissions.lock);
-
-	rc = avc_has_perm(ssid, tsid,
-					  permissions.tclass,
-					  permissions.read,
-					  NULL, mcache);
-
-	pthread_rwlock_unlock(&permissions.lock);
-
-	if (se->config.debug)
-		fprintf(stderr, "%s: ssid=%s tsid=%s {read} => %s\n",
-				__FUNCTION__, ssid->ctx, tsid->ctx, !rc ? "allowed" : "denied");
-
-	return !rc ? true : false;
+	if (se->config.selinux)
+	{
+		mselinux_check_common(se, cookie, mcache, read);
+	}
+	return true;
 }
 
 bool
 mselinux_check_write(selinux_engine_t *se, const void *cookie,
 					 mcache_t *old_cache, mcache_t *new_cache)
 {
-	security_id_t	ssid;
-	security_id_t	tsid;
-	int				rc;
+	if (se->config.selinux)
+	{
+		if (strcmp(old_cache->tsid->ctx, new_cache->tsid->ctx) != 0)
+			return false;
 
-	if (!se->config.selinux)
-		return true;
-
-	if (strcmp(old_cache->tsid->ctx, new_cache->tsid->ctx) != 0)
-		return false;
-
-	ssid = se->server.core->get_engine_specific(cookie);
-	tsid = new_cache->tsid;
-
-	pthread_rwlock_rdlock(&permissions.lock);
-
-	rc = avc_has_perm(ssid, tsid,
-					  permissions.tclass,
-					  permissions.write,
-					  NULL, new_cache);
-
-	pthread_rwlock_unlock(&permissions.lock);
-
-	if (se->config.debug)
-		fprintf(stderr, "%s: ssid=%s tsid=%s {write} => %s\n",
-				__FUNCTION__, ssid->ctx, tsid->ctx, !rc ? "allowed" : "denied");
-
-	return !rc ? true : false;
+		mselinux_check_common(se, cookie, new_cache, write);
+	}
+	return true;
 }
 
 bool
 mselinux_check_append(selinux_engine_t *se, const void *cookie,
 					  mcache_t *old_cache, mcache_t *new_cache)
 {
-	if (!se->config.selinux)
-		return true;
+	if (se->config.selinux)
+	{
+		if (strcmp(old_cache->tsid->ctx, new_cache->tsid->ctx) != 0)
+			return false;
 
-	fprintf(stderr, "%s: \n", __FUNCTION__);
-
+		mselinux_check_common(se, cookie, new_cache, append);
+	}
 	return true;
 }
 
 bool
-mselinux_check_delete(selinux_engine_t *se, const void *cookie,
+mselinux_check_remove(selinux_engine_t *se, const void *cookie,
 					  mcache_t *mcache)
 {
-	if (!se->config.selinux)
-		return true;
-
-	fprintf(stderr, "%s: \n", __FUNCTION__);
-
+	if (se->config.selinux)
+	{
+		mselinux_check_common(se, cookie, mcache, remove);
+	}
 	return true;
 }
 
@@ -173,11 +170,10 @@ bool
 mselinux_check_arithmetic(selinux_engine_t *se, const void *cookie,
 						  mcache_t *mcache)
 {
-	if (!se->config.selinux)
-		return true;
-
-	fprintf(stderr, "%s: \n", __FUNCTION__);
-
+	if (se->config.selinux)
+	{
+		mselinux_check_common(se, cookie, mcache, arithmetic);
+	}
 	return true;
 }
 
@@ -190,6 +186,23 @@ mselinux_check_flush(selinux_engine_t *se, const void *cookie)
 	fprintf(stderr, "%s: \n", __FUNCTION__);
 
 	return true;
+}
+
+bool
+mselinux_check_relabel(selinux_engine_t *se, const void *cookie,
+					   mcache_t *old_cache, mcache_t *new_cache)
+{
+	if (se->config.selinux)
+	{
+		if (security_check_context_raw(new_cache->tsid->ctx) < 0)
+			return false;
+
+		mselinux_check_common(se, cookie, old_cache, relabelfrom);
+		mselinux_check_common(se, cookie, new_cache, relabelto);
+
+		return true;
+	}
+	return false;
 }
 
 static void
@@ -214,6 +227,13 @@ mselinux_on_connect(const void *cookie,
 	se->server.core->store_engine_specific(cookie, ssid);
 }
 
+/*
+ * Userspace Access Vector Cache
+ *
+ *
+ *
+ *
+ */
 static void
 mavc_log(const char *fmt, ...)
 {
@@ -230,9 +250,9 @@ mavc_audit(void *auditdata, security_class_t cls,
 {
 	mcache_t   *mcache = auditdata;
 
-	fprintf(stderr, "%s\n",	msgbuf);
-	//(int)mcache_get_keylen(mcache),
-	//(char *)mcache_get_key(mcache));
+	fprintf(stderr, "%s key=%.*s\n", msgbuf,
+			(int)mcache_get_keylen(mcache),
+			(char *)mcache_get_key(mcache));
 }
 
 static struct avc_log_callback avc_log_cb = {
@@ -243,27 +263,31 @@ static struct avc_log_callback avc_log_cb = {
 static void *
 mavc_alloc_lock(void)
 {
-	static pthread_mutex_t	lock = PTHREAD_MUTEX_INITIALIZER;
+	pthread_mutex_t	   *lock = malloc(sizeof(pthread_mutex_t));
 
-	return &lock;
+	//assert(lock != NULL);
+
+	pthread_mutex_init(lock, NULL);
+
+	return lock;
 }
 
 static void
 mavc_get_lock(void *lock)
 {
-	//pthread_mutex_lock((pthread_mutex_t *)lock);
+	pthread_mutex_lock((pthread_mutex_t *)lock);
 }
 
 static void
 mavc_release_lock(void *lock)
 {
-	//pthread_mutex_unlock((pthread_mutex_t *)lock);
+	pthread_mutex_unlock((pthread_mutex_t *)lock);
 }
 
 static void
 mavc_free_lock(void *lock)
 {
-	/* do nothing */
+	free(lock);
 }
 
 static struct avc_lock_callback avc_lock_cb = {
@@ -282,14 +306,19 @@ mavc_cb_policyload(int seqno)
 
 	tclass = string_to_security_class("db_blob");
 
-	permissions.tclass	= tclass;
-	permissions.create	= string_to_av_perm(tclass, "create");
-	permissions.getattr	= string_to_av_perm(tclass, "getattr");
-	permissions.setattr	= string_to_av_perm(tclass, "setattr");
-	permissions.drop	= string_to_av_perm(tclass, "drop");
-	permissions.read	= string_to_av_perm(tclass, "read");
-	permissions.write	= string_to_av_perm(tclass, "write");
-	permissions.append	= string_to_av_perm(tclass, "append");
+	permissions.tclass		= tclass;
+	permissions.create		= string_to_av_perm(tclass, "create");
+	permissions.getattr		= string_to_av_perm(tclass, "getattr");
+	permissions.setattr		= string_to_av_perm(tclass, "setattr");
+	permissions.remove		= string_to_av_perm(tclass, "drop");
+	permissions.read		= string_to_av_perm(tclass, "read");
+	permissions.write		= string_to_av_perm(tclass, "write");
+	permissions.append		= string_to_av_perm(tclass, "write");
+	permissions.arithmetic	= string_to_av_perm(tclass, "write");
+	permissions.relabelfrom	= string_to_av_perm(tclass, "relabelfrom")
+							| string_to_av_perm(tclass, "setattr");
+	permissions.relabelto	= string_to_av_perm(tclass, "relabelto");
+	permissions.flush		= string_to_av_perm(tclass, "drop");
 
 	pthread_rwlock_unlock(&permissions.lock);
 
