@@ -208,10 +208,12 @@ extern bool		mselinux_check_write(selinux_engine_t *se, const void *cookie,
 									 mcache_t *old_cache, mcache_t *new_cache);
 extern bool		mselinux_check_append(selinux_engine_t *se, const void *cookie,
 									  mcache_t *old_cache, mcache_t *new_cache);
-extern bool		mselinux_check_delete(selinux_engine_t *se, const void *cookie,
+extern bool		mselinux_check_remove(selinux_engine_t *se, const void *cookie,
 									  mcache_t *mcache);
 extern bool		mselinux_check_arithmetic(selinux_engine_t *se, const void *cookie,
 										  mcache_t *mcache);
+extern bool		mselinux_check_relabel(selinux_engine_t *se, const void *cookie,
+									   mcache_t *old_cache, mcache_t *new_cache);
 extern bool		mselinux_check_flush(selinux_engine_t *se, const void *cookie);
 extern bool		mselinux_init(selinux_engine_t *se);
 extern void		mselinux_fini(selinux_engine_t *se);
@@ -229,6 +231,9 @@ struct selinux_engine_s {
 	mbtree_scan				scan;
 
 	rel_time_t				startup_time;
+
+	/* SELinux protocol extension */
+	EXTENSION_ASCII_PROTOCOL_DESCRIPTOR		ascii_proto;
 
 	/* mcache status */
 	struct {

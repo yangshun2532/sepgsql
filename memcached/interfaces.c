@@ -116,6 +116,10 @@ selinux_initialize(ENGINE_HANDLE* handle,
 	if (!mselinux_init(se))
 	  return ENGINE_ENOMEM;
 
+	/* Install protocol extensions */
+	se->ascii_proto.cookie = se;
+	se->server.extension->register_extension(EXTENSION_ASCII_PROTOCOL,
+											 &se->ascii_proto);
 	/*
 	 * Load B+tree index
 	 */
@@ -209,8 +213,6 @@ selinux_allocate(ENGINE_HANDLE *handle,
 
 	secid = mselinux_check_alloc(se, cookie, key, nkey);
 
-	fprintf(stderr, "%s: secid=%u\n", __FUNCTION__, secid);
-
 	mcache = mcache_alloc(se, key, nkey, nbytes, secid, flags, exptime);
 
 	pthread_rwlock_unlock(&se->lock);
@@ -249,7 +251,7 @@ selinux_remove(ENGINE_HANDLE *handle,
 	}
 	if (cas != 0 && cas != mcache_get_cas(mcache))
 		rc = ENGINE_KEY_EEXISTS;
-	else if (!mselinux_check_delete(se, cookie, mcache))
+	else if (!mselinux_check_remove(se, cookie, mcache))
 		rc = ENGINE_EACCESS;
 	else
 		mcache_unlink(se, mcache);
@@ -749,6 +751,155 @@ selinux_get_item_info(ENGINE_HANDLE *handle,
 	return true;
 }
 
+/*
+ * SELinux 
+ *
+ *
+ */
+
+/*
+ * ascii protocol extension for relabeling.
+ *
+ * RELABEL KEY <new label>
+ *
+ * NOTE: Right now, memcached (engine) does not support out-of-band
+ * data, so the command must be represented in a single line.
+ */
+static ENGINE_ERROR_CODE
+selinux_relabel(selinux_engine_t *se,
+				const void *cookie,
+				const void *key,
+				const char *new_label)
+{
+	mcache_t   *old_cache;
+	mcache_t   *new_cache;
+	uint32_t	secid;
+	size_t		data_len;
+
+	pthread_rwlock_wrlock(&se->lock);
+	/*
+	 * Lookup a mcache to be relabeled
+	 */
+	old_cache = mcache_get(se, key, strlen(key));
+	if (old_cache && mcache_is_expired(se, old_cache))
+	{
+		mcache_unlink(se, old_cache);
+		mcache_put(se, old_cache);
+		old_cache = NULL;
+	}
+	if (!old_cache)
+	{
+		pthread_rwlock_unlock(&se->lock);
+		return ENGINE_KEY_ENOENT;
+	}
+	/*
+	 * Install a new security label
+	 */
+	secid = mlabel_get(se, new_label);
+	if (secid == 0)
+	{
+		mcache_put(se, old_cache);
+		pthread_rwlock_unlock(&se->lock);
+		return ENGINE_KEY_ENOENT;
+	}
+	/*
+	 * Copy a mcache object
+	 */
+	data_len = mcache_get_datalen(old_cache);
+	new_cache = mcache_alloc(se, key, strlen(key), data_len, secid,
+							 mcache_get_flags(old_cache),
+							 mcache_get_exptime(se, old_cache));
+	if (!new_cache)
+	{
+		mlabel_put(se, secid);
+		mcache_put(se, old_cache);
+		pthread_rwlock_unlock(&se->lock);
+		return ENGINE_ENOMEM;
+	}
+	memcpy(mcache_get_data(new_cache),
+		   mcache_get_data(old_cache), data_len);
+	/*
+	 * Permission checks
+	 */
+	if (!mselinux_check_relabel(se, cookie, old_cache, new_cache))
+	{
+		mcache_put(se, new_cache);
+		mcache_put(se, old_cache);
+		pthread_rwlock_unlock(&se->lock);
+		return ENGINE_EACCESS;
+	}
+
+	mcache_unlink(se, old_cache);
+	mcache_link(se, new_cache);
+
+	mcache_put(se, old_cache);
+	mcache_put(se, new_cache);
+
+	pthread_rwlock_unlock(&se->lock);
+
+	return ENGINE_SUCCESS;
+}
+
+static const char *
+selinux_ascii_get_name(const void *cmd_cookie)
+{
+	return "SELinux protocol extensions";
+}
+
+static bool
+selinux_ascii_accept(const void *cmd_cookie,
+					 void *cookie,
+					 int argc,
+					 token_t *argv,
+					 size_t *ndata,
+					 char **ptr)
+{
+	if (argc == 3 && strcmp(argv[0].value, "relabel") == 0)
+		return true;
+
+	return false;
+}
+
+static bool
+selinux_ascii_execute(const void *cmd_cookie,
+					  const void *cookie,
+					  int argc, token_t *argv,
+					  bool (*response_handler)(const void *cookie,
+											   int nbytes,
+											   const char *data))
+{
+	selinux_engine_t   *se = (selinux_engine_t *)cmd_cookie;
+	ENGINE_ERROR_CODE	ret = ENGINE_ENOTSUP;
+	const char		   *errmsg;
+
+	if (argc == 3 && strcmp(argv[0].value, "relabel") == 0)
+		ret = selinux_relabel(se, cookie, argv[1].value, argv[2].value);
+
+	switch (ret)
+	{
+		case ENGINE_SUCCESS:
+			errmsg = "RELABELED\r\n";
+			break;
+        case ENGINE_KEY_EEXISTS:
+			errmsg = "EXISTS\r\n";
+			break;
+        case ENGINE_KEY_ENOENT:
+			errmsg = "NOT_FOUND\r\n";
+			break;
+		case ENGINE_ENOTSUP:
+			errmsg = "SERVER_ERROR not supported.\r\n";
+			break;
+		case ENGINE_EACCESS:
+			errmsg = "SERVER_ERROR access violation.\r\n";
+			break;
+		default:
+			errmsg = "SERVER_ERROR Unhandled storage type.\r\n";
+			break;
+	}
+	response_handler(cookie, strlen(errmsg), errmsg);
+	return (ret == ENGINE_SUCCESS ? true : false);
+}
+
 static selinux_engine_t selinux_engine_catalog = {
 	.engine = {
 		.interface = {
@@ -776,6 +927,12 @@ static selinux_engine_t selinux_engine_catalog = {
 	.scan = {
 		.key				= 0,
 		.item				= 0,
+	},
+	.ascii_proto = {
+		.get_name			= selinux_ascii_get_name,
+		.accept				= selinux_ascii_accept,
+		.execute			= selinux_ascii_execute,
+		.cookie				= NULL,
 	},
 	.mcache = {
 		.slots				= NULL,

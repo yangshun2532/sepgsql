@@ -319,7 +319,7 @@ mcache_alloc(selinux_engine_t *se,
 	security_id_t	tsid = NULL;
 	int				index;
 
-	assert((flags & MITEM_LINKED) == 0);
+	flags &= ~MITEM_LINKED;
 	if (se->config.use_cas)
 		flags |= MITEM_WITH_CAS;
 
