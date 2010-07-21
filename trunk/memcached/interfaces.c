@@ -1,5 +1,5 @@
 /*
- * interface.c
+ * interface.c - Routines of memcached/engine interfaces
  *
  * Copyright (C) 2010, NEC Corporation
  *
