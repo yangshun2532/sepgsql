@@ -1,5 +1,5 @@
 /*
- * mbtree.c
+ * mbtree.c - A simple B+tree implementation on the mblock stuff
  *
  * Copyright (C) 2010, NEC Corporation
  *
@@ -14,6 +14,89 @@
 #include <string.h>
 #include "selinux_engine.h"
 
+/*
+ * Introduction
+ * ------------
+ * The following routines implements general B+tree structure on
+ * memory block stuff provided by mblock.c.
+ * Any B+tree nodes/leafs are stored in the mchunk_t with tag ==
+ * MCHUNK_TAG_BTREE.
+ * It has MBTREE_NUM_KEYS of keys and (MBTREE_NUM_KEYS + 1) of
+ * items to be translated to the address of chunks.
+ *
+ * In the case when the chunk is leaf:
+ *
+ *  key[0]   key[1] ...  key[N-1]
+ *   |        |           |
+ * item[0]  item[1] ... item[N-1]  item[N]---> (next leaf)
+ *
+ * Any item[i] (i < N) are associated with key[i] being uint32_t.
+ * Except for the case when it is either root or right-edge of the
+ * B+tree, item[N] is offset of the next leaf.
+ * It allows us to scan the leaf sequentially without key finding.
+ *
+ * In the case when the chunk is node:
+ *
+ *      key[0]   key[1]  ... key[N-2]   key[N-1]
+ *       /  \     /  \            \      /   \
+ * item[0]  item[1]  item[2] ... item[N-1]  item[N]
+ *
+ * Any items are offset of the child nodes/leafs. The key[i] (i < n)
+ * means all the items under the item[i] never has a key which overs
+ * the key[i]. It also means all the items under the item[N] has its
+ * key larger than key[N-1].
+ *
+ * From the B+tree definition, when we try to insert a new item on
+ * the bucket without any slot, it tries to split the node/leaf out
+ * into two ones.
+ *
+ * In the case when we try to split a leaf, key[i] and item[i] (i < N/2)
+ * will be moved to the left leaf, then rest of them will be moved to
+ * the right leaf. The existing key which pointed the original leaf is
+ * used to point the right leaf, and key[N/2] get used to point the
+ * left leaf because it is the maxium key of the left leaf.
+ *
+ *  key[0]   key[1]   key[2]   key[3]   key[4]
+ *   |        |        |        |        |
+ * item[0]  item[1]  item[2]  item[3]  item[4]  item[5]---> (next leaf)
+ *
+ * |
+ * | split out the node
+ * V                                key[2]
+ *                                  /    \
+ *                               left    right
+ *                             offset    offset
+ *                               |          |
+ * +---------------------------------+  +-------------------------+
+ * |  key[0]  key[1]  key[2]         |  |  key[3]  key[4]         |
+ * |   |       |       |             |  |   |       |             |
+ * | item[0] item[1] item[2] item[N]--->| item[3] item[4] item[N]---> (next leaf)
+ * +---------------------------------+  +-------------------------+
+ *
+ * In the case when we try to split a node, key[i] (i < N/2-1) and
+ * item[j] (j < N/2) will be moved to the left node, than key[N/2]
+ * will be used to point the left node. Rest of nodes will be moved
+ * to the right node.
+ *
+ *      key[0]   key[1]   key[2]   key[3]   key[4]
+ *       /  \     /  \     /  \     /  \     /  \
+ * item[0]  item[1]  item[2]  item[3]  item[4]  item[5]
+ *
+ * |
+ * | split out the node
+ * V                          key[2]
+ *                            /    \
+ *                         left    right
+ *                       offset    offset
+ *                         |          |
+ * +---------------------------+  +---------------------------+
+ * |      key[0]   key[1]      |  |      key[3]   key[4]      |
+ * |       /  \     /  \       |  |       /  \     /  \       |
+ * | item[0]  item[1]  item[2] |  | item[3]  item[4]  item[5] |
+ * +---------------------------+  +---------------------------+
+ *  left node                      right node
+ *
+ */
 static int
 find_key_index(mchunk_t *mchunk, uint32_t key)
 {
@@ -70,6 +153,24 @@ children_reparent(mhead_t *mhead, mchunk_t *mchunk)
 	}
 }
 
+/*
+ * mbtree_lookup
+ *
+ * It lookup up an entry for the given key from the B+tree, or
+ * fetch next item if scan->mnode is not zero.
+ * It returns true or false if no valid items anymore.
+ * If true, key of the item shall be set on the scan->key, and
+ * offset of the item shall be set on the scan->item.
+ * The key is the minimum value which does not over the given
+ * key, so it may not match with the given key correctly.
+ * Thus, the caller has to check whether the returned key is
+ * the expected one, or not.
+ * If the case when scan->mnode is not zero, it tries to fetch
+ * the next item of the B+tree. It enables to scan the leafs
+ * sequentially.
+ *
+ * Note: the caller must hold read-lock, at least.
+ */
 bool
 mbtree_lookup(mhead_t *mhead, mbtree_scan *scan)
 {
@@ -117,6 +218,12 @@ mbtree_lookup(mhead_t *mhead, mbtree_scan *scan)
 	return true;
 }
 
+/*
+ * mbtree_split
+ *
+ * It split out the given btree chunk into two ones.
+ * See the above introductions.
+ */
 static bool
 mbtree_split(mhead_t *mhead, mchunk_t *mchunk)
 {
@@ -261,6 +368,15 @@ mbtree_split(mhead_t *mhead, mchunk_t *mchunk)
 	return true;
 }
 
+/*
+ * mbtree_insert
+ *
+ * It tries to insert a pair of key/item into the B+tree.
+ * If it cause splitting out the node/leaf, and here is no available
+ * memory block, it can be failed.
+ *
+ * Note: the caller must hold write-lock.
+ */
 bool
 mbtree_insert(mhead_t *mhead, uint32_t key, uint64_t item)
 {
@@ -298,6 +414,12 @@ retry:
 	return true;
 }
 
+/*
+ * mbtree_merge
+ *
+ * It balances or merges two chunks if necessary.
+ * Please see the above introduction.
+ */
 static void
 mbtree_merge(mhead_t *mhead, mchunk_t *mchunk)
 {
@@ -512,6 +634,14 @@ mbtree_merge(mhead_t *mhead, mchunk_t *mchunk)
 	}
 }
 
+/*
+ * mbtree_delete
+ *
+ * It removes a pair of key/item from the B+tree.
+ * If the given pair does not exist, it may return an error.
+ *
+ * Note: the caller must hold write-lock.
+ */
 static bool
 do_mbtree_delete(mhead_t *mhead, mchunk_t *mchunk,
 				 uint32_t key, uint64_t item)
@@ -546,12 +676,6 @@ do_mbtree_delete(mhead_t *mhead, mchunk_t *mchunk,
 	{
 		if (mchunk->btree.items[index] == item)
 		{
-/*
-			fprintf(stderr,
-					"delete hkey=0x%08" PRIx32 ", "
-					"hitem=0x%08" PRIx64 "\n", key, item);
-*/
-
 			memmove(mchunk->btree.keys + index,
 					mchunk->btree.keys + index + 1,
 					sizeof(uint32_t) * (mchunk->btree.nkeys - index - 1));
@@ -591,6 +715,11 @@ mbtree_delete(mhead_t *mhead, uint32_t key, uint64_t item)
 	return do_mbtree_delete(mhead, mchunk, key, item);
 }
 
+/*
+ * mbtree_dump
+ *
+ * For debugging, it prints current status of the B+tree.
+ */
 static void
 mbtree_dump_chunk(mhead_t *mhead, mchunk_t *mchunk, int level)
 {
@@ -642,6 +771,15 @@ mbtree_dump(mhead_t *mhead)
 	mbtree_dump_chunk(mhead, mchunk, 0);
 }
 
+/*
+ * mbtree_open
+ *
+ * It maps a memory block on the given file descriptor (or anonymous
+ * memory segment), and load the B+tree.
+ * If the memory block is already initialized, its super block is the
+ * root node/leaf of the B+tree. Otherwise, it set up the root leaf
+ * on the super block.
+ */
 mhead_t *
 mbtree_open(int fdesc, size_t block_size)
 {
@@ -672,13 +810,18 @@ mbtree_open(int fdesc, size_t block_size)
 	return mhead;
 }
 
+/*
+ * mbtree_close
+ *
+ * It unmap the B+tree.
+ */
 void
 mbtree_close(mhead_t *mhead)
 {
 	mblock_unmap(mhead);
 }
 
-#if 1
+#if 0
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>

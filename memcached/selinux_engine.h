@@ -1,6 +1,8 @@
 /*
  * selinux_engine.h
  *
+ *	Header file of the selinux_engine module
+ *
  * Copyright (C) 2010, NEC Corporation
  *
  * Authors: KaiGai Kohei <kaigai@ak.jp.nec.com> 
@@ -20,7 +22,9 @@
 typedef struct selinux_engine_s selinux_engine_t;
 
 /*
- * mlist_t - dual linked list on the memory block
+ * mlist_t
+ *
+ * A type for dual linked list on the memory block
  */
 typedef struct {
 	uint64_t	prev;
@@ -30,7 +34,7 @@ typedef struct {
 /*
  * mchunk_t
  *
- * memory block chunk for various kind of data block
+ * A type for memory block chunk for various kind of chunk classes.
  */
 #define MCHUNK_TAG_FREE		0
 #define MCHUNK_TAG_ITEM		1
@@ -86,7 +90,7 @@ typedef struct {
 /*
  * mbhead_t
  *
- * header structure of the memory block
+ * A type for header structure of the memory block
  */
 #define MBLOCK_MAGIC_STRING		"@MBLOCK_20100702"
 #define MBLOCK_MIN_BITS			7	/* 128byte */

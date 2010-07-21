@@ -1,5 +1,5 @@
 /*
- * selinux.c
+ * selinux.c - Routines to make access control decision using SELinux
  *
  * Copyright (C) 2010, NEC Corporation
  *

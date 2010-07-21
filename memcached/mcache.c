@@ -1,5 +1,5 @@
 /*
- * mcache.c
+ * mcache.c - Routines to manage key/value item and security labels
  *
  * Copyright (C) 2010, NEC Corporation
  *

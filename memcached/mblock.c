@@ -1,5 +1,5 @@
 /*
- * mblock.c
+ * mblock.c - A simple buddy based memory allocator
  *
  * Copyright (C) 2010, NEC Corporation
  *
@@ -14,6 +14,34 @@
 #include <string.h>
 #include <sys/mman.h>
 #include "selinux_engine.h"
+
+/*
+ * Introduction
+ * ------------
+ * We acquire all the memory block using mmap(2) and manage the region
+ * using buddy based algorithm. The memory block shall be divided into
+ * 2^n (MBLOCK_MIN_BITS <= n <= MBLOCK_MAX_BITS) bytes of chunks.
+ * Four type of memory chunks are currently defined, and it is identified
+ * by the tag field of mchunk_t structure.
+ * - MCHUNK_TAG_FREE
+ *   It is free chunk. All the free chunks are chained to the free_list
+ *   of the mhead_t structure per classes.
+ * - MCHUNK_TAG_ITEM
+ *   It is a key/value pair. All the valid items are linked to the index.
+ * - MCHUNK_TAG_BTREE
+ *   It is a node/leaf of the B+tree.
+ * - MCHUNK_TAG_LABEL
+ *   It is security label of items. Many of items tend to share a limited
+ *   number of security labels, so it is not a wise strategy to store
+ *   security label within an item chunk as a text form.
+ *
+ * When we allocate a memory chunk, mblock_alloc() tries to fetch a memory
+ * block from the free_list. If here is no available free chunks in the
+ * required memory class, it tries to divide an upper memory chunk recursively.
+ *
+ * The 'mblock_lock' must be hold when we scan/modify the memory block,
+ * but contents of the chunk shall be protected by other locks.
+ */
 
 pthread_mutex_t	mblock_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -179,6 +207,13 @@ mblock_split_chunk(mhead_t *mhead, int mclass)
 	return true;
 }
 
+/*
+ * mblock_alloc
+ *
+ * It allocates a memory chunk identified by the tag from the free_list
+ * of the appropriate memory class. If no available free chunks, it tries
+ * to split a chunk in upper class.
+ */
 mchunk_t *
 mblock_alloc(mhead_t *mhead, uint8_t tag, size_t size)
 {
@@ -226,6 +261,13 @@ mblock_alloc(mhead_t *mhead, uint8_t tag, size_t size)
 	return mchunk;
 }
 
+/*
+ * mblock_free
+ *
+ * It release the given memory chunk, and chains to the free_list of
+ * the appropriate memory class. If its buddy is also free, it merges
+ * these chunks and chains to the free_list of the upper class.
+ */
 void
 mblock_free(mhead_t *mhead, mchunk_t *mchunk)
 {
@@ -283,6 +325,13 @@ mblock_free(mhead_t *mhead, mchunk_t *mchunk)
 	pthread_mutex_unlock(&mblock_lock);
 }
 
+/*
+ * mblock_reset
+ *
+ * It initialize whole of the memory block.
+ * All the memory chunks are tagged as 'free', and these are chained
+ * to the free_list.
+ */
 void
 mblock_reset(mhead_t *mhead)
 {
@@ -330,6 +379,12 @@ mblock_reset(mhead_t *mhead)
 	pthread_mutex_unlock(&mblock_lock);
 }
 
+/*
+ * mblock_dump
+ *
+ * A debugging purpose function. It prints the current status of the
+ * memory block.
+ */
 void
 mblock_dump(mhead_t *mhead)
 {
@@ -364,6 +419,18 @@ mblock_dump(mhead_t *mhead)
 	pthread_mutex_unlock(&mblock_lock);
 }
 
+/*
+ * mblock_map
+ *
+ * It maps the given file (or anonymous pages if fdesc < 0) as memory block.
+ * If it is not initialized yet, it stores its super block on the head,
+ * and returns address of the memory block.
+ * Note that contents of the memory block is persistent (if available file
+ * descriptor was given), so all the pointers to memory chunks must be
+ * offset value from the memory block.
+ * We can easily translate between address and offset using addr_to_offset()
+ * and offset_to_addr() macros.
+ */
 mhead_t *
 mblock_map(int fdesc, size_t block_size, size_t super_size)
 {
@@ -401,6 +468,11 @@ error:
 	return NULL;
 }
 
+/*
+ * mblock_unmap
+ *
+ * It unmap the given memory block
+ */
 void
 mblock_unmap(mhead_t *mhead)
 {
