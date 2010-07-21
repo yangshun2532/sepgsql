@@ -1,9 +1,12 @@
 /*
  * selinux_engine.h
  *
- * Header file of the selinux engine module
+ * Copyright (C) 2010, NEC Corporation
  *
+ * Authors: KaiGai Kohei <kaigai@ak.jp.nec.com> 
  *
+ * This program is distributed under the modified BSD license.
+ * See the LICENSE file for full text.
  */
 #ifndef SELINUX_ENGINE_H
 #define SELINUX_ENGINE_H
