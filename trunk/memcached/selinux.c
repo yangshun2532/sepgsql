@@ -1,7 +1,12 @@
 /*
  * selinux.c
  *
- * access control facilities
+ * Copyright (C) 2010, NEC Corporation
+ *
+ * Authors: KaiGai Kohei <kaigai@ak.jp.nec.com> 
+ *
+ * This program is distributed under the modified BSD license.
+ * See the LICENSE file for full text.
  */
 #include <assert.h>
 #include <signal.h>
