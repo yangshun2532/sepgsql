@@ -19,38 +19,6 @@
 #include <sys/stat.h>
 #include "selinux_engine.h"
 
-#if 1
-/* copy from util.c */
-#include <ctype.h>
-bool safe_strtoull(const char *str, uint64_t *out)
-{
-	assert(out != NULL);
-	errno = 0;
-	*out = 0;
-	char *endptr;
-	unsigned long long ull = strtoull(str, &endptr, 10);
-	if (errno == ERANGE)
-		return false;
-
-	if (isspace(*endptr) || (*endptr == '\0' && endptr != str))
-	{
-		if ((long long) ull < 0)
-		{
-			/* only check for negative signs in the uncommon case when
-             * the unsigned number is so big that it's negative as a
-			 * signed number. */
-			if (strchr(str, '-') != NULL)
-			{
-				return false;
-			}
-        }
-		*out = ull;
-		return true;
-	}
-	return false;
-}
-#endif
-
 const engine_info *
 selinux_get_info(ENGINE_HANDLE* handle)
 {
