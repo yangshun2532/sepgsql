@@ -14,6 +14,11 @@
 #include <selinux/selinux.h>
 
 /*
+ * SE-PostgreSQL Label Tag
+ */
+#define SEPGSQL_LABEL_TAG			"selinux"
+
+/*
  * SE-PostgreSQL working mode
  */
 #define SEPGSQL_MODE_DEFAULT		1

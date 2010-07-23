@@ -13,6 +13,7 @@
 #include "access/heapam.h"
 #include "access/genam.h"
 #include "catalog/catalog.h"
+#include "catalog/dependency.h"
 #include "catalog/indexing.h"
 #include "catalog/pg_description.h"
 #include "catalog/pg_shdescription.h"
@@ -114,7 +115,7 @@ sepgsql_get_unlabeled_label(void)
 char *
 sepgsql_get_label(Oid relOid, Oid objOid, int32 subId)
 {
-	char   *tcontext = GetSecurityLabel(relOid, objOid, subId);
+	char   *tcontext = GetSecurityLabel(relOid, objOid, subId, SEPGSQL_LABEL_TAG);
 
 	if (!tcontext || security_check_context(tcontext) < 0)
 		tcontext = sepgsql_get_unlabeled_label();
