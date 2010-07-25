@@ -257,7 +257,7 @@ sepgsql_relation_privileges(List *rangeTabls, bool abort)
  * It validates the given security label and privileges to relabel.
  */
 static void
-sepgsql_relation_relabel(ObjectAddress *object,
+sepgsql_relation_relabel(const ObjectAddress *object,
 						 const char *seclabel,
 						 int expected_parents)
 {
@@ -381,15 +381,11 @@ sepgsql_relation_relabel(ObjectAddress *object,
  *
  * An entrypoint of SECURITY LABEL statement
  */
-static const char *
-sepgsql_object_relabel(ObjectAddress *object,
-					   const char *tag,
+static void
+sepgsql_object_relabel(const ObjectAddress *object,
 					   const char *seclabel,
 					   int expected_parents)
 {
-	if (tag && strcmp(tag, "selinux") == 0)
-		return NULL;
-
 	switch (object->classId)
 	{
 		case RelationRelationId:
@@ -400,7 +396,6 @@ sepgsql_object_relabel(ObjectAddress *object,
 			elog(ERROR, "unsupported object type");
 			break;
 	}
-	return SEPGSQL_LABEL_TAG;
 }
 
 /*
@@ -412,5 +407,6 @@ void
 sepgsql_register_hooks(void)
 {
 	ExecutorCheckPerms_hook = sepgsql_relation_privileges;
-	check_object_relabel_hook = sepgsql_object_relabel;
+	register_object_relabel_hook(SEPGSQL_LABEL_TAG,
+								 sepgsql_object_relabel);
 }
