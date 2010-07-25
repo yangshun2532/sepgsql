@@ -115,7 +115,12 @@ sepgsql_get_unlabeled_label(void)
 char *
 sepgsql_get_label(Oid relOid, Oid objOid, int32 subId)
 {
-	char   *tcontext = GetSecurityLabel(relOid, objOid, subId, SEPGSQL_LABEL_TAG);
+	ObjectAddress	object = {
+		.classId		= relOid,
+		.objectId		= objOid,
+		.objectSubId	= subId,
+	};
+	char   *tcontext = GetSecurityLabel(&object, SEPGSQL_LABEL_TAG);
 
 	if (!tcontext || security_check_context(tcontext) < 0)
 		tcontext = sepgsql_get_unlabeled_label();
