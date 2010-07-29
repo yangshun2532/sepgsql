@@ -580,7 +580,7 @@ selinux_arithmetic(ENGINE_HANDLE* handle,
 
 		mcache_set_cas(new_cache, mcache_get_cas(old_cache));
 
-		if (!mselinux_check_arithmetic(se, cookie, old_cache))
+		if (!mselinux_check_calculate(se, cookie, old_cache))
 			rc = ENGINE_EACCESS;
 		else
 		{
@@ -609,8 +609,7 @@ selinux_flush(ENGINE_HANDLE *handle,
 
 	pthread_rwlock_wrlock(&se->lock);
 
-	if (!mselinux_check_flush(se, cookie))
-		mcache_flush(se, when);
+	mcache_flush(se, cookie, when);
 
 	pthread_rwlock_unlock(&se->lock);
 

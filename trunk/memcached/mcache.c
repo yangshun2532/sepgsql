@@ -645,7 +645,7 @@ mcache_put(selinux_engine_t *se, mcache_t *mcache)
 }
 
 void
-mcache_flush(selinux_engine_t *se, time_t when)
+mcache_flush(selinux_engine_t *se, const void *cookie, time_t when)
 {
 	mchunk_t	   *mchunk;
 	mcache_t	   *mcache;
@@ -669,10 +669,14 @@ mcache_flush(selinux_engine_t *se, time_t when)
 
 		assert((mchunk->item.flags & MITEM_LINKED) != 0);
 
+		mcache = mcache_get_internal(se, mchunk);
+		if (!mselinux_check_remove(se, cookie, mcache))
+		{
+			mcache_put(se, mcache);
+			continue;
+		}
 		if (se->config.debug)
 			mchunk_dump(stderr, se, scan.key, scan.item, mchunk);
-
-		mcache = mcache_get_internal(se, mchunk);
 
 		mcache_unlink(se, mcache);
 
