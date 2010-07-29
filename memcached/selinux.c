@@ -21,13 +21,12 @@ static struct {
 	access_vector_t		getattr;
 	access_vector_t		setattr;
 	access_vector_t		remove;
+	access_vector_t		relabelfrom;
+	access_vector_t		relabelto;
 	access_vector_t		read;
 	access_vector_t		write;
 	access_vector_t		append;
-	access_vector_t		arithmetic;
-	access_vector_t		relabelfrom;
-	access_vector_t		relabelto;
-	access_vector_t		flush;
+	access_vector_t		calculate;
 } permissions = {
 	.lock				= PTHREAD_RWLOCK_INITIALIZER,
 };
@@ -44,6 +43,21 @@ mselinux_check_alloc(selinux_engine_t *se, const void *cookie,
 
 	if (!se->config.selinux)
 		return 0;
+
+	if (!tsid)
+	{
+		security_context_t	context;
+
+		if (getcon_raw(&context) < 0)
+			return 0;
+
+		if (avc_context_to_sid_raw(context, &tsid) < 0)
+		{
+			freecon(context);
+			return 0;
+		}
+		freecon(context);
+	}
 
 	/*
 	 * It the new allocation tries to replace an existing key,
@@ -65,9 +79,6 @@ mselinux_check_alloc(selinux_engine_t *se, const void *cookie,
 	}
 
 	ssid = se->server.core->get_engine_specific(cookie);
-	/* XXX - an ad-hoc assumption */
-	if (!tsid)
-		avc_context_to_sid_raw("system_u:object_r:sepgsql_db_t:s0", &tsid);
 
 	pthread_rwlock_rdlock(&permissions.lock);
 
@@ -172,24 +183,13 @@ mselinux_check_remove(selinux_engine_t *se, const void *cookie,
 }
 
 bool
-mselinux_check_arithmetic(selinux_engine_t *se, const void *cookie,
-						  mcache_t *mcache)
+mselinux_check_calculate(selinux_engine_t *se, const void *cookie,
+						 mcache_t *mcache)
 {
 	if (se->config.selinux)
 	{
-		mselinux_check_common(se, cookie, mcache, arithmetic);
+		mselinux_check_common(se, cookie, mcache, calculate);
 	}
-	return true;
-}
-
-bool
-mselinux_check_flush(selinux_engine_t *se, const void *cookie)
-{
-	if (!se->config.selinux)
-		return true;
-
-	fprintf(stderr, "%s: \n", __FUNCTION__);
-
 	return true;
 }
 
@@ -309,21 +309,20 @@ mavc_cb_policyload(int seqno)
 
 	pthread_rwlock_wrlock(&permissions.lock);
 
-	tclass = string_to_security_class("db_blob");
+	tclass = string_to_security_class("kv_item");
 
 	permissions.tclass		= tclass;
 	permissions.create		= string_to_av_perm(tclass, "create");
 	permissions.getattr		= string_to_av_perm(tclass, "getattr");
 	permissions.setattr		= string_to_av_perm(tclass, "setattr");
-	permissions.remove		= string_to_av_perm(tclass, "drop");
+	permissions.remove		= string_to_av_perm(tclass, "remove");
 	permissions.read		= string_to_av_perm(tclass, "read");
 	permissions.write		= string_to_av_perm(tclass, "write");
-	permissions.append		= string_to_av_perm(tclass, "write");
-	permissions.arithmetic	= string_to_av_perm(tclass, "write");
+	permissions.append		= string_to_av_perm(tclass, "append");
+	permissions.calculate	= string_to_av_perm(tclass, "calculate");
 	permissions.relabelfrom	= string_to_av_perm(tclass, "relabelfrom")
 							| string_to_av_perm(tclass, "setattr");
 	permissions.relabelto	= string_to_av_perm(tclass, "relabelto");
-	permissions.flush		= string_to_av_perm(tclass, "drop");
 
 	pthread_rwlock_unlock(&permissions.lock);
 

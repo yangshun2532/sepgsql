@@ -166,7 +166,7 @@ extern bool		 mcache_link(selinux_engine_t *se, mcache_t *mcache);
 extern bool		 mcache_unlink(selinux_engine_t *se, mcache_t *mcache);
 extern mcache_t *mcache_get(selinux_engine_t *se, const void *key, size_t key_len);
 extern void		 mcache_put(selinux_engine_t *se, mcache_t *mcache);
-extern void		 mcache_flush(selinux_engine_t *se, time_t when);
+extern void		 mcache_flush(selinux_engine_t *se, const void *cookie, time_t when);
 extern bool		 mcache_init(selinux_engine_t *se);
 
 extern mchunk_t *mlabel_lookup_secid(selinux_engine_t *se, uint32_t secid);
@@ -217,11 +217,10 @@ extern bool		mselinux_check_append(selinux_engine_t *se, const void *cookie,
 									  mcache_t *old_cache, mcache_t *new_cache);
 extern bool		mselinux_check_remove(selinux_engine_t *se, const void *cookie,
 									  mcache_t *mcache);
-extern bool		mselinux_check_arithmetic(selinux_engine_t *se, const void *cookie,
-										  mcache_t *mcache);
+extern bool		mselinux_check_calculate(selinux_engine_t *se, const void *cookie,
+										 mcache_t *mcache);
 extern bool		mselinux_check_relabel(selinux_engine_t *se, const void *cookie,
 									   mcache_t *old_cache, mcache_t *new_cache);
-extern bool		mselinux_check_flush(selinux_engine_t *se, const void *cookie);
 extern bool		mselinux_init(selinux_engine_t *se);
 extern void		mselinux_fini(selinux_engine_t *se);
 
