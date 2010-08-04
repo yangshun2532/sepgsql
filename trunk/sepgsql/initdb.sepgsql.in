@@ -1,0 +1,124 @@
+# -------------------------------------------------------------
+#
+# initdb.sepgsql
+#
+# SE-PostgreSQL initializer script
+# 
+# Author: KaiGai Kohei <kaigai@ak.jp.nec.com>
+#
+# Copyright (c) 2007 - 2010, NEC Corporation
+# Copyright (c) 2006 - 2007, KaiGai Kohei <kaigai@kaigai.gr.jp>
+#
+# -------------------------------------------------------------
+
+SEPG_BIN=@@__SEPG_BIN__@@
+SEPG_VERSION=@@__SEPG_VERSION__@@
+SEPG_DATA=$PGDATA
+SEPG_SPEC=NULL
+
+#
+# Declaration of functions
+#
+function usage()
+{
+    echo "usage: `basename $0` [options]"
+    echo
+    echo "[options]"
+    echo "  -D <dir>    location for the database cluster"
+    echo "  -s <spec>   path to the specfile of database labels"
+    echo "  -v          print version"
+    echo "  -h          print this message"
+
+    exit 1
+}
+
+#
+# Parse options
+#
+
+while getopts "D:s:vh" code; do
+    case $code in
+	D)
+	    SEPG_DATA=$OPTARG
+	    ;;
+	s)
+	    SEPG_SPEC=$OPTARG
+	    ;;
+	v)
+	    echo "`basename $0` - SE-PostgreSQL initializer ($SEPG_VERSION)"
+	    exit 1
+	    ;;
+	\?)
+	    usage $0
+	    ;;
+	h)
+	    usage $0
+	    ;;
+    esac
+done
+
+if [ $OPTIND -le $# ]; then
+    usage $0
+fi
+
+#
+# Check environment
+#
+POSTGRES=`env PATH=$SEPG_BIN:$PATH which postgres`
+if [ ! -x "$POSTGRES" ]; then
+    echo "no executable postgres binary found"
+    exit 1
+fi
+
+if [ ! -r "$SEPG_DATA/PG_VERSION" -o ! -r "$SEPG_DATA/postgresql.conf" ]; then
+    echo "'$SEPG_DATA' may not be initialized."
+    echo "Run initdb -D '$SEPG_DATA' first"
+    exit 1
+fi
+
+if [ x"$SEPG_VERSION" != x"`cat $SEPG_DATA/PG_VERSION`" ]; then
+    echo "'$SEPG_DATA' may not be initialized for the version $SEPG_VERSION"
+    exit 1
+fi
+
+#
+# Get list of databases
+#
+POSTGRES_OPTS="--single -F -O -c search_path=pg_catalog -c exit_on_error=true"	# from initdb.c
+POSTGRES_OPTS="$POSTGRES_OPTS -c shared_preload_libraries='sepgsql'"
+
+DBLIST=`echo "COPY pg_database(datname) TO stdout" | $POSTGRES $POSTGRES_OPTS template0`
+DBLIST=`echo $DBLIST | sed -e 's/backend>$//g' -e 's/^.*backend>//g'`
+
+#
+# Set initial security context
+#
+for DBNAME in $DBLIST
+do
+    echo "now initial labeling on $DBNAME ..."
+
+done
+
+exit 0
+
+#
+# Edit postgresql.conf
+#
+TEMP=`mktemp` || exit 1
+
+cp "$SEPG_DATA/postgresql.conf" $TEMP
+cat $TEMP | \
+awk "BEGIN { edit = 0; }
+/^#shared_preload_libraries/ {
+    print \"shared_preload_libraries = 'sepgsql'	# (change requires restart)\";
+    edit=1;
+    next;
+}
+{ print; next; }
+END {
+    if (edit == 0) {
+        print \"#-- added by initdb.sepgsql --\"
+        print \"shared_preload_libraries = 'sepgsql'	# (change requires restart)\"
+    }
+}" > "$SEPG_DATA/postgresql.conf"
+rm -f $TEMP
