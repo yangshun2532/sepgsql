@@ -6,5 +6,11 @@
 # Copyright (c) 2007 - 2010, NEC Corporation
 # Copyright (c) 2006 - 2007, KaiGai Kohei <kaigai@kaigai.gr.jp>
 #
-all install uninstall clean:
-	$(MAKE) -C module $@
+PG_CONFIG = $(shell env PATH=$$PATH:/usr/local/pgsql/bin which pg_config)
+
+MODULE_big = sepgsql
+OBJS = selinux.o label.o hooks.o
+SHLIB_LINK = -lselinux
+
+PGXS := $(shell $(PG_CONFIG) --pgxs)
+include $(PGXS)

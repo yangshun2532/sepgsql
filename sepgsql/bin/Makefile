@@ -8,9 +8,13 @@
 #
 PG_CONFIG = $(shell env PATH=$$PATH:/usr/local/pgsql/bin which pg_config)
 
-MODULE_big = sepgsql
-OBJS = selinux.o label.o hooks.o
+PROGRAM = initdb.sepgsql
+OBJS = initdb_sepgsql.o
 SHLIB_LINK = -lselinux
 
 PGXS := $(shell $(PG_CONFIG) --pgxs)
+PG_BINDIR := $(shell $(PG_CONFIG) | awk '/^BINDIR/ {print $$3;}')
+ifneq ($(PG_BINDIR), )
+PG_CPPFLAGS = -DPG_BINDIR=\"$(PG_BINDIR)\"
+endif
 include $(PGXS)
