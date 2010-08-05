@@ -42,7 +42,7 @@ while getopts "D:s:vh" code; do
 	    SEPG_DATA=$OPTARG
 	    ;;
 	s)
-	    SEPG_SPEC=$OPTARG
+	    SEPG_SPEC="'$OPTARG'"
 	    ;;
 	v)
 	    echo "`basename $0` - SE-PostgreSQL initializer ($SEPG_VERSION)"
@@ -85,7 +85,7 @@ fi
 # Get list of databases
 #
 POSTGRES_OPTS="--single -F -O -c search_path=pg_catalog -c exit_on_error=true"	# from initdb.c
-POSTGRES_OPTS="$POSTGRES_OPTS -c shared_preload_libraries='sepgsql'"
+POSTGRES_OPTS="$POSTGRES_OPTS -c shared_preload_libraries=sepgsql"
 
 DBLIST=`echo "COPY pg_database(datname) TO stdout" | $POSTGRES $POSTGRES_OPTS template0`
 DBLIST=`echo $DBLIST | sed -e 's/backend>$//g' -e 's/^.*backend>//g'`
@@ -93,13 +93,18 @@ DBLIST=`echo $DBLIST | sed -e 's/backend>$//g' -e 's/^.*backend>//g'`
 #
 # Set initial security context
 #
+WITH_SHARED="true"
 for DBNAME in $DBLIST
 do
-    echo "now initial labeling on $DBNAME ..."
-
+$POSTGRES $POSTGRES_OPTS $DBNAME > /dev/null <<EOF
+CREATE OR REPLACE FUNCTION sepgsql_getcon() RETURNS text LANGUAGE 'c' AS 'sepgsql','sepgsql_getcon';
+CREATE OR REPLACE FUNCTION sepgsql_mcstrans_in(text) RETURNS text LANGUAGE 'c' AS 'sepgsql','sepgsql_mcstrans_in';
+CREATE OR REPLACE FUNCTION sepgsql_mcstrans_out(text) RETURNS text LANGUAGE 'c' AS 'sepgsql','sepgsql_mcstrans_out';
+CREATE OR REPLACE FUNCTION sepgsql_initial_labeling(bool,text) RETURNS bool LANGUAGE 'c' AS 'sepgsql','sepgsql_initial_labeling';
+SELECT sepgsql_initial_labeling($WITH_SHARED, $SEPG_SPEC);
+EOF
+    WITH_SHARED="false"
 done
-
-exit 0
 
 #
 # Edit postgresql.conf
