@@ -243,5 +243,6 @@ extern char *sepgsql_get_label(Oid relOid, Oid objOid, int32 subId);
 extern Datum sepgsql_getcon(PG_FUNCTION_ARGS);
 extern Datum sepgsql_mcstrans_in(PG_FUNCTION_ARGS);
 extern Datum sepgsql_mcstrans_out(PG_FUNCTION_ARGS);
+extern Datum sepgsql_initial_labeling(PG_FUNCTION_ARGS);
 
 #endif /* SEPGSQL_H */
