@@ -110,7 +110,7 @@ typedef struct {
 } mhead_t;
 
 #define offset_to_addr(mhead,offset)				\
-	((offset)==0 ? NULL : ((void *)((unsigned long)(mhead) + (offset))))
+	((offset)==0 ? NULL : ((void *)((unsigned long)(mhead) + ((unsigned long)offset))))
 #define addr_to_offset(mhead,addr)					\
 	(!(addr) ? 0 : ((uint64_t)((unsigned long)(addr) - (unsigned long)(mhead))))
 #define offset_of(type, member)						\

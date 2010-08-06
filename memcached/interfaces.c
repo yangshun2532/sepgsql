@@ -98,9 +98,7 @@ selinux_initialize(ENGINE_HANDLE* handle,
 	/*
 	 * Load B+tree index
 	 */
-	mblock_size = se->config.block_size * MBLOCK_MIN_SIZE / (MBLOCK_MIN_SIZE + 2);
-	mblock_size &= ~(sysconf(_SC_PAGESIZE) - 1);
-
+	mblock_size = se->config.block_size & ~(sysconf(_SC_PAGESIZE) - 1);
 	if (se->config.filename)
 	{
 		se->config.fdesc = open(se->config.filename, O_RDWR);
@@ -128,7 +126,7 @@ selinux_initialize(ENGINE_HANDLE* handle,
 			"selinux_engine.config.reclaim = %s\n"
 			"selinux_engine.config.debug = %s\n",
 			se->config.filename ? se->config.filename : "(null)",
-			se->config.block_size,
+			(uint64_t)se->config.block_size,
 			se->config.use_cas ? "true" : "false",
 			se->config.selinux ? "true" : "false",
 			se->config.reclaim ? "true" : "false",
@@ -692,6 +690,7 @@ selinux_unknown_command(ENGINE_HANDLE *handle,
 
 static void
 selinux_item_set_cas(ENGINE_HANDLE *handle,
+					 const void *cookie,
 					 item *item,
 					 uint64_t cas)
 {
@@ -702,6 +701,7 @@ selinux_item_set_cas(ENGINE_HANDLE *handle,
 
 static bool
 selinux_get_item_info(ENGINE_HANDLE *handle,
+					  const void *cookie,
 					  const item *item,
 					  item_info *item_info)
 {

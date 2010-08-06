@@ -438,8 +438,9 @@ mblock_map(int fdesc, size_t block_size, size_t super_size)
 
 	mhead = (mhead_t *)mmap(NULL, block_size,
 							PROT_READ | PROT_WRITE,
-							fdesc < 0 ? MAP_ANONYMOUS | MAP_PRIVATE : MAP_SHARED,
+							fdesc < 0 ? MAP_PRIVATE | MAP_ANONYMOUS : MAP_SHARED,
 							fdesc, 0);
+	fprintf(stderr, "%s:%d mhead = %p errno=%d block_size=%u\n", __FUNCTION__, __LINE__, mhead, errno, block_size);
 	if (mhead == MAP_FAILED)
 		return NULL;
 
