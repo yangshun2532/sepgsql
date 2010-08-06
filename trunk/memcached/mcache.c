@@ -14,6 +14,8 @@
 #include <string.h>
 #include "selinux_engine.h"
 
+extern int ffsll(long long int i);
+
 static inline void *
 mchunk_get_key(mchunk_t *mchunk)
 {

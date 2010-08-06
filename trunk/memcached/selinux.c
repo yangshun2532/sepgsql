@@ -372,8 +372,9 @@ mselinux_init(selinux_engine_t *se)
 	/*
 	 * Memcached callback
 	 */
-	se->server.callback->register_callback(ON_CONNECT, mselinux_on_connect, se);
-
+	se->server.callback->register_callback((ENGINE_HANDLE *)se,
+										   ON_CONNECT,
+										   mselinux_on_connect, se);
 	/*
 	 * Set up userspace access vector
 	 */
