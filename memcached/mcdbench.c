@@ -8,6 +8,7 @@
  * This program is distributed under the modified BSD license.
  * See the LICENSE file for full text.
  */
+#include <ctype.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -54,7 +55,7 @@ exec_add(memcached_st *mcd, const char *key, const char *value,
 		printf("add: key=%s error=%s\n",
 			   key, memcached_strerror(mcd, error));
 	else
-		printf("add: key=%s value=%s expire=%u flags=%u\n",
+		printf("add: key=%s value=%s expire=%lu flags=%u\n",
 			   key, value, expire, flags);
 	return 0;
 }
@@ -71,7 +72,7 @@ exec_set(memcached_st *mcd, const char *key, const char *value,
 		printf("set: key=%s error=%s\n",
 			   key, memcached_strerror(mcd, error));
 	else
-		printf("set: key=%s value=%s expire=%u flags=%u\n",
+		printf("set: key=%s value=%s expire=%lu flags=%u\n",
 			   key, value, expire, flags);
 	return 0;
 }

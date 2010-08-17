@@ -1,3 +1,4 @@
+DESTDIR	?=
 
 CC	?= @CC@
 CPP	?= @CPP@
@@ -5,6 +6,14 @@ LIBS	?= @LIBS@
 CFLAGS	?= @CFLAGS@
 LDFLAGS	?= @LDFLAGS@
 CPPFLAGS?= @CPPFLAGS@
+
+INSTALL	?= $(shell which install)
+
+prefix	:= @prefix@
+exec_prefix := @exec_prefix@
+datarootdir := @datarootdir@
+bindir	:= @bindir@
+libdir	:= @libdir@
 
 SEL_MODULE	   = selinux_engine.so
 SEL_MODULE_OBJS	   = mblock.o mbtree.o mcache.o interfaces.o selinux.o
@@ -15,11 +24,17 @@ MCDBENCH	   = mcdbench
 MCDBENCH_SRCS      = mcdbench.c
 MCDBENCH_LIBS	   = -lpthread -lmemcached $(LIBS)
 MCDBENCH_CFLAGS	   = -g -Wall $(CFLAGS) $(CPPFLAGS)
-MCDBENCH_LDFLAGS   = $(LDFLAGS)
+MCDBENCH_LDFLAGS   = $(LDFLAGS) $(MCDBENCH_LIBS)
 
 all: $(SEL_MODULE) $(MCDBENCH) 
 
 install: all
+	$(INSTALL) -m 0755 $(SEL_MODULE) $(DESTDIR)$(libdir)
+	$(INSTALL) -m 0755 $(MCDBENCH) $(DESTDIR)$(bindir)
+
+uninstall:
+	rm -f $(DESTDIR)$(libdir)/$(SEL_MODULE)
+	rm -f $(DESTDIR)$(bindir)/$(MCDBENCH)
 
 $(SEL_MODULE): $(SEL_MODULE_OBJS)
 	$(CC) $(SEL_MODULE_LDFLAGS) $(SEL_MODULE_LIBS) -shared -o $@ $^
