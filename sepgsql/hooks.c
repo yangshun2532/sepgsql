@@ -381,7 +381,7 @@ sepgsql_relation_relabel(const ObjectAddress *object,
  *
  * An entrypoint of SECURITY LABEL statement
  */
-static void
+void
 sepgsql_object_relabel(const ObjectAddress *object,
 					   const char *seclabel,
 					   int expected_parents)

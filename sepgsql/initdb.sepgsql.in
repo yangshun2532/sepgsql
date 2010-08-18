@@ -81,28 +81,32 @@ if [ x"$SEPG_VERSION" != x"`cat $SEPG_DATA/PG_VERSION`" ]; then
     exit 1
 fi
 
-#
-# Get list of databases
-#
-POSTGRES_OPTS="--single -F -O -c search_path=pg_catalog -c exit_on_error=true"	# from initdb.c
-POSTGRES_OPTS="$POSTGRES_OPTS -c shared_preload_libraries=sepgsql"
-
-DBLIST=`echo "COPY pg_database(datname) TO stdout" | $POSTGRES $POSTGRES_OPTS template0`
-DBLIST=`echo $DBLIST | sed -e 's/backend>$//g' -e 's/^.*backend>//g'`
+if [ -e "$SEPG_DATA/SEPGSQL" ]; then
+    echo "'$SEPG_DATA' might be already initialized"
+    exit 1
+fi
 
 #
 # Set initial security context
 #
+POSTGRES_OPTS="--single -F -O -c search_path=pg_catalog -c exit_on_error=true"
+
 WITH_SHARED="true"
+DBLIST="template1 template0 postgres"
 for DBNAME in $DBLIST
 do
 $POSTGRES $POSTGRES_OPTS $DBNAME > /dev/null <<EOF
+LOAD 'sepgsql';
 CREATE OR REPLACE FUNCTION sepgsql_getcon() RETURNS text LANGUAGE 'c' AS 'sepgsql','sepgsql_getcon';
 CREATE OR REPLACE FUNCTION sepgsql_mcstrans_in(text) RETURNS text LANGUAGE 'c' AS 'sepgsql','sepgsql_mcstrans_in';
 CREATE OR REPLACE FUNCTION sepgsql_mcstrans_out(text) RETURNS text LANGUAGE 'c' AS 'sepgsql','sepgsql_mcstrans_out';
-CREATE OR REPLACE FUNCTION sepgsql_initial_labeling(bool,text) RETURNS bool LANGUAGE 'c' AS 'sepgsql','sepgsql_initial_labeling';
-SELECT sepgsql_initial_labeling($WITH_SHARED, $SEPG_SPEC);
+CREATE OR REPLACE FUNCTION sepgsql_restorecon(bool,text) RETURNS bool LANGUAGE 'c' AS 'sepgsql','sepgsql_restorecon';
+SELECT sepgsql_restorecon($WITH_SHARED, $SEPG_SPEC);
 EOF
+    if [ $? -ne 0 ]; then
+        echo "failed to initialize database: $DBNAME";
+	exit 1
+    fi
     WITH_SHARED="false"
 done
 
@@ -112,18 +116,17 @@ done
 TEMP=`mktemp` || exit 1
 
 cp "$SEPG_DATA/postgresql.conf" $TEMP
-cat $TEMP | \
-awk "BEGIN { edit = 0; }
-/^#shared_preload_libraries/ {
+cat $TEMP | awk "/^#shared_preload_libraries/ {
     print \"shared_preload_libraries = 'sepgsql'	# (change requires restart)\";
-    edit=1;
     next;
 }
-{ print; next; }
-END {
-    if (edit == 0) {
-        print \"#-- added by initdb.sepgsql --\"
-        print \"shared_preload_libraries = 'sepgsql'	# (change requires restart)\"
-    }
+{
+    print;
+    next;
 }" > "$SEPG_DATA/postgresql.conf"
 rm -f $TEMP
+
+#
+# Put a marker file
+#
+ln -sf PG_VERSION $PGDATA/SEPGSQL

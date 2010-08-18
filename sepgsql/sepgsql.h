@@ -10,7 +10,7 @@
  */
 #ifndef SEPGSQL_H
 #define SEPGSQL_H
-
+#include "catalog/dependency.h"
 #include <selinux/selinux.h>
 
 /*
@@ -230,6 +230,9 @@ extern char *sepgsql_compute_create(char *scontext,
 /*
  * hooks.c
  */
+extern void sepgsql_object_relabel(const ObjectAddress *object,
+								   const char *seclabel,
+								   int expected_parents);
 extern void sepgsql_register_hooks(void);
 
 /*
@@ -243,6 +246,6 @@ extern char *sepgsql_get_label(Oid relOid, Oid objOid, int32 subId);
 extern Datum sepgsql_getcon(PG_FUNCTION_ARGS);
 extern Datum sepgsql_mcstrans_in(PG_FUNCTION_ARGS);
 extern Datum sepgsql_mcstrans_out(PG_FUNCTION_ARGS);
-extern Datum sepgsql_initial_labeling(PG_FUNCTION_ARGS);
+extern Datum sepgsql_restorecon(PG_FUNCTION_ARGS);
 
 #endif /* SEPGSQL_H */

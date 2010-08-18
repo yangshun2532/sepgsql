@@ -641,7 +641,7 @@ _PG_init(void)
 	 * SE-PostgreSQL does not allow to load the module except for
 	 * the case when shared_preload_libraries handling.
 	 */
-	if (!process_shared_preload_libraries_in_progress)
+	if (MyProcPort && !process_shared_preload_libraries_in_progress)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("Not allowed to load SE-PostgreSQL module, "
