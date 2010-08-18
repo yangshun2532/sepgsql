@@ -241,22 +241,17 @@ sepgsql_mcstrans_out(PG_FUNCTION_ARGS)
 }
 
 /*
- * BOOL sepgsql_initial_labeling(BOOL, TEXT)
+ * exec_relation_restorecon
  *
- * It assignes default security context on all the database objects
- * within the current database. If the 1st argument is true, it also
- * tries tp relabel shared database object. The 2nd argument is path
- * to the specfile; can be NULL for default.
- *
- * Note that this function is only available in permissive mode.
+ * A helper function of sepgsql_restorecon
  */
 static void
-exec_initial_relation_labeling(struct selabel_handle *sehnd)
+exec_relation_restorecon(struct selabel_handle *sehnd)
 {
-	Form_pg_class		relForm;
-	Form_pg_attribute	attForm;
-	Relation			pg_class;
-	Relation			pg_attribute;
+	Form_pg_class		relform;
+	Form_pg_attribute	attform;
+	Relation			relheap;
+	Relation			attheap;
 	SysScanDesc			relscan;
 	SysScanDesc			attscan;
 	ScanKeyData			key;
@@ -271,21 +266,18 @@ exec_initial_relation_labeling(struct selabel_handle *sehnd)
 	int					tclass;
 	int					offset;
 
-	pg_class = heap_open(RelationRelationId, AccessShareLock);
+	relheap = heap_open(RelationRelationId, AccessShareLock);
 
-	pg_attribute = heap_open(AttributeRelationId, AccessShareLock);
+	attheap = heap_open(AttributeRelationId, AccessShareLock);
 
-	relscan = systable_beginscan(pg_class, InvalidOid, false,
+	relscan = systable_beginscan(relheap, InvalidOid, false,
 								 SnapshotNow, 0, NULL);
 	while (HeapTupleIsValid(reltup = systable_getnext(relscan)))
 	{
-		relForm = (Form_pg_class) GETSTRUCT(reltup);
+		relform = (Form_pg_class) GETSTRUCT(reltup);
 		relationId = HeapTupleGetOid(reltup);
 
-		/*
-		 * These relkind don't have individual security labels
-		 */
-		switch (relForm->relkind)
+		switch (relform->relkind)
 		{
 			case RELKIND_RELATION:
 				tclass = SELABEL_DB_TABLE;
@@ -297,14 +289,19 @@ exec_initial_relation_labeling(struct selabel_handle *sehnd)
 				tclass = SELABEL_DB_VIEW;
 				break;
 			default:
-				/* other relation don't have individual security labels */
+				/*
+				 * This kind of relation does not have individual
+				 * security label, so we skip this entry.
+				 */
 				continue;
 		}
-		namespace_name = get_namespace_name(relForm->relnamespace);
-
+		/*
+		 * Set up fully-qualified relation name
+		 */
+		namespace_name = get_namespace_name(relform->relnamespace);
 		offset = snprintf(name_buf, sizeof(name_buf), "%s.%s.%s",
 						  database_name, namespace_name,
-						  NameStr(relForm->relname));
+						  NameStr(relform->relname));
 		pfree(namespace_name);
 
 		if (selabel_lookup_raw(sehnd, &context, name_buf, tclass) == 0)
@@ -314,6 +311,11 @@ exec_initial_relation_labeling(struct selabel_handle *sehnd)
 				object.classId = RelationRelationId;
 				object.objectId = relationId;
 				object.objectSubId = 0;
+
+				/*
+				 * check permission to relabel the relation
+				 */
+				sepgsql_object_relabel(&object, context, 0);
 
 				SetSecurityLabel(&object, SEPGSQL_LABEL_TAG, context);
 			}
@@ -325,28 +327,36 @@ exec_initial_relation_labeling(struct selabel_handle *sehnd)
 			PG_END_TRY();
 			freecon(context);
 		}
+		else if (errno == ENOENT)
+			ereport(WARNING,
+					(errmsg("no valid initial label for %s, skipped",
+							name_buf)));
+		else
+			ereport(ERROR,
+					(errcode(ERRCODE_INTERNAL_ERROR),
+					 errmsg("libselinux internal error")));
 
 		/*
-		 * Only attributes within regular table have individual
-		 * security labels
-		 */
-		if (relForm->relkind != RELKIND_RELATION)
+         * only pg_attribute entries of regular tables have
+         * individual security labels.
+         */
+		if (relform->relkind != RELKIND_RELATION)
 			continue;
 
 		ScanKeyInit(&key,
 					Anum_pg_attribute_attrelid,
 					BTEqualStrategyNumber, F_OIDEQ,
-					ObjectIdGetDatum(HeapTupleGetOid(reltup)));
+					ObjectIdGetDatum(relationId));
 
-		attscan = systable_beginscan(pg_attribute,
+		attscan = systable_beginscan(attheap,
 									 AttributeRelidNumIndexId, true,
 									 SnapshotNow, 1, &key);
 		while (HeapTupleIsValid(atttup = systable_getnext(attscan)))
 		{
-			attForm = (Form_pg_attribute) GETSTRUCT(atttup);
+			attform = (Form_pg_attribute) GETSTRUCT(atttup);
 
 			snprintf(name_buf + offset, sizeof(name_buf) - offset,
-					 ".%s", NameStr(attForm->attname));
+					 ".%s", NameStr(attform->attname));
 
 			if (selabel_lookup_raw(sehnd, &context, name_buf,
 								   SELABEL_DB_COLUMN) == 0)
@@ -355,7 +365,12 @@ exec_initial_relation_labeling(struct selabel_handle *sehnd)
 				{
 					object.classId = RelationRelationId;
 					object.objectId = relationId;
-					object.objectSubId = attForm->attnum;
+					object.objectSubId = attform->attnum;
+
+					/*
+					 * permission check to relabel the column
+					 */
+					sepgsql_object_relabel(&object, context, 0);
 
 					SetSecurityLabel(&object, SEPGSQL_LABEL_TAG, context);
 				}
@@ -372,14 +387,27 @@ exec_initial_relation_labeling(struct selabel_handle *sehnd)
 	}
 	systable_endscan(relscan);
 
-	heap_close(pg_attribute, NoLock);
+	heap_close(attheap, NoLock);
 
-	heap_close(pg_class, NoLock);
+	heap_close(relheap, NoLock);
 }
 
-PG_FUNCTION_INFO_V1(sepgsql_initial_labeling);
+/*
+ * BOOL sepgsql_restorecon(BOOL with_shared, TEXT specfile)
+ *
+ * This function tries to assign initial security labels on all the object
+ * within current database, according to the system setting.
+ * It is typically invoked just after initdb by initdb.sepgsql script to
+ * initialize security label of the system object.
+ *
+ * If @with_shared is true, it also tries to label shared database object,
+ * such as pg_database and so on.
+ * If @specfile is not NULL, it uses explicitly specified specfile, instead
+ * of the system default.
+ */
+PG_FUNCTION_INFO_V1(sepgsql_restorecon);
 Datum
-sepgsql_initial_labeling(PG_FUNCTION_ARGS)
+sepgsql_restorecon(PG_FUNCTION_ARGS)
 {
 	bool					with_shared	= PG_GETARG_BOOL(0);
 	struct selabel_handle  *sehnd;
@@ -392,12 +420,16 @@ sepgsql_initial_labeling(PG_FUNCTION_ARGS)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("SELinux: now disabled")));
-	if (sepgsql_get_enforce())
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("unavailable to run in enforcing mode")));
 	/*
-	 * open selabel facilities
+	 * check DAC permission
+	 */
+	if (!superuser())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("must be superuser to restore initial contexts")));
+
+	/*
+	 * open selabel_lookup(3) stuff
 	 */
 	if (!PG_ARGISNULL(1))
 	{
@@ -411,7 +443,10 @@ sepgsql_initial_labeling(PG_FUNCTION_ARGS)
 				 errmsg("SELinux internal error")));
 	PG_TRY();
 	{
-		exec_initial_relation_labeling(sehnd);
+		if (with_shared)
+			/* do nothing right now */ ;
+
+		exec_relation_restorecon(sehnd);
 	}
 	PG_CATCH();
 	{
