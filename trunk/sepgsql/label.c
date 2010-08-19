@@ -133,10 +133,132 @@ sepgsql_get_label(Oid relOid, Oid objOid, int32 subId)
 	};
 	char   *tcontext = GetSecurityLabel(&object, SEPGSQL_LABEL_TAG);
 
-	if (!tcontext || security_check_context(tcontext) < 0)
+	if (!tcontext || security_check_context_raw(tcontext) < 0)
 		tcontext = sepgsql_get_unlabeled_label();
 
 	return tcontext;
+}
+
+/*
+ * sepgsql_relation_relabel
+ *
+ * It validates the given security label and privileges to relabel.
+ */
+static void
+sepgsql_relation_relabel(const ObjectAddress *object, const char *seclabel)
+{
+	Oid			relOid = object->objectId;
+	AttrNumber	attnum = object->objectSubId;
+	uint16_t	tclass;
+	char	   *tcontext;
+	char	   *audit_name;
+	char		audit_name_buf[NAMEDATALEN * 2 + 10];
+
+	Assert(object->classId == RelationRelationId);
+
+	/*
+	 * validation on the given security label
+	 */
+	if (!seclabel || security_check_context_raw((security_context_t)seclabel) < 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_NAME),
+				 errmsg("invalid security label: \"%s\"", seclabel)));
+
+	/*
+	 * Is it an appropriate object class?
+	 */
+	switch (get_rel_relkind(relOid))
+	{
+		case RELKIND_RELATION:
+			if (attnum != InvalidAttrNumber)
+			{
+				tclass = SEPG_CLASS_DB_COLUMN;
+				snprintf(audit_name_buf, sizeof(audit_name_buf), "%s.%s",
+						 get_rel_name(relOid),
+						 get_attname(relOid, attnum));
+				audit_name = audit_name_buf;
+				break;
+			}
+			tclass = SEPG_CLASS_DB_TABLE;
+			audit_name = get_rel_name(relOid);
+			break;
+
+		case RELKIND_SEQUENCE:
+			if (attnum != InvalidAttrNumber)
+				ereport(ERROR,
+						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+						 errmsg("cannot assign security label on attributes "
+								"of relations, except for regular tables.")));
+			tclass = SEPG_CLASS_DB_SEQUENCE;
+			audit_name = get_rel_name(relOid);
+			break;
+
+		default:
+			if (attnum != InvalidAttrNumber)
+				ereport(ERROR,
+						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+						 errmsg("cannot assign security label on attributes "
+								"of relations, except for regular tables.")));
+			tclass = SEPG_CLASS_DB_TUPLE;
+			audit_name = get_rel_name(relOid);
+			break;
+	}
+
+	/*
+	 * check db_xxx:{setattr relabelfrom} permission
+	 */
+	tcontext = sepgsql_get_label(RelationRelationId, relOid, attnum);
+
+	sepgsql_compute_perms(sepgsql_get_client_label(),
+						  tcontext,
+						  tclass,
+						  SEPG_DB_TABLE__SETATTR |
+						  SEPG_DB_TABLE__RELABELFROM,
+						  audit_name,
+						  true);
+	/*
+	 * check db_xxx:{relabelto} permission
+	 */
+	sepgsql_compute_perms(sepgsql_get_client_label(),
+						  seclabel,
+						  tclass,
+						  SEPG_DB_TABLE__RELABELTO,
+						  audit_name,
+						  true);
+}
+
+/*
+ * sepgsql_object_relabel
+ *
+ * An entrypoint of SECURITY LABEL statement
+ */
+static void
+sepgsql_object_relabel(const ObjectAddress *object,
+					   const char *seclabel,
+					   int expected_parents)
+{
+	switch (object->classId)
+	{
+		case RelationRelationId:
+			sepgsql_relation_relabel(object, seclabel);
+			break;
+
+		default:
+			elog(ERROR, "unsupported object type: %u", object->classId);
+			break;
+	}
+}
+
+/*
+ * sepgsql_register_hooks
+ *
+ * It sets up security hooks correctly on starting up time.
+ */
+void
+sepgsql_register_label_hooks(void)
+{
+	register_object_relabel_hook(SEPGSQL_LABEL_TAG,
+								 sepgsql_object_relabel);
 }
 
 /*

@@ -205,35 +205,28 @@ extern int  sepgsql_get_mode(void);
 extern int  sepgsql_set_mode(int new_mode);
 
 extern void sepgsql_audit_log(bool denied,
-							  char *scontext,
-							  char *tcontext,
+							  const char *scontext,
+							  const char *tcontext,
 							  uint16 tclass,
 							  uint32 audited,
 							  const char *audit_name);
 
-extern void sepgsql_compute_avd(char *scontext,
-								char *tcontext,
+extern void sepgsql_compute_avd(const char *scontext,
+								const char *tcontext,
 								uint16 tclass,
 								struct av_decision *avd);
 
-extern bool sepgsql_compute_perms(char *scontext,
-								  char *tcontext,
+extern bool sepgsql_compute_perms(const char *scontext,
+								  const char *tcontext,
 								  uint16 tclass,
 								  uint32 required,
 								  const char *audit_name,
 								  bool abort);
 
-extern char *sepgsql_compute_create(char *scontext,
-									char *tcontext,
+extern char *sepgsql_compute_create(const char *scontext,
+									const char *tcontext,
 									uint16 tclass);
 
-/*
- * hooks.c
- */
-extern void sepgsql_object_relabel(const ObjectAddress *object,
-								   const char *seclabel,
-								   int expected_parents);
-extern void sepgsql_register_hooks(void);
 
 /*
  * label.c
@@ -243,9 +236,16 @@ extern char *sepgsql_set_client_label(char *new_label);
 extern char *sepgsql_get_unlabeled_label(void);
 extern char *sepgsql_get_label(Oid relOid, Oid objOid, int32 subId);
 
+extern void  sepgsql_register_label_hooks(void);
+
 extern Datum sepgsql_getcon(PG_FUNCTION_ARGS);
 extern Datum sepgsql_mcstrans_in(PG_FUNCTION_ARGS);
 extern Datum sepgsql_mcstrans_out(PG_FUNCTION_ARGS);
 extern Datum sepgsql_restorecon(PG_FUNCTION_ARGS);
+
+/*
+ * relation.c
+ */
+extern void  sepgsql_register_relation_hooks(void);
 
 #endif /* SEPGSQL_H */
