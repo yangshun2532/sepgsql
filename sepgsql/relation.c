@@ -1,7 +1,7 @@
 /*
- * hooks.c
+ * relation.c
  *
- * It provides security hooks of SE-PostgreSQL
+ * It provides security hooks corresponding to relation object
  *
  * Author: KaiGai Kohei <kaigai@ak.jp.nec.com>
  *
@@ -10,20 +10,15 @@
  */
 #include "postgres.h"
 
-#include "access/heapam.h"
-#include "access/genam.h"
 #include "access/sysattr.h"
 #include "catalog/catalog.h"
-#include "catalog/dependency.h"
-#include "catalog/indexing.h"
 #include "catalog/pg_attribute.h"
 #include "catalog/pg_class.h"
-#include "catalog/pg_inherits.h"
-#include "commands/seclabel.h"
+#include "catalog/pg_inherits_fn.h"
 #include "executor/executor.h"
 #include "nodes/bitmapset.h"
 #include "miscadmin.h"
-#include "utils/acl.h"
+//#include "utils/acl.h"
 #include "utils/fmgroids.h"
 #include "utils/rel.h"
 #include "utils/tqual.h"
@@ -79,6 +74,60 @@ fixup_whole_row_references(Oid relOid, Bitmapset *columns)
 
 		ReleaseSysCache(tuple);
 	}
+	return result;
+}
+
+/*
+ * fixup_inherited_columns
+ *
+ * 
+ *
+ *
+ */
+static Bitmapset *
+fixup_inherited_columns(Oid parentId, Oid childId, Bitmapset *columns)
+{
+	AttrNumber	attno;
+	Bitmapset  *tmpset;
+	Bitmapset  *result = NULL;
+	char	   *attname;
+	int			index;
+
+	/*
+	 * obviously, no need to do anything here
+	 */
+	if (parentId == childId)
+		return columns;
+
+	tmpset = bms_copy(columns);
+	while ((index = bms_first_member(tmpset)) > 0)
+	{
+		attno = index + FirstLowInvalidHeapAttributeNumber;
+		/*
+		 * whole-row-reference shall be fixed-up later
+		 */
+		if (attno == InvalidAttrNumber)
+		{
+			result = bms_add_member(result, index);
+			continue;
+		}
+
+		attname = get_attname(parentId, attno);
+		if (!attname)
+			elog(ERROR, "cache lookup failed for attribute %d of relation %u",
+				 attno, parentId);
+		attno = get_attnum(childId, attname);
+		if (attno == InvalidAttrNumber)
+			elog(ERROR, "cache lookup failed for attribute '%s' of relation %u",
+				 attname, childId);
+
+		index = attno - FirstLowInvalidHeapAttributeNumber;
+		result = bms_add_member(result, index);
+
+		pfree(attname);
+	}
+	bms_free(tmpset);
+
 	return result;
 }
 
@@ -203,12 +252,14 @@ sepgsql_one_relation_privileges(Oid relOid,
 static bool
 sepgsql_relation_privileges(List *rangeTabls, bool abort)
 {
-	ListCell   *l;
+	ListCell   *lr;
 
-	foreach (l, rangeTabls)
+	foreach (lr, rangeTabls)
 	{
-		RangeTblEntry  *rte = lfirst(l);
+		RangeTblEntry  *rte = lfirst(lr);
 		uint32			required = 0;
+		List		   *tableIds;
+		ListCell	   *li;
 
 		/*
 		 * Only regular relations shall be checked
@@ -240,173 +291,50 @@ sepgsql_relation_privileges(List *rangeTabls, bool abort)
 			continue;
 
 		/*
-		 * Do actual permission checks
+		 * Expand 
+		 *
 		 */
-		if (!sepgsql_one_relation_privileges(rte->relid,
-											 rte->selectedCols,
-											 rte->modifiedCols,
-											 required, abort))
-			return false;
+		if (!rte->inh)
+			tableIds = list_make1_oid(rte->relid);
+		else
+			tableIds = find_all_inheritors(rte->relid, NoLock, NULL);
+
+		foreach (li, tableIds)
+		{
+			Oid			tableOid = lfirst_oid(li);
+			Bitmapset  *selectedCols;
+			Bitmapset  *modifiedCols;
+
+			/*
+			 * child table has different attribute numbers, so we need
+			 * to fix up them.
+			 */
+			selectedCols = fixup_inherited_columns(rte->relid, tableOid,
+												   rte->selectedCols);
+			modifiedCols = fixup_inherited_columns(rte->relid, tableOid,
+												   rte->modifiedCols);
+
+			/*
+			 * check permissions on individual tables
+			 */
+			if (!sepgsql_one_relation_privileges(tableOid,
+												 selectedCols,
+												 modifiedCols,
+												 required, abort))
+				return false;
+		}
+		list_free(tableIds);
 	}
 	return true;
 }
 
 /*
- * sepgsql_relation_relabel
+ * sepgsql_register_relation_hooks
  *
- * It validates the given security label and privileges to relabel.
- */
-static void
-sepgsql_relation_relabel(const ObjectAddress *object,
-						 const char *seclabel,
-						 int expected_parents)
-{
-	Oid			relOid = object->objectId;
-	AttrNumber	attnum = object->objectSubId;
-	Relation	pg_inherit;
-	SysScanDesc	scan;
-	ScanKeyData	keys[1];
-	HeapTuple	tuple;
-	char	   *tcontext;
-	uint16		tclass;
-
-	/* security label validation */
-	if (!seclabel || security_check_context((security_context_t)seclabel) < 0)
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_NAME),
-				 errmsg("invalid security label: \"%s\"", seclabel)));
-
-	/*
-	 * SELinux requires a series of inheritance hierarchy have same
-	 * security label, so we forbid relabeling in the following cases.
-	 * 1. when user specifies a table which is inherited from others.
-	 *    (expected_parents == 0, but parent relations exist)
-	 * 2. when user tries to relabel a table which has diamond-type
-	 *    inheritance tree.
-	 *    (# of actual parent > expexted_parents)
-	 * 3. when user specifies a column which is inherited from others.
-	 * 4. when user tries to relabel a column which is merged from
-	 *    different inheritance hierarchy.
-	 */
-	if (attnum == InvalidAttrNumber)
-	{
-		pg_inherit = heap_open(InheritsRelationId, AccessShareLock);
-
-		ScanKeyInit(&keys[0],
-					Anum_pg_inherits_inhrelid,
-					BTEqualStrategyNumber, F_OIDEQ,
-					ObjectIdGetDatum(relOid));
-
-		scan = systable_beginscan(pg_inherit,
-								  InheritsRelidSeqnoIndexId, true,
-								  SnapshotNow, 1, keys);
-		while (HeapTupleIsValid(tuple = systable_getnext(scan)))
-			expected_parents--;
-
-		systable_endscan(scan);
-
-		heap_close(pg_inherit, AccessShareLock);
-
-		if (expected_parents < 0)
-			ereport(ERROR,
-					(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
-					 errmsg("cannot relabel inherited relation \"%s\"",
-							get_rel_name(relOid))));
-	}
-	else
-	{
-		int		inhcount;
-
-		tuple = SearchSysCache2(ATTNUM,
-								ObjectIdGetDatum(relOid),
-								Int16GetDatum(attnum));
-		if (!HeapTupleIsValid(tuple))
-			elog(ERROR, "cache lookup failed for attribute %d of relation %u",
-				 attnum, relOid);
-
-		inhcount = ((Form_pg_attribute) GETSTRUCT(tuple))->attinhcount;
-
-		if (inhcount > expected_parents)
-			ereport(ERROR,
-					(errcode(ERRCODE_INVALID_TABLE_DEFINITION),
-					 errmsg("cannot relabel inherited column \"%s\"",
-							get_attname(relOid, attnum))));
-
-		ReleaseSysCache(tuple);
-	}
-
-	/*
-	 * what is the appropriate object class?
-	 */
-	switch (get_rel_relkind(relOid))
-	{
-		case RELKIND_RELATION:
-			tclass = SEPG_CLASS_DB_TABLE;
-			break;
-
-		case RELKIND_SEQUENCE:
-			tclass = SEPG_CLASS_DB_SEQUENCE;
-			break;
-
-		default:
-			tclass = SEPG_CLASS_DB_TUPLE;
-			break;
-	}
-
-	/*
-	 * check db_table/db_column:{setattr relabelfrom} permission
-	 */
-	tcontext = sepgsql_get_label(RelationRelationId, relOid, attnum);
-
-	sepgsql_compute_perms(sepgsql_get_client_label(),
-						  tcontext,
-						  tclass,
-						  SEPG_DB_TABLE__SETATTR |
-						  SEPG_DB_TABLE__RELABELFROM,
-						  get_rel_name(relOid),
-						  true);
-	/*
-	 * check db_table/db_column:{relabelto} permission
-	 */
-	sepgsql_compute_perms(sepgsql_get_client_label(),
-						  (security_context_t)seclabel,
-						  tclass,
-						  SEPG_DB_TABLE__RELABELTO,
-						  get_rel_name(relOid),
-						  true);
-}
-
-/*
- * sepgsql_object_relabel
- *
- * An entrypoint of SECURITY LABEL statement
+ * It registers security hooks corresponding to relations
  */
 void
-sepgsql_object_relabel(const ObjectAddress *object,
-					   const char *seclabel,
-					   int expected_parents)
-{
-	switch (object->classId)
-	{
-		case RelationRelationId:
-			sepgsql_relation_relabel(object, seclabel, expected_parents);
-			break;
-
-		default:
-			elog(ERROR, "unsupported object type");
-			break;
-	}
-}
-
-/*
- * sepgsql_register_hooks
- *
- * It sets up security hooks correctly on starting up time.
- */
-void
-sepgsql_register_hooks(void)
+sepgsql_register_relation_hooks(void)
 {
 	ExecutorCheckPerms_hook = sepgsql_relation_privileges;
-	register_object_relabel_hook(SEPGSQL_LABEL_TAG,
-								 sepgsql_object_relabel);
 }

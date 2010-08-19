@@ -361,8 +361,8 @@ sepgsql_show_mode(void)
  */
 void
 sepgsql_audit_log(bool denied,
-				  char *scontext,
-				  char *tcontext,
+				  const char *scontext,
+				  const char *tcontext,
 				  uint16 tclass,
 				  uint32 audited,
 				  const char *audit_name)
@@ -414,8 +414,8 @@ sepgsql_audit_log(bool denied,
  * to suggest a set of allowed actions in this object class.
  */
 void
-sepgsql_compute_avd(char *scontext,
-					char *tcontext,
+sepgsql_compute_avd(const char *scontext,
+					const char *tcontext,
 					uint16 tclass,
 					struct av_decision *avd)
 {
@@ -452,7 +452,8 @@ sepgsql_compute_avd(char *scontext,
 	 * Ask SELinux what is allowed set of permissions on a pair of the
 	 * security contexts and the given object class.
 	 */
-	if (security_compute_av_flags_raw(scontext, tcontext,
+	if (security_compute_av_flags_raw((security_context_t)scontext,
+									  (security_context_t)tcontext,
 									  tclass_ex, 0, &avd_ex) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_INTERNAL_ERROR),
@@ -519,7 +520,9 @@ sepgsql_compute_avd(char *scontext,
  *            header file.
  */
 char *
-sepgsql_compute_create(char *scontext, char *tcontext, uint16 tclass)
+sepgsql_compute_create(const char *scontext,
+					   const char *tcontext,
+					   uint16 tclass)
 {
 	security_context_t	ncontext;
 	security_class_t	tclass_ex;
@@ -536,7 +539,8 @@ sepgsql_compute_create(char *scontext, char *tcontext, uint16 tclass)
 	 * Ask SELinux what is the default context for the given object class
 	 * on a pair of security contexts
 	 */
-	if (security_compute_create_raw(scontext, tcontext,
+	if (security_compute_create_raw((security_context_t)scontext,
+									(security_context_t)tcontext,
 									tclass_ex, &ncontext))
 		ereport(ERROR,
 				(errcode(ERRCODE_INTERNAL_ERROR),
@@ -579,8 +583,8 @@ sepgsql_compute_create(char *scontext, char *tcontext, uint16 tclass)
  * abort    : true, if it raises an error on access violation
  */
 bool
-sepgsql_compute_perms(char *scontext,
-					  char *tcontext,
+sepgsql_compute_perms(const char *scontext,
+					  const char *tcontext,
 					  uint16 tclass,
 					  uint32 required,
 					  const char *audit_name,
@@ -696,8 +700,9 @@ _PG_init(void)
 	else
 	{
 		/*
-		 * If SELinux is available, register all the security hooks.
+		 * If SELinux is available, register security hooks.
 		 */
-		sepgsql_register_hooks();
+		sepgsql_register_label_hooks();
+		sepgsql_register_relation_hooks();
 	}
 }
