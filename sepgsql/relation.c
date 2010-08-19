@@ -17,11 +17,6 @@
 #include "catalog/pg_inherits_fn.h"
 #include "executor/executor.h"
 #include "nodes/bitmapset.h"
-#include "miscadmin.h"
-//#include "utils/acl.h"
-#include "utils/fmgroids.h"
-#include "utils/rel.h"
-#include "utils/tqual.h"
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
 
@@ -30,7 +25,9 @@
 /*
  * fixup_whole_row_references
  *
- * It expands the given columns, if it contains whole of the row reference.
+ * When user reference a whole of row, it is equivalent to reference to
+ * all the user columns (not system columns). So, we need to fix up the
+ * given bitmapset, if it contains a whole of the row reference.
  */
 static Bitmapset *
 fixup_whole_row_references(Oid relOid, Bitmapset *columns)
@@ -80,9 +77,12 @@ fixup_whole_row_references(Oid relOid, Bitmapset *columns)
 /*
  * fixup_inherited_columns
  *
- * 
- *
- *
+ * When user is querying on a table with children, it implicitly accesses
+ * child tables also. So, we also need to check security label of child
+ * tables and columns, but here is no guarantee attribute numbers are
+ * same between the parent ans children.
+ * It returns a bitmapset which contains attribute number of the child
+ * table based on the given bitmapset of the parent.
  */
 static Bitmapset *
 fixup_inherited_columns(Oid parentId, Oid childId, Bitmapset *columns)
@@ -132,9 +132,10 @@ fixup_inherited_columns(Oid parentId, Oid childId, Bitmapset *columns)
 }
 
 /*
- * sepgsql_relation_privileges
+ * sepgsql_one_relation_privileges
  *
- * It actually checks required permissions on the relation/columns.
+ * It actually checks required permissions on a certain relation
+ * and its columns.
  */
 static bool
 sepgsql_one_relation_privileges(Oid relOid,
@@ -291,8 +292,11 @@ sepgsql_relation_privileges(List *rangeTabls, bool abort)
 			continue;
 
 		/*
-		 * Expand 
-		 *
+		 * If this RangeTblEntry is also supposed to reference inherited
+		 * tables, we need to check security label of the child tables.
+		 * So, we expand rte->relid into list of OIDs of inheritance
+		 * hierarchy, then checker routine will be invoked for each
+		 * relations.
 		 */
 		if (!rte->inh)
 			tableIds = list_make1_oid(rte->relid);

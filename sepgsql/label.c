@@ -15,8 +15,6 @@
 #include "catalog/catalog.h"
 #include "catalog/dependency.h"
 #include "catalog/indexing.h"
-#include "catalog/pg_description.h"
-#include "catalog/pg_shdescription.h"
 #include "commands/dbcommands.h"
 #include "commands/seclabel.h"
 #include "libpq/libpq-be.h"
@@ -133,7 +131,8 @@ sepgsql_get_label(Oid relOid, Oid objOid, int32 subId)
 	};
 	char   *tcontext = GetSecurityLabel(&object, SEPGSQL_LABEL_TAG);
 
-	if (!tcontext || security_check_context_raw(tcontext) < 0)
+	if (!tcontext ||
+		security_check_context_raw((security_context_t)tcontext) < 0)
 		tcontext = sepgsql_get_unlabeled_label();
 
 	return tcontext;
@@ -159,7 +158,8 @@ sepgsql_relation_relabel(const ObjectAddress *object, const char *seclabel)
 	/*
 	 * validation on the given security label
 	 */
-	if (!seclabel || security_check_context_raw((security_context_t)seclabel) < 0)
+	if (!seclabel ||
+		security_check_context_raw((security_context_t)seclabel) < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_NAME),
 				 errmsg("invalid security label: \"%s\"", seclabel)));

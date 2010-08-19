@@ -10,7 +10,7 @@
  */
 #ifndef SEPGSQL_H
 #define SEPGSQL_H
-#include "catalog/dependency.h"
+
 #include <selinux/selinux.h>
 
 /*
