@@ -227,6 +227,21 @@ extern char *sepgsql_compute_create(const char *scontext,
 									const char *tcontext,
 									uint16 tclass);
 
+/*
+ * uavc.c
+ */
+extern bool sepgsql_client_has_perms(ObjectAddress   *tobject,
+									 security_class_t tclass,
+									 access_vector_t  required,
+									 const char      *audit_name,
+									 bool             abort);
+extern char *sepgsql_client_compute_create(ObjectAddress   *tobject,
+										   security_class_t tclass);
+extern void  sepgsql_avc_switch_client(void);
+extern bool  sepgsql_avc_check_valid(void);
+extern bool  sepgsql_avc_getenforce(void);
+extern bool  sepgsql_avc_deny_unknown(void);
+extern void  sepgsql_avc_init(void);
 
 /*
  * label.c

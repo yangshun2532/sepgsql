@@ -593,46 +593,45 @@ sepgsql_compute_perms(const char *scontext,
 	struct av_decision	avd;
 	uint32		denied;
 	uint32		audited;
+	bool		result = true;
 
-	sepgsql_compute_avd(scontext, tcontext, tclass, &avd);
+	sepgsql_avc_check_valid();
+	do {
+		sepgsql_compute_avd(scontext, tcontext, tclass, &avd);
+
+		denied = required & ~avd.allowed;
+
+		if (sepgsql_debug_audit)
+			audited = (denied ? (denied & ~0) : (required & ~0));
+		else
+			audited = (denied ? (denied & avd.auditdeny)
+							  : (required & avd.auditallow));
+
+		if (denied &&
+			sepgsql_avc_getenforce() &&
+			(avd.flags & SELINUX_AVD_FLAGS_PERMISSIVE) == 0)
+			result = false;
+	} while (!sepgsql_avc_check_valid());
 
 	/*
-	 * It logs a security audit record for the given request, if necessary.
-	 * When SE-PgSQL performs 'internal' mode, it needs to keep silent.
+	 * It records a security audit for the request, if needed.
+	 * But, when SE-PgSQL performs 'internal' mode, it needs to keep silent.
 	 */
-	denied = required & ~avd.allowed;
-	if (sepgsql_debug_audit)
-		audited = (denied ? (denied & ~0) : (required & ~0));
-	else
-		audited = (denied ? (denied & avd.auditdeny)
-						  : (required & avd.auditallow));
-
 	if (audited && sepgsql_mode != SEPGSQL_MODE_INTERNAL)
 	{
-		sepgsql_audit_log(!!denied, scontext, tcontext,
-						  tclass, audited, audit_name);
+		sepgsql_audit_log(!!denied,
+						  scontext,
+						  tcontext,
+						  tclass,
+						  audited,
+						  audit_name);
 	}
 
-	/*
-	 * If here is no policy violations, or SE-PgSQL performs in permissive
-	 * mode, or the client process peforms in permissive domain, it returns
-	 * normally with 'true'.
-	 */
-	if (!denied ||
-		!sepgsql_get_enforce() ||
-		(avd.flags & SELINUX_AVD_FLAGS_PERMISSIVE) != 0)
-		return true;
-
-	/*
-	 * Otherwise, it raises an error or returns 'false', depending on the
-	 * caller's indication by 'abort'.
-	 */
-	if (abort)
+	if (!result && abort)
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("SELinux: security policy violation")));
-
-	return false;
+	return result;
 }
 
 /*
@@ -699,6 +698,11 @@ _PG_init(void)
 		sepgsql_mode = SEPGSQL_MODE_DISABLED;
 	else
 	{
+		/*
+		 * initialize userspace access vector
+		 */
+		sepgsql_avc_init();
+
 		/*
 		 * If SELinux is available, register security hooks.
 		 */
