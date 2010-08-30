@@ -11,6 +11,7 @@
 #ifndef SEPGSQL_H
 #define SEPGSQL_H
 
+#include "catalog/objectaddress.h"
 #include <selinux/selinux.h>
 
 /*
@@ -199,8 +200,11 @@
 /*
  * selinux.c
  */
+extern int  sepgsql_mode;
+extern bool sepgsql_debug_audit;
+
 extern bool sepgsql_is_enabled(void);
-extern bool sepgsql_get_enforce(void);
+
 extern int  sepgsql_get_mode(void);
 extern int  sepgsql_set_mode(int new_mode);
 

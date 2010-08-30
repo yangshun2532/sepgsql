@@ -39,30 +39,6 @@ static security_context_t	client_label = NULL;
 char *
 sepgsql_get_client_label(void)
 {
-	if (client_label)
-		return client_label;
-
-	if (!MyProcPort)
-	{
-		if (getprevcon_raw(&client_label) < 0)
-			ereport(FATAL,
-					(errcode(ERRCODE_INTERNAL_ERROR),
-					 errmsg("SELinux: unable to get security label of server")));
-	}
-	else
-	{
-		int		old_mode;
-
-		if (getpeercon_raw(MyProcPort->sock, &client_label) < 0)
-			ereport(FATAL,
-					(errcode(ERRCODE_INTERNAL_ERROR),
-					 errmsg("SELinux: unable to get security label of the peer")));
-		/*
-		 * Set the working mode to DEFAULT from INTERNAL
-		 */
-		old_mode = sepgsql_set_mode(SEPGSQL_MODE_DEFAULT);
-		Assert(old_mode == SEPGSQL_MODE_INTERNAL);
-	}
 	return client_label;
 }
 
@@ -233,9 +209,7 @@ sepgsql_relation_relabel(const ObjectAddress *object, const char *seclabel)
  * An entrypoint of SECURITY LABEL statement
  */
 static void
-sepgsql_object_relabel(const ObjectAddress *object,
-					   const char *seclabel,
-					   int expected_parents)
+sepgsql_object_relabel(const ObjectAddress *object, const char *seclabel)
 {
 	switch (object->classId)
 	{
@@ -437,7 +411,7 @@ exec_relation_restorecon(struct selabel_handle *sehnd)
 				/*
 				 * check permission to relabel the relation
 				 */
-				sepgsql_object_relabel(&object, context, 0);
+				sepgsql_object_relabel(&object, context);
 
 				SetSecurityLabel(&object, SEPGSQL_LABEL_TAG, context);
 			}
@@ -492,7 +466,7 @@ exec_relation_restorecon(struct selabel_handle *sehnd)
 					/*
 					 * permission check to relabel the column
 					 */
-					sepgsql_object_relabel(&object, context, 0);
+					sepgsql_object_relabel(&object, context);
 
 					SetSecurityLabel(&object, SEPGSQL_LABEL_TAG, context);
 				}

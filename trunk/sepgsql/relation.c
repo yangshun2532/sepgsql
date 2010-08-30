@@ -155,7 +155,7 @@ sepgsql_one_relation_privileges(Oid relOid,
 	 * - clients cannot modify system catalogs using DMLs
 	 * - clients cannot reference/modify toast relations using DMLs
 	 */
-	if (sepgsql_get_enforce())
+	if (sepgsql_avc_getenforce())
 	{
 		Oid		relnamespace = get_rel_namespace(relOid);
 
