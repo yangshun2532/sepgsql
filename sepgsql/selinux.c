@@ -10,6 +10,7 @@
  */
 #include "postgres.h"
 
+#include "libpq/auth.h"
 #include "lib/stringinfo.h"
 #include "miscadmin.h"
 #include "utils/guc.h"
@@ -28,7 +29,7 @@ void _PG_init(void);
  * SEPGSQL_MODE_INTERNAL	: same as permissive mode, except for no audit logs.
  * SEPGSQL_MODE_DISABLED	: feature is disabled
  */
-static int sepgsql_mode;
+int sepgsql_mode;
 
 const struct config_enum_entry sepgsql_mode_options[] = {
 	{"default",		SEPGSQL_MODE_DEFAULT,		false},
@@ -40,7 +41,7 @@ const struct config_enum_entry sepgsql_mode_options[] = {
 /*
  * GUC: sepgsql_debug_audit = [on | off]
  */
-static bool sepgsql_debug_audit;
+bool sepgsql_debug_audit;
 
 /*
  * selinux_catalog
@@ -303,15 +304,6 @@ sepgsql_is_enabled(void)
 	return (sepgsql_mode != SEPGSQL_MODE_DISABLED ? true : false);
 }
 
-bool
-sepgsql_get_enforce(void)
-{
-	if (sepgsql_mode == SEPGSQL_MODE_DEFAULT && security_getenforce() == 1)
-		return true;
-
-	return false;
-}
-
 int
 sepgsql_get_mode(void)
 {
@@ -334,7 +326,7 @@ sepgsql_show_mode(void)
 	if (!sepgsql_is_enabled())
 		return "disabled";
 
-	if (sepgsql_get_enforce())
+	if (sepgsql_avc_getenforce())
 		return "enforcing";
 
 	return "permissive";
@@ -602,7 +594,7 @@ sepgsql_compute_perms(const char *scontext,
 		denied = required & ~avd.allowed;
 
 		if (sepgsql_debug_audit)
-			audited = (denied ? (denied & ~0) : (required & ~0));
+			audited = (denied ? denied : required);
 		else
 			audited = (denied ? (denied & avd.auditdeny)
 							  : (required & avd.auditallow));
@@ -632,6 +624,33 @@ sepgsql_compute_perms(const char *scontext,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("SELinux: security policy violation")));
 	return result;
+}
+
+/*
+ * sepgsql_client_authorization
+ *
+ * security hook on authorization.
+ * it switches the client label according to getpeercon()
+ */
+static void
+sepgsql_client_authorization(Port *port, int status)
+{
+	char	   *context;
+
+	/*
+	 * In the case when authentication failed, the core PG routine
+	 * shall disconnect the connection soon.
+	 */
+	if (status != STATUS_OK)
+		return;
+
+	if (getpeercon_raw(port->sock, &context) < 0)
+		ereport(FATAL,
+				(errcode(ERRCODE_INTERNAL_ERROR),
+				 errmsg("selinux could not retrieve peer security label")));
+
+	sepgsql_set_client_label(context);
+	sepgsql_set_mode(SEPGSQL_MODE_DEFAULT);
 }
 
 /*
@@ -698,6 +717,17 @@ _PG_init(void)
 		sepgsql_mode = SEPGSQL_MODE_DISABLED;
 	else
 	{
+		char	   *context;
+
+		/*
+		 * Set up dummy client label
+		 */
+		if (getcon_raw(&context) < 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_INTERNAL_ERROR),
+					 errmsg("SELinux: unable to get server security label")));
+		sepgsql_set_client_label(context);
+
 		/*
 		 * initialize userspace access vector
 		 */
@@ -706,6 +736,8 @@ _PG_init(void)
 		/*
 		 * If SELinux is available, register security hooks.
 		 */
+		ClientAuthentication_hook = sepgsql_client_authorization;
+
 		sepgsql_register_label_hooks();
 		sepgsql_register_relation_hooks();
 	}

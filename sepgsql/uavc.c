@@ -9,12 +9,15 @@
  * Copyright (c) 2006 - 2007, KaiGai Kohei <kaigai@kaigai.gr.jp>
  */
 #include "postgres.h"
-
-#include "catalog/objectaddress.h"
-
+#include "access/hash.h"
+#include "commands/seclabel.h"
+#include "utils/memutils.h"
 #include "sepgsql.h"
 
+#include <sched.h>
 #include <selinux/avc.h>
+#include <sys/mman.h>
+#include <unistd.h>
 
 extern const char *selinux_mnt;
 
@@ -106,7 +109,7 @@ sepgsql_avc_reclaim(avc_page *page)
 }
 
 #define sepgsql_avc_hash(tobject, tclass)					\
-	hash_uint32((tobjct)->classId ^ (tobject)->objectId ^	\
+	hash_uint32((tobject)->classId ^ (tobject)->objectId ^	\
 				(tobject)->objectSubId ^ ((tclass) << 3))	\
 
 static avc_datum *
@@ -205,9 +208,9 @@ sepgsql_client_has_perms(ObjectAddress	   *tobject,
 
 	sepgsql_avc_check_valid();
 	do {
-		cache = avc_lookup(client_avc_page, tobject, tclass);
+		cache = sepgsql_avc_lookup(client_avc_page, tobject, tclass);
 		if (!cache)
-			cache = avc_make_entry(client_avc_page, tobject, tclass);
+			cache = sepgsql_avc_make_entry(client_avc_page, tobject, tclass);
 
 		denied	= required & ~cache->allowed;
 		if (sepgsql_debug_audit)
@@ -227,7 +230,7 @@ sepgsql_client_has_perms(ObjectAddress	   *tobject,
 	if (audited && sepgsql_mode != SEPGSQL_MODE_INTERNAL)
 	{
 		scontext = client_avc_page->scontext;
-		tcontext = GetSecurityLabel(tobject, tclass);
+		tcontext = GetSecurityLabel(tobject, SEPGSQL_LABEL_TAG);
 		sepgsql_audit_log(!!denied,
 						  scontext,
 						  tcontext,
@@ -247,11 +250,13 @@ char *
 sepgsql_client_compute_create(ObjectAddress	   *tobject,
 							  security_class_t	tclass)
 {
+	avc_datum  *cache;
+
 	sepgsql_avc_check_valid();
 	do {
-		cache = avc_lookup(client_avc_page, tobject, tclass);
+		cache = sepgsql_avc_lookup(client_avc_page, tobject, tclass);
 		if (!cache)
-			cache = avc_make_entry(client_avc_page, tobject, tclass);
+			cache = sepgsql_avc_make_entry(client_avc_page, tobject, tclass);
 	} while (!sepgsql_avc_check_valid());
 
 	return cache->ncontext;
@@ -267,7 +272,6 @@ sepgsql_client_compute_create(ObjectAddress	   *tobject,
 void
 sepgsql_avc_switch_client(void)
 {
-	MemoryContext	oldcxt;
 	avc_page	   *new_page;
 	const char	   *scontext = sepgsql_get_client_label();
 
@@ -277,18 +281,18 @@ sepgsql_avc_switch_client(void)
 		do {
 			if (strcmp(new_page->scontext, scontext) == 0)
 			{
-				client_avc_page = nwe_page;
+				client_avc_page = new_page;
 				return;
 			}
 			new_page = new_page->next;
-		} whilc (new_page != client_avc_page);
+		} while (new_page != client_avc_page);
 	}
 	/*
 	 * not found, so create a new avc_page
 	 */
 	new_page = MemoryContextAllocZero(avc_mem_cxt,
 									  sizeof(avc_page) + strlen(scontext));
-	strcpy(avc_page->scontext, scontext);
+	strcpy(new_page->scontext, scontext);
 
 	if (!client_avc_page)
 	{
@@ -393,6 +397,8 @@ sepgsql_callback_kernel_status(int value)
 	 * it eventually invalidate userspace avc cache.
 	 */
 	selinux_state.curr_seqno++;
+
+	return 0;
 }
 
 static void
@@ -400,7 +406,6 @@ sepgsql_open_kernel_status(void)
 {
 	union selinux_callback cb;
 	char	fname[MAXPGPATH];
-	int		fdesc;
 
 	memset(&selinux_state, 0, sizeof(selinux_state));
 
@@ -435,19 +440,6 @@ fallback:
 	return;
 }
 
-static void
-sepgsql_close_kernel_status(void)
-{
-	if (selinux_state.kernel)
-	{
-		munmap(selinux_state.kernel, sysconf(_SC_PAGESIZE));
-		close(selinux_state.fdesc);
-		return;
-	}
-	avc_netlink_release_fd();
-	avc_netlink_close();
-}
-
 void
 sepgsql_avc_init(void)
 {
@@ -462,7 +454,7 @@ sepgsql_avc_init(void)
 	/*
 	 * open kernel event notifier
 	 */
-	sepgsql_open_kernel_status(void);
+	sepgsql_open_kernel_status();
 
 	/*
 	 * reset local avc
