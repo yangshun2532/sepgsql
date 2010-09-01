@@ -33,13 +33,12 @@ exec_get(memcached_st *mcd, const char *key)
 
 	value = memcached_get(mcd, key, strlen(key),
 						  &value_length, &flags, &error);
-	if (!value)
-		printf("get: key=%s error=%s\n",
-			   key, memcached_strerror(mcd, error));
-	else
+	if (value != NULL)
 		printf("get: key=%s value=%.*s flags=%08x\n",
 			   key, value_length, value, flags);
-
+	else
+		printf("get: key=%s error=%s\n",
+			   key, memcached_strerror(mcd, error));
 	return 0;
 }
 
@@ -47,16 +46,15 @@ static int
 exec_add(memcached_st *mcd, const char *key, const char *value,
 		 time_t expire, uint32_t flags)
 {
-	memcached_return_t	error;
-
-	if (MEMCACHED_SUCCESS != memcached_add(mcd, key, strlen(key),
-										   value, strlen(value),
-										   expire, flags))
-		printf("add: key=%s error=%s\n",
-			   key, memcached_strerror(mcd, error));
-	else
+	memcached_return_t	error = memcached_add(mcd, key, strlen(key),
+											  value, strlen(value),
+											  expire, flags);
+	if (error == MEMCACHED_SUCCESS)
 		printf("add: key=%s value=%s expire=%lu flags=%u\n",
 			   key, value, expire, flags);
+	else
+		printf("add: key=%s error=%s\n",
+			   key, memcached_strerror(mcd, error));
 	return 0;
 }
 
@@ -64,16 +62,135 @@ static int
 exec_set(memcached_st *mcd, const char *key, const char *value,
 		 time_t expire, uint32_t flags)
 {
-	memcached_return_t	error;
-
-	if (MEMCACHED_SUCCESS != memcached_set(mcd, key, strlen(key),
-										   value, strlen(value),
-										   expire, flags))
-		printf("set: key=%s error=%s\n",
-			   key, memcached_strerror(mcd, error));
-	else
+	memcached_return_t	error = memcached_set(mcd, key, strlen(key),
+											  value, strlen(value),
+											  expire, flags);
+	if (error == MEMCACHED_SUCCESS)
 		printf("set: key=%s value=%s expire=%lu flags=%u\n",
 			   key, value, expire, flags);
+	else
+		printf("set: key=%s error=%s\n",
+			   key, memcached_strerror(mcd, error));
+	return 0;
+}
+
+static int
+exec_replace(memcached_st *mcd, const char *key, const char *value,
+			 time_t expire, uint32_t flags)
+{
+	memcached_return_t  error = memcached_replace(mcd, key, strlen(key),
+												  value, strlen(value),
+												  expire, flags);
+	if (error == MEMCACHED_SUCCESS)
+		printf("replace: key=%s value=%s expire=%lu flags=%u\n",
+			   key, value, expire, flags);
+	else
+		printf("replace: key=%s error=%s\n",
+			   key, memcached_strerror(mcd, error));
+	return 0;
+}
+
+static int
+exec_append(memcached_st *mcd, const char *key, const char *value,
+			 time_t expire, uint32_t flags)
+{
+	memcached_return_t  error = memcached_append(mcd, key, strlen(key),
+												 value, strlen(value),
+												 expire, flags);
+	if (error == MEMCACHED_SUCCESS)
+		printf("append: key=%s value=%s expire=%lu flags=%u\n",
+			   key, value, expire, flags);
+	else
+		printf("append: key=%s error=%s\n",
+			   key, memcached_strerror(mcd, error));
+	return 0;
+}
+
+static int
+exec_prepend(memcached_st *mcd, const char *key, const char *value,
+			 time_t expire, uint32_t flags)
+{
+	memcached_return_t  error = memcached_replace(mcd, key, strlen(key),
+												  value, strlen(value),
+												  expire, flags);
+	if (error == MEMCACHED_SUCCESS)
+		printf("prepend: key=%s value=%s expire=%lu flags=%u\n",
+			   key, value, expire, flags);
+	else
+		printf("prepend: key=%s error=%s\n",
+			   key, memcached_strerror(mcd, error));
+	return 0;
+}
+
+static int
+exec_cas(memcached_st *mcd, const char *key, const char *value, uint64_t cas,
+		 time_t expire, uint32_t flags)
+{
+	memcached_return_t  error = memcached_cas(mcd, key, strlen(key),
+											  value, strlen(value),
+											  expire, flags, cas);
+	if (error == MEMCACHED_SUCCESS)
+		printf("cas: key=%s value=%s cas=%llu expire=%lu flags=%u\n",
+			   key, value, cas, expire, flags);
+	else
+		printf("cas: key=%s cas=%llu error=%s\n",
+			   key, cas, memcached_strerror(mcd, error));
+	return 0;
+}
+
+static int
+exec_delete(memcached_st *mcd, const char *key, time_t expire)
+{
+	memcached_return_t	error =  memcached_delete(mcd, key, strlen(key),
+												  expire);
+	if (error == MEMCACHED_SUCCESS)
+		printf("delete: key=%s expire=%lu\n", key, expire);
+	else
+		printf("delete: key=%s expire=%lu error=%s\n",
+			   key, expire, memcached_strerror(mcd, error));
+	return 0;
+}
+
+static int
+exec_incr(memcached_st *mcd, const char *key)
+{
+	memcached_return_t	error;
+	uint64_t			value;
+
+	error = memcached_increment(mcd, key, strlen(key), 0, &value);
+	if (error == MEMCACHED_SUCCESS)
+		printf("incr: key=%s value=%llu\n", key, value);
+	else
+		printf("incr: key=%s error=%s\n",
+			   key, memcached_strerror(mcd, error));
+	return 0;
+}
+
+static int
+exec_decr(memcached_st *mcd, const char *key)
+{
+	memcached_return_t	error;
+	uint64_t			value;
+
+	error = memcached_increment(mcd, key, strlen(key), 0, &value);
+	if (error == MEMCACHED_SUCCESS)
+		printf("decr: key=%s value=%llu\n", key, value);
+	else
+		printf("decr: key=%s error=%s\n",
+			   key, memcached_strerror(mcd, error));
+	return 0;
+}
+
+static int
+exec_flush(memcached_st *mcd, time_t expire)
+{
+	memcached_return_t	error = memcached_flush(mcd, expire);
+
+	if (error == MEMCACHED_SUCCESS)
+		printf("flush: expire=%lu\n", expire);
+	else
+		printf("flush: expire=%lu error=%s\n",
+			   expire, memcached_strerror(mcd, error));
 	return 0;
 }
 
@@ -92,19 +209,33 @@ exec_command(memcached_st *mcd, int n_cmds, char * const cmds[])
 		retval = exec_set(mcd, cmds[1], cmds[2],
 						  n_cmds > 3 ? atol(cmds[3]) : 0,
 						  n_cmds > 4 ? atol(cmds[4]) : 0);
-	return retval;
+	else if (strcmp(cmds[0], "replace") == 0 && (n_cmds >= 3 && n_cmds <= 5))
+		retval = exec_replace(mcd, cmds[1], cmds[2],
+							  n_cmds > 3 ? atol(cmds[3]) : 0,
+							  n_cmds > 4 ? atol(cmds[4]) : 0);
+	else if (strcmp(cmds[0], "append") == 0 && (n_cmds >= 3 && n_cmds <= 5))
+		retval = exec_append(mcd, cmds[1], cmds[2],
+							 n_cmds > 3 ? atol(cmds[3]) : 0,
+							 n_cmds > 4 ? atol(cmds[4]) : 0);
+	else if (strcmp(cmds[0], "prepend") == 0 && (n_cmds >= 3 && n_cmds <= 5))
+		retval = exec_prepend(mcd, cmds[1], cmds[2],
+							 n_cmds > 3 ? atol(cmds[3]) : 0,
+							 n_cmds > 4 ? atol(cmds[4]) : 0);
+	else if (strcmp(cmds[0], "cas") == 0 && (n_cmds >= 4 && n_cmds <= 6))
+		retval = exec_cas(mcd, cmds[1], cmds[2], atol(cmds[3]),
+						  n_cmds > 4 ? atol(cmds[4]) : 0,
+						  n_cmds > 5 ? atol(cmds[5]) : 0);
+	else if (strcmp(cmds[0], "delete") == 0 && (n_cmds >= 2 && n_cmds <= 3))
+		retval = exec_delete(mcd, cmds[1],
+							 n_cmds > 2 ? atol(cmds[2]) : 0);
+	else if (strcmp(cmds[0], "incr") == 0 && n_cmds == 2)
+		retval = exec_incr(mcd, cmds[1]);
+	else if (strcmp(cmds[0], "decr") == 0 && n_cmds == 2)
+		retval = exec_decr(mcd, cmds[1]);
+	else if (strcmp(cmds[0], "flush") == 0 && (n_cmds >= 1 && n_cmds <=2))
+		retval = exec_flush(mcd, n_cmds > 1 ? atol(cmds[1]) : 0);
 
-#if 0
-						"  get <key> [<keys>...]\n"
-						"  add <key> <value> [<expire> [<flags>]]\n"
-						"  set <key> <value> [<expire> [<flags>]]\n"
-						"  replace <key> <value> [<expire> [<flags>]]\n"
-						"  cas <key> <value> <cas> [<expire> [<flags>]]\n"
-						"  delete <key> <value>\n"
-						"  incr <key> <delta>\n"
-						"  decr <key> <delta>\n"
-						"  flush <when>\n"
-#endif
+	return retval;
 }
 
 static void
@@ -247,15 +378,17 @@ main(int argc, char * const argv[])
 						"  -s <scale>   scaling factor\n"
 						"\n"
 						"[<command>]\n"
-						"  get <key> [<keys>...]\n"
+						"  get <key>\n"
 						"  add <key> <value> [<expire> [<flags>]]\n"
 						"  set <key> <value> [<expire> [<flags>]]\n"
 						"  replace <key> <value> [<expire> [<flags>]]\n"
+						"  append <key> <value> [<expire> [<flags>]]\n"
+						"  prepend <key> <value> [<expire> [<flags>]]\n"
 						"  cas <key> <value> <cas> [<expire> [<flags>]]\n"
-						"  delete <key> <value>\n"
-						"  incr <key> <delta>\n"
-						"  decr <key> <delta>\n"
-						"  flush <when>\n"
+						"  delete <key> [<expire>]\n"
+						"  incr <key>\n"
+						"  decr <key>\n"
+						"  flush [<when>]\n"
 						"  ----\n"
 						"  simple_test\n",
 						argv[0]);
