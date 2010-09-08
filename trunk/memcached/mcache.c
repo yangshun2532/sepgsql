@@ -47,8 +47,13 @@ mchunk_get_datalen(mchunk_t *mchunk)
 static inline uint64_t
 mchunk_get_cas(mchunk_t *mchunk)
 {
+	uint64_t	cas;
+
 	if (mchunk->item.flags & MITEM_WITH_CAS)
-		return *((uint64_t *)mchunk->item.data);
+	{
+		memcpy(&cas, mchunk->item.data, sizeof(uint64_t));
+		return cas;
+	}
 	return 0;
 }
 
@@ -56,7 +61,9 @@ static inline void
 mchunk_set_cas(mchunk_t *mchunk, uint64_t cas)
 {
 	if (mchunk->item.flags & MITEM_WITH_CAS)
-		*((uint64_t *) mchunk->item.data) = cas;
+	{
+		memcpy(mchunk->item.data, &cas, sizeof(uint64_t));
+	}
 }
 
 #define mchunk_dump(out,se,hkey,hitem,mchunk)	\
@@ -215,12 +222,13 @@ mcache_index(selinux_engine_t *se, mchunk_t *mchunk)
 /*
  * mcache_reclaim
  *
- * 
+ * reclaim cold mcache
  */
 static void
 mcache_reclaim(selinux_engine_t *se, int num_reclaimed)
 {
 	mcache_t   *mcache;
+	mcache_t   *next;
 	mcache_t   *prev;
 	int			index;
 
@@ -234,14 +242,16 @@ mcache_reclaim(selinux_engine_t *se, int num_reclaimed)
 		mcache = se->mcache.slots[index];
 		while (mcache)
 		{
+			next = mcache->next;
+
 			if (mcache->is_hot)
 				mcache->is_hot = false;
 			else if (mcache->refcnt == 0)
 			{
 				if (!prev)
-					se->mcache.slots[index] = mcache->next;
+					se->mcache.slots[index] = next;
 				else
-					prev->next = mcache->next;
+					prev->next = next;
 
 				pthread_mutex_lock(&se->mcache.free_lock);
 				mcache->next = se->mcache.free_list;
@@ -250,9 +260,11 @@ mcache_reclaim(selinux_engine_t *se, int num_reclaimed)
 
 				num_reclaimed--;
 
+				mcache = next;
 				continue;
 			}
 			prev = mcache;
+			mcache = next;
 		}
 		pthread_mutex_unlock(&se->mcache.locks[index]);
 	}
