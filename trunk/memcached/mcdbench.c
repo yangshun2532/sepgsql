@@ -14,13 +14,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/time.h>
 #include <libmemcached/memcached.h>
 
 /*
  * option variable
  */
-static double	scaling = 1000.0;
-static int		num_threads = 1;
 static bool		verbose = false;
 
 static int
@@ -194,6 +193,92 @@ exec_flush(memcached_st *mcd, time_t expire)
 	return 0;
 }
 
+static void
+make_pseudo_value(unsigned int seed, char *value, int *vlen)
+{
+	int		length, pos = 0;
+
+	length = ((rand_r(&seed) & 15) *
+			  (rand_r(&seed) & 15) *
+			  (rand_r(&seed) & 15) + 64) & ~0x0007;
+
+	while (pos < length)
+		pos += sprintf(value + pos, "%08x", rand_r(&seed));
+
+	*vlen = length;
+}
+
+static int
+exec_simple_bench(memcached_st *mcd, double scale)
+{
+	char	kbuf[256];
+	char	vbuf[1024 * 1024];
+	int		klen, vlen;
+	int		i, n, count;
+	int		num_gets = 0;
+	int		num_adds = 0;
+	long	total = 0;
+	long	interval;
+	struct timeval tv1, tv2;
+
+	if (scale < 100.0)
+		scale = 100.0;
+
+	n = (int)(scale * 64);
+	count = (int)(scale * 512);
+
+	srand(count);
+
+	gettimeofday(&tv1, NULL);
+
+	memcached_flush(mcd, 0);
+
+	while (count-- > 0)
+	{
+		memcached_return_t	error;
+		uint32_t	flags;
+		char	   *value;
+		size_t		value_length;
+
+		i = rand() % n;
+
+		klen = sprintf(kbuf, "mcdbench_key%06u", i);
+
+		value = memcached_get(mcd, kbuf, klen, &value_length, &flags, &error);
+		if (value == NULL)
+		{
+			if (error != MEMCACHED_NOTFOUND)
+			{
+				printf("key=%s error=%s\n", kbuf, memcached_strerror(mcd, error));
+				continue;
+			}
+			make_pseudo_value(i, vbuf, &vlen);
+			error = memcached_add(mcd, kbuf, klen, vbuf, vlen, 0, 0);
+			if (error != MEMCACHED_SUCCESS)
+			{
+				printf("key=%s error=%s\n", kbuf, memcached_strerror(mcd, error));
+				continue;
+			}
+			num_adds++;
+			total += vlen;
+		}
+		else
+		{
+			num_gets++;
+			total += value_length;
+			free(value);
+		}
+	}
+	gettimeofday(&tv2, NULL);
+
+	interval = (tv2.tv_sec - tv1.tv_sec) * 1000000 + (tv2.tv_usec - tv1.tv_usec);
+
+	printf("time: %.2f  adds: %u  gets: %u  transfer: %lubytes\n",
+		   ((double)interval) / 1000000.0,
+		   num_adds, num_gets, total);
+	return 0;
+}
+
 static int
 exec_command(memcached_st *mcd, int n_cmds, char * const cmds[])
 {
@@ -234,6 +319,9 @@ exec_command(memcached_st *mcd, int n_cmds, char * const cmds[])
 		retval = exec_decr(mcd, cmds[1]);
 	else if (strcmp(cmds[0], "flush") == 0 && (n_cmds >= 1 && n_cmds <=2))
 		retval = exec_flush(mcd, n_cmds > 1 ? atol(cmds[1]) : 0);
+	else if (strcmp(cmds[0], "simple_bench") == 0 &&
+			 (n_cmds >= 1 && n_cmds <=2))
+		retval = exec_simple_bench(mcd, n_cmds > 1 ? atof(cmds[1]) : 100.0);
 
 	return retval;
 }
@@ -288,12 +376,11 @@ main(int argc, char * const argv[])
 	mcd = memcached_create(NULL);
 	if (!mcd)
 	{
-		fprintf(stderr, "memcached_create : %d(%s)\n",
-				errno, strerror(errno));
+		fprintf(stderr, "memcached_create(NULL) : %s\n", strerror(errno));
 		return 1;
 	}
 
-	while ((code = getopt(argc, argv, "c:n:s:vh")) > 0)
+	while ((code = getopt(argc, argv, "c:vh")) > 0)
 	{
 		memcached_return_t	rc;
 
@@ -346,36 +433,18 @@ main(int argc, char * const argv[])
 				}
 				num_conns++;
 				break;
-			case 'n':
-				num_threads = atoi(optarg);
-				if (num_threads < 1)
-				{
-					fprintf(stderr, "invalid number of threads: %d\n", num_threads);
-					return 1;
-				}
-				break;
-			case 's':
-				scaling = atof(optarg);
-				if (scaling < 1000.0)
-				{
-					fprintf(stderr, "too small scaling factor: %f\n", scaling);
-					return 1;
-				}
-				break;
 			case 'v':
 				verbose = true;
 				break;
 			default:
 				fprintf(stderr,
-						"usage: %s [options] [<command>]\n"
+						"usage: %s [options] [<commands>]\n"
 						"\n"
 						"[options]\n"
 						"  -c <server>  server to be connected\n"
 						"         [tcp://]<host>[:<port>][/<weight>]\n"
 						"         udp://<host>[:<port>][/<weight>]\n"
 						"         unix://<path>[/<weight>]\n"
-						"  -n <num>     number of threads\n"
-						"  -s <scale>   scaling factor\n"
 						"\n"
 						"[<command>]\n"
 						"  get <key>\n"
@@ -390,7 +459,7 @@ main(int argc, char * const argv[])
 						"  decr <key>\n"
 						"  flush [<when>]\n"
 						"  ----\n"
-						"  simple_test\n",
+						"  simple_bench [<scale>]\n",
 						argv[0]);
 				return 1;
 		}
