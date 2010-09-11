@@ -1,0 +1,39 @@
+DESTDIR	?=
+
+CC	?= @CC@
+CPP	?= @CPP@
+LIBS	?= @LIBS@
+CFLAGS	?= @CFLAGS@
+LDFLAGS	?= @LDFLAGS@
+CPPFLAGS?= @CPPFLAGS@
+
+INSTALL	?= $(shell which install)
+
+prefix	:= @prefix@
+exec_prefix := @exec_prefix@
+datarootdir := @datarootdir@
+bindir	:= @bindir@
+libdir	:= @libdir@
+
+MCDBENCH	= mcdbench
+MCDBENCH_OBJS	= mcdbench.o
+
+all: $(SEL_MODULE) $(MCDBENCH) 
+
+install: all
+	$(INSTALL) -m 0755 $(MCDBENCH) $(DESTDIR)$(bindir)
+
+uninstall:
+	rm -f $(DESTDIR)$(bindir)/$(MCDBENCH)
+
+$(SEL_MODULE): $(SEL_MODULE_OBJS)
+	$(CC) $(SEL_MODULE_LDFLAGS) $(SEL_MODULE_LIBS) -shared -o $@ $^
+
+$(MCDBENCH): $(MCDBENCH_OBJS)
+	$(CC) $(LDFLAGS) $(LIBS) -o $@ $^
+
+.c.o:
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
+
+clean:
+	rm -rf $(MCDBENCH) $(MCDBENCH_OBJS)
