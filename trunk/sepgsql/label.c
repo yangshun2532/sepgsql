@@ -32,11 +32,6 @@
 static security_context_t	client_label = NULL;
 
 /*
- * Saved security hooks
- */
-static check_object_relabel_type saved_object_relabel_hook = NULL;
-
-/*
  * sepgsql_get_client_label
  *
  * It returns security label of the client.
@@ -221,60 +216,19 @@ sepgsql_relation_relabel(const ObjectAddress *object, const char *seclabel)
  *
  * An entrypoint of SECURITY LABEL statement
  */
-static const char *
+static void
 sepgsql_object_relabel(const ObjectAddress *object,
-					   const char *tag,
 					   const char *seclabel)
 {
-	const char	   *result = NULL;
-
 	/*
-	 * If multiple ESPs are installed, ESP must prohibit to omit
-	 * FOR clause, because it is unclear what ESP's label being
-	 * relabeled.
+	 * validate format of the supplied security label,
+	 * if it is security context of selinux.
 	 */
-	if (!tag && saved_object_relabel_hook)
+	if (seclabel &&
+		security_check_context_raw((security_context_t) seclabel) < 0)
 		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("Prohibited to omit FOR clause now")));
-
-	/*
-	 * Call the secondary ESP, if available
-	 */
-	if (saved_object_relabel_hook)
-		result = saved_object_relabel_hook(object, tag, seclabel);
-
-	/*
-	 * If secondary module already handled the supplied label, or
-	 * the explicitly specified tag is not for SELinux, we don't
-	 * need to check neither the format of security context nor
-	 * {relabelfrom relabelto} permissions, but need to check
-	 * {setattr} because other ESP's label is one of properties
-	 * of the object.
-	 *
-	 * The sepgsql_xxxxx_relabel() functions don't check {relabelfrom
-	 * relabelto}, if the given 'seclabel' is NULL.
-	 */
-	if (result || (tag && strcmp(tag, SEPGSQL_LABEL_TAG) != 0))
-		seclabel = NULL;
-	else
-	{
-		/*
-		 * validation check of the supplied security label.
-		 */
-		if (security_check_context_raw((security_context_t) seclabel) < 0)
-			ereport(ERROR,
-					(errcode(ERRCODE_INVALID_SECLABEL),
-					 errmsg("invalid security label: \"%s\"", seclabel)));
-
-		/*
-		 * If the seclabel is valid and passes the rest of permission checks,
-		 * it shall be assigned on the supplied object as a security label
-		 * of SELinux.
-		 */
-		result = SEPGSQL_LABEL_TAG;
-	}
-
+				(errcode(ERRCODE_INVALID_SECLABEL),
+				 errmsg("invalid security label: \"%s\"", seclabel)));
 	/*
 	 * Do actual permission checks for each object classes
 	 */
@@ -288,7 +242,6 @@ sepgsql_object_relabel(const ObjectAddress *object,
 			elog(ERROR, "unsupported object type: %u", object->classId);
 			break;
 	}
-	return result;
 }
 
 /*
@@ -299,8 +252,8 @@ sepgsql_object_relabel(const ObjectAddress *object,
 void
 sepgsql_register_label_hooks(void)
 {
-	saved_object_relabel_hook = check_object_relabel_hook;
-	check_object_relabel_hook = sepgsql_object_relabel;
+	register_object_relabel_hook(SEPGSQL_LABEL_TAG,
+								 sepgsql_object_relabel);
 }
 
 /*
@@ -479,9 +432,7 @@ exec_relation_restorecon(struct selabel_handle *sehnd)
 				/*
 				 * check permission to relabel the relation
 				 */
-				(*check_object_relabel_hook)(&object,
-											 SEPGSQL_LABEL_TAG,
-											 context);
+				sepgsql_object_relabel(&object, context);
 				SetSecurityLabel(&object, SEPGSQL_LABEL_TAG, context);
 			}
 			PG_CATCH();
@@ -535,9 +486,7 @@ exec_relation_restorecon(struct selabel_handle *sehnd)
 					/*
 					 * permission check to relabel the column
 					 */
-					(*check_object_relabel_hook)(&object,
-												 SEPGSQL_LABEL_TAG,
-												 context);
+					sepgsql_object_relabel(&object, context);
 					SetSecurityLabel(&object, SEPGSQL_LABEL_TAG, context);
 				}
 				PG_CATCH();
