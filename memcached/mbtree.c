@@ -598,7 +598,7 @@ mbtree_merge(mhead_t *mhead, mchunk_t *mchunk)
 						lchunk->btree.keys + lchunk->btree.nkeys - nmove + 1,
 						sizeof(uint64_t) * (nmove - 1));
 				memmove(rchunk->btree.items,
-						lchunk->btree.items + lchunk->btree.nkeys - nmove,
+						lchunk->btree.items + lchunk->btree.nkeys - nmove + 1,
 						sizeof(uint64_t) * nmove);
 				rchunk->btree.nkeys += nmove;
 				lchunk->btree.nkeys -= nmove;
