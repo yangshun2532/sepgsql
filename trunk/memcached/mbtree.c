@@ -441,7 +441,7 @@ mbtree_merge(mhead_t *mhead, mchunk_t *mchunk)
 	 * In this case, we pull up the merged child as a new
 	 * root node to reduce depth of the B+tree.
 	 */
-	if (!mchunk->btree.is_leaf && mchunk->btree.nkeys == 0)
+	if (!mchunk->btree.is_leaf && mchunk->btree.nkeys == 1)
 	{
 		assert(mchunk->btree.parent == 0);
 
@@ -457,6 +457,9 @@ mbtree_merge(mhead_t *mhead, mchunk_t *mchunk)
 
 		if (!mchunk->btree.is_leaf)
 			children_reparent(mhead, mchunk);
+
+		/* free the original block */
+		mblock_free(mhead, cchunk);
 	}
 	if (mchunk->btree.parent == 0)
 		return;
