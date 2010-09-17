@@ -75,6 +75,7 @@ mselinux_check_alloc(selinux_engine_t *se, const void *cookie,
 			else
 				lchunk->label.refcount++;
 		}
+		mcache_put(se, mcache);
 		return secid;
 	}
 

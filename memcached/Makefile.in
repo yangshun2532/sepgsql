@@ -20,17 +20,11 @@ SEL_MODULE_OBJS	   = mblock.o mbtree.o mcache.o interfaces.o selinux.o
 SEL_MODULE_LIBS    = -laudit -lselinux -lpthread $(LIBS)
 SEL_MODULE_CFLAGS  = -g -Wall -fPIC $(CFLAGS) $(CPPFLAGS)
 SEL_MODULE_LDFLAGS = -rdynamic $(LDFLAGS)
-MCDBENCH	   = mcdbench
-MCDBENCH_SRCS      = mcdbench.c
-MCDBENCH_LIBS	   = -lpthread -lmemcached $(LIBS)
-MCDBENCH_CFLAGS	   = -g -Wall $(CFLAGS) $(CPPFLAGS)
-MCDBENCH_LDFLAGS   = $(LDFLAGS) $(MCDBENCH_LIBS)
 
-all: $(SEL_MODULE) $(MCDBENCH) 
+all: $(SEL_MODULE)
 
 install: all
 	$(INSTALL) -m 0755 $(SEL_MODULE) $(DESTDIR)$(libdir)
-	$(INSTALL) -m 0755 $(MCDBENCH) $(DESTDIR)$(bindir)
 
 uninstall:
 	rm -f $(DESTDIR)$(libdir)/$(SEL_MODULE)
@@ -39,12 +33,8 @@ uninstall:
 $(SEL_MODULE): $(SEL_MODULE_OBJS)
 	$(CC) $(SEL_MODULE_LDFLAGS) $(SEL_MODULE_LIBS) -shared -o $@ $^
 
-$(MCDBENCH): $(MCDBENCH_SRCS)
-	$(CC) $(MCDBENCH_CFLAGS) $(MCDBENCH_LDFLAGS) -o $@ $^
-
 .c.o:	selinux_engine.h
 	$(CC) $(SEL_MODULE_CFLAGS) -c -o $@ $<
 
 clean:
 	rm -rf $(SEL_MODULE) $(SEL_MODULE_OBJS)
-	rm -rf $(MCDBENCH) $(MCDBENCH_OBJS)
