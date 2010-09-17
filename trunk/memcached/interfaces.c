@@ -237,9 +237,9 @@ selinux_remove(ENGINE_HANDLE *handle,
 }
 
 static void
-selinux_release(ENGINE_HANDLE* handle, const
-				void *cookie,
-				item* item)
+selinux_release(ENGINE_HANDLE *handle,
+				const void *cookie,
+				item *item)
 {
 	selinux_engine_t   *se = (selinux_engine_t *)handle;
 	mcache_t		   *mcache = (mcache_t *)item;
