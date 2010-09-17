@@ -17,23 +17,28 @@ libdir	:= @libdir@
 
 MCDBENCH	= mcdbench
 MCDBENCH_OBJS	= mcdbench.o
+MCDCLIENT	= mcdclient
+MCDCLIENT_OBJS	= mcdclient.o
 
-all: $(SEL_MODULE) $(MCDBENCH) 
+all: $(MCDBENCH) $(MCDCLIENT)
 
 install: all
 	$(INSTALL) -m 0755 $(MCDBENCH) $(DESTDIR)$(bindir)
+	$(INSTALL) -m 0755 $(MCDCLIENT) $(DESTDIR)$(bindir)
 
 uninstall:
 	rm -f $(DESTDIR)$(bindir)/$(MCDBENCH)
-
-$(SEL_MODULE): $(SEL_MODULE_OBJS)
-	$(CC) $(SEL_MODULE_LDFLAGS) $(SEL_MODULE_LIBS) -shared -o $@ $^
+	rm -f $(DESTDIR)$(bindir)/$(MCDCLIENT)
 
 $(MCDBENCH): $(MCDBENCH_OBJS)
-	$(CC) $(LDFLAGS) $(LIBS) -o $@ $^
+	$(CC) $(LDFLAGS) $(LIBS) -lpthread -lmemcached -o $@ $^
+
+$(MCDCLIENT): $(MCDCLIENT_OBJS)
+	$(CC) $(LDFLAGS) $(LIBS) -lpthread -lmemcached -o $@ $^
 
 .c.o:
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
 clean:
 	rm -rf $(MCDBENCH) $(MCDBENCH_OBJS)
+	rm -rf $(MCDCLIENT) $(MCDCLIENT_OBJS)

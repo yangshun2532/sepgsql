@@ -37,6 +37,7 @@ static void *exec_simple_bench(void *args)
 	char			   *value;
 	char				kbuf[256];
 	char				vbuf[128 * 1024];
+	int					count = 0;
 
 	while (!worker_exit)
 	{
@@ -66,6 +67,9 @@ static void *exec_simple_bench(void *args)
 				continue;
 			}
 #endif
+			if (count++ > 100)
+				continue;
+
 			l = rand_r(&vseed);
 			vlen = (bench->scale * (((l>>2) & 0x0f) *
 									((l>>7) & 0x0f) *
