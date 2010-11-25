@@ -252,9 +252,9 @@ sepgsql_one_relation_privileges(Oid relOid,
 /*
  * sepgsql_relation_privileges
  *
- * Entrypoint of the DML checker hook
+ * Check DML permissions
  */
-static bool
+bool
 sepgsql_relation_privileges(List *rangeTabls, bool abort)
 {
 	ListCell   *lr;
@@ -335,6 +335,9 @@ sepgsql_relation_privileges(List *rangeTabls, bool abort)
 	}
 	return true;
 }
+
+
+
 
 /*****/
 static List *
@@ -425,14 +428,3 @@ sepgsql_relation_create(const char *relName,
 	return seclabels;
 }
 
-/*
- * sepgsql_register_relation_hooks
- *
- * It registers security hooks corresponding to relations
- */
-void
-sepgsql_register_relation_hooks(void)
-{
-	ExecutorCheckPerms_hook = sepgsql_relation_privileges;
-	check_relation_create_hook = sepgsql_relation_create;
-}

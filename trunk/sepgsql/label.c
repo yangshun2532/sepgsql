@@ -216,9 +216,8 @@ sepgsql_relation_relabel(const ObjectAddress *object, const char *seclabel)
  *
  * An entrypoint of SECURITY LABEL statement
  */
-static void
-sepgsql_object_relabel(const ObjectAddress *object,
-					   const char *seclabel)
+void
+sepgsql_object_relabel(const ObjectAddress *object, const char *seclabel)
 {
 	/*
 	 * validate format of the supplied security label,
@@ -242,18 +241,6 @@ sepgsql_object_relabel(const ObjectAddress *object,
 			elog(ERROR, "unsupported object type: %u", object->classId);
 			break;
 	}
-}
-
-/*
- * sepgsql_register_hooks
- *
- * It sets up security hooks correctly on starting up time.
- */
-void
-sepgsql_register_label_hooks(void)
-{
-	register_object_relabel_hook(SEPGSQL_LABEL_TAG,
-								 sepgsql_object_relabel);
 }
 
 /*

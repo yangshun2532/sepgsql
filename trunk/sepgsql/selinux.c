@@ -23,25 +23,24 @@ PG_MODULE_MAGIC;
 void _PG_init(void);
 
 /*
- * GUC: sepgsql_mode = [default|internal|disabled]
+ * sepgsql_mode
  *
- * SEPGSQL_MODE_DEFAULT     : follows on system setting
- * SEPGSQL_MODE_INTERNAL	: same as permissive mode, except for no audit logs.
- * SEPGSQL_MODE_DISABLED	: feature is disabled
+ * SEPGSQL_MODE_DEFAULT     : Same as system setting
+ * SEPGSQL_MODE_PERMISSIVE  : Always permissive mode
+ * SEPGSQL_MODE_INTERNAL    : Same as permissive mode, except for no audits
+ * SEPGSQL_MODE_DISABLED    : Feature being disabled
  */
-int sepgsql_mode;
-
-const struct config_enum_entry sepgsql_mode_options[] = {
-	{"default",		SEPGSQL_MODE_DEFAULT,		false},
-	{"internal",	SEPGSQL_MODE_INTERNAL,		true},
-	{"disabled",	SEPGSQL_MODE_DISABLED,		false},
-	{NULL,			0,							false}
-};
+static int	sepgsql_mode = SEPGSQL_MODE_INTERNAL;
 
 /*
- * GUC: sepgsql_debug_audit = [on | off]
+ * GUC: sepgsql.permissive = (on|off)
  */
-bool sepgsql_debug_audit;
+static bool	sepgsql_permissve;
+
+/*
+ * GUC: sepgsql.debug_audit = (on|off)
+ */
+static bool	sepgsql_debug_audit;
 
 /*
  * selinux_catalog
@@ -320,16 +319,26 @@ sepgsql_set_mode(int new_mode)
 	return old_mode;
 }
 
-static const char *
-sepgsql_show_mode(void)
+/*
+ * sepgsql_get_permissive
+ *
+ * It returns current setting of sepgsql.permissive variable.
+ */
+bool
+sepgsql_get_permissive(void)
 {
-	if (!sepgsql_is_enabled())
-		return "disabled";
+	return sepgsql_permissive;
+}
 
-	if (sepgsql_avc_getenforce())
-		return "enforcing";
-
-	return "permissive";
+/*
+ * sepgsql_get_debug_audit
+ *
+ * It returns current setting of sepgsql.debug_audit variable.
+ */
+bool
+sepgsql_get_debug_audit(void)
+{
+	return sepgsql_debug_audit;
 }
 
 /*
@@ -627,33 +636,6 @@ sepgsql_compute_perms(const char *scontext,
 }
 
 /*
- * sepgsql_client_authorization
- *
- * security hook on authorization.
- * it switches the client label according to getpeercon()
- */
-static void
-sepgsql_client_authorization(Port *port, int status)
-{
-	char	   *context;
-
-	/*
-	 * In the case when authentication failed, the core PG routine
-	 * shall disconnect the connection soon.
-	 */
-	if (status != STATUS_OK)
-		return;
-
-	if (getpeercon_raw(port->sock, &context) < 0)
-		ereport(FATAL,
-				(errcode(ERRCODE_INTERNAL_ERROR),
-				 errmsg("selinux could not retrieve peer security label")));
-
-	sepgsql_set_client_label(context);
-	sepgsql_set_mode(SEPGSQL_MODE_DEFAULT);
-}
-
-/*
  * Module load callback
  */
 void
@@ -670,49 +652,43 @@ _PG_init(void)
 						"except for shared_preload_libraries")));
 
 	/*
-	 * sepgsql_mode = [enforcing|permissive|disabled]
+	 * sepgsql.permissive = (on|off)
 	 *
-	 * A read-only GUC variable which shows the current working mode
-	 * in SE-PostgreSQL.
-	 *
-	 * XXX - Note that we don't support a feature to configure the
-	 *       working mode independent from kernel setting.
+	 * This variable controls performing mode of SE-PostgreSQL
+	 * on user's session.
 	 */
-	DefineCustomEnumVariable("sepgsql_mode",
-							 "SE-PostgreSQL working mode",
+	DefineCustomBoolVariable("sepgsql.permissive",
+							 "Performing mode of SE-PostgreSQL",
 							 NULL,
-							 &sepgsql_mode,
-							 SEPGSQL_MODE_INTERNAL,
-							 sepgsql_mode_options,
-							 PGC_INTERNAL,
-							 0,
+							 &sepgsql_permissve,
+							 false,
+							 PGC_POSTMASTER,
+							 GUC_NOT_IN_SAMPLE,
 							 NULL,
-							 sepgsql_show_mode);
-
+							 NULL);
 	/*
-	 * sepgsql_debug_audit = [on | off]
+	 * sepgsql.debug_audit = (on|off)
 	 *
-	 * It allows users to turn on/off audit logs on access control
-	 * decisions. When turned on, it writes out all the audit messages
-	 * independent from AUDITALLOW/DONTAUDIT setting in the policy.
-	 *
-	 * XXX - Note that this option will be deprecated in the future.
+	 * This variable allows users to turn on/off audit logs on access
+	 * control decisions, independent from auditallow/auditdeny setting
+	 * in the security policy.
+	 * We intend to use this option for debugging purpose.
 	 */
-	DefineCustomBoolVariable("sepgsql_debug_audit",
-							 "Turn on/off audit logs for debugging purpose",
+	DefineCustomBoolVariable("sepgsql.debug_audit",
+							 "Debug audit mode in SE-PostgreSQL",
 							 NULL,
 							 &sepgsql_debug_audit,
 							 false,
 							 PGC_USERSET,
-							 0,
+							 GUC_NOT_IN_SAMPLE,
 							 NULL,
 							 NULL);
+
 	/*
-	 * check availability of SELinux on the platform.
-	 * If disabled, SE-PostgreSQL is also disabled, and security
-	 * hooks will not be registered.
+	 * Check availability of SELinux on the platform.
+	 * If disabled, SE-PostgreSQL must be also disabled, then it does
+	 * not register any security hooks and rest of initialization.
 	 */
-	Assert(sepgsql_mode == SEPGSQL_MODE_INTERNAL);
 	if (is_selinux_enabled() < 1)
 		sepgsql_mode = SEPGSQL_MODE_DISABLED;
 	else
@@ -720,7 +696,15 @@ _PG_init(void)
 		char	   *context;
 
 		/*
-		 * Set up dummy client label
+		 * Set up dummy client label.
+		 *
+		 * XXX - note that PostgreSQL launches background worker process
+		 * like autovacuum without authentication steps. So, we initialize
+		 * sepgsql_mode with SEPGSQL_MODE_INTERNAL, and client_label with
+		 * the security context of server process.
+		 * Later, it also launches background of user session. In this case,
+		 * the process is always hooked on post-authentication, and we can
+		 * initialize the sepgsql_mode and client_label correctly.
 		 */
 		if (getcon_raw(&context) < 0)
 			ereport(ERROR,
@@ -734,11 +718,8 @@ _PG_init(void)
 		sepgsql_avc_init();
 
 		/*
-		 * If SELinux is available, register security hooks.
+		 * Registration of security hooks
 		 */
-		ClientAuthentication_hook = sepgsql_client_authorization;
-
-		sepgsql_register_label_hooks();
-		sepgsql_register_relation_hooks();
+		sepgsql_register_hooks();
 	}
 }
