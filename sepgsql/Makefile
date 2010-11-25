@@ -9,7 +9,7 @@
 PG_CONFIG = $(shell env PATH=$$PATH:/usr/local/pgsql/bin which pg_config)
 
 MODULE_big = sepgsql
-OBJS = selinux.o label.o uavc.o relation.o
+OBJS = selinux.o label.o uavc.o hooks.o relation.o
 SCRIPTS = initdb.sepgsql
 SCRIPTS_built = initdb.sepgsql
 SHLIB_LINK = -lselinux

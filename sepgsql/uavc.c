@@ -360,7 +360,7 @@ sepgsql_avc_check_valid(void)
 bool
 sepgsql_avc_getenforce(void)
 {
-	if (selinux_state.kernel)
+	if (selinux_state.kernel != MAP_FAILED)
 		return selinux_state.kernel->enforcing;
 
 	return security_getenforce() > 0;
@@ -375,7 +375,7 @@ sepgsql_avc_getenforce(void)
 bool
 sepgsql_avc_deny_unknown(void)
 {
-	if (selinux_state.kernel)
+	if (selinux_state.kernel != MAP_FAILED)
 		return selinux_state.kernel->deny_unknown;
 
 	return security_deny_unknown() > 0;

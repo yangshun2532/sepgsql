@@ -23,8 +23,9 @@
  * SE-PostgreSQL working mode
  */
 #define SEPGSQL_MODE_DEFAULT		1
-#define SEPGSQL_MODE_INTERNAL		2
-#define SEPGSQL_MODE_DISABLED		3
+#define SEPGSQL_MODE_PERMISSIVE		2
+#define SEPGSQL_MODE_INTERNAL		3
+#define SEPGSQL_MODE_DISABLED		4
 
 /*
  * Internally used code of object classes
@@ -207,6 +208,8 @@ extern bool sepgsql_is_enabled(void);
 
 extern int  sepgsql_get_mode(void);
 extern int  sepgsql_set_mode(int new_mode);
+extern bool	sepgsql_get_permissive(void);
+extern bool	sepgsql_get_debug_audit(void);
 
 extern void sepgsql_audit_log(bool denied,
 							  const char *scontext,
@@ -255,7 +258,8 @@ extern char *sepgsql_set_client_label(char *new_label);
 extern char *sepgsql_get_unlabeled_label(void);
 extern char *sepgsql_get_label(Oid relOid, Oid objOid, int32 subId);
 
-extern void  sepgsql_register_label_hooks(void);
+extern void	 sepgsql_object_relabel(const ObjectAddress *object,
+									const char *seclabel);
 
 extern Datum sepgsql_getcon(PG_FUNCTION_ARGS);
 extern Datum sepgsql_mcstrans_in(PG_FUNCTION_ARGS);
@@ -263,8 +267,29 @@ extern Datum sepgsql_mcstrans_out(PG_FUNCTION_ARGS);
 extern Datum sepgsql_restorecon(PG_FUNCTION_ARGS);
 
 /*
+ * language.c
+ */
+extern void	sepgsql_language_post_create(Oid objectId);
+
+/*
+ * largeobject.c
+ */
+extern void sepgsql_largeobject_post_create(Oid objectId);
+
+/*
+ * proc.c
+ */
+extern void	sepgsql_proc_post_create(Oid objectId);
+
+/*
  * relation.c
  */
-extern void  sepgsql_register_relation_hooks(void);
+extern bool	sepgsql_relation_privileges(List *rangeTabls, bool abort);
+extern void	sepgsql_relation_post_create(Oid objectId, int subId);
+
+/*
+ * schema.c
+ */
+extern void	sepgsql_schema_post_create(Oid objectId);
 
 #endif /* SEPGSQL_H */
