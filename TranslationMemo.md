@@ -1,0 +1,23 @@
+# quick word-to-word reference sheet
+
+# 単語帳 #
+カーネル呼び出し
+  * kernel call
+クライアントが権限を持たないDBオブジェクトへのアクセス
+  * illegal access
+著作権を保持する
+  * retain
+明示的
+  * explicit
+暗黙的
+  * implicit
+(情報)漏洩
+  * compromise
+改ざん
+  * manipulation
+行レベル
+  * row-level
+列レベル
+  * column-level
+タプル
+  * tuple

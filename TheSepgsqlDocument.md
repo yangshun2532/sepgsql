@@ -1,0 +1,1 @@
+This article was moved to http://wiki.postgresql.org/wiki/SEPostgreSQL

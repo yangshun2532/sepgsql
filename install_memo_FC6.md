@@ -1,0 +1,137 @@
+# Installation of SE-PostgreSQL (Fedora core 6) #
+This document describes the way to install SE-PostgreSQL onto Fedora core 6 system.
+
+## Preparation & Download ##
+You can download the packages provided by SE-PostgreSQL project from the following URL:
+```
+http://code.google.com/p/sepgsql/downloads/list
+```
+
+The followings are required to set up at least.
+  * sepostgresql-8.2.4-0.385.beta.fc6.i386.rpm
+  * selinux-policy-2.4.6-74.sepgsql.fc6.noarch.rpm
+  * selinux-policy-targeted-2.4.6-74.sepgsql.fc6.noarch.rpm
+
+Confirm the version of following packages:
+  * kernel (2.6.20-1.2944.fc6 or later)
+  * libselinux (1.33.4 or later)
+  * policycoreutils (1.34.1 or later)
+
+In addition, the latest version of postgresql package should be installed with your preference, because SE-PostgreSQL does not contain any frontend command like **psql**.
+
+**NOTE:** SE-PostgreSQL may work with older versions of the above packages, but development team has not confirmed them.
+
+## Applying RPM packages ##
+Apply the sepostgresql and security-policy packages with the following commans:
+```
+# rpm -ivh sepostgresql-8.2.4-0.385.beta.fc6.i386.rpm \
+           selinux-policy-2.4.6-74.sepgsql.fc6.noarch.rpm \
+           selinux-policy-targeted-2.4.6-74.sepgsql.fc6.noarch.rpm
+```
+
+Confirm sepostgresql has been installed and binary security policy has been linked.
+```
+# rpm -q sepostgresql
+sepostgresql-8.2.4-0.385.beta.fc6
+
+# semodule -l
+amavis  1.1.0
+    :
+sepostgresql    0.385
+    :
+smartmon        1.1.0
+#
+```
+
+### If troubled? ###
+In the older version of policycoreutils, we have encounted a trouble that linking binary security policy was failed on SELinux activated system. If you fails the installation, confirm the package version or try the following procedure.
+
+1. Reboot the system with **SELinux disabled**.
+
+2. Installed the sepostgresql and security-policy packages.
+
+3. Edit /etc/selinux/config to set **Permissive mode** on the next boot. The purpose is to avoid unexpected access denied and flood of SELinux logs. Several files are not labeled correctly due to SELinux disabled, so it is necessary to relabel on the next booting.
+```
+# This file controls the state of SELinux on the system.
+# SELINUX= can take one of these three values:
+#       enforcing - SELinux security policy is enforced.
+#       permissive - SELinux prints warnings instead of enforcing.
+#       disabled - SELinux is fully disabled.
+SELINUX=permissive
+#
+# SELINUXTYPE= type of policy in use. Possible values are:
+#       targeted - Only targeted network daemons are protected.
+#       strict - Full SELinux protection.
+SELINUXTYPE=targeted
+
+# SETLOCALDEFS= Check local definition changes
+SETLOCALDEFS=0
+```
+
+4. Reboot the system. The system init script will kick filesystem relabeling process. Please wait for a while.
+
+5. Confirm sepostgresql has been installed and binary security policy has been linked.
+```
+# rpm -q sepostgresql
+sepostgresql-8.2.4-0.385.beta.fc6
+
+# semodule -l
+amavis  1.1.0
+    :
+sepostgresql    0.385
+    :
+smartmon        1.1.0
+#
+```
+
+## Setup SE-PostgreSQL ##
+You have to execute /etc/init.d/sepostgresql with initdb command to initialize a database cluster under /var/lib/sepgsql. Please confirm the directory is not exist or empty.
+
+```
+[root@masu ~]# /etc/init.d/sepostgresql initdb
+Initializing database:                           [  OK  ]
+[root@masu ~]# 
+```
+Then, you can start sepostgresql server. SE-PostgreSQL works with sepgsql user on the operating system, so you can create database users as DBA or others on sepgsql account at first. This user is created at installation automatically.
+
+In the following example, we create a database role kaigai as a DBA.
+
+```
+[root@masu ~]# /etc/init.d/sepostgresql start
+Starting sepostgresql service:                   [  OK  ]
+[root@masu ~]# su - sepgsql
+-bash-3.2$ createuser kaigai
+Shall the new role be a superuser? (y/n) y
+CREATE ROLE
+-bash-3.2$
+```
+
+
+## Enjoy SE-PostgreSQL ##
+SE-PostgreSQL package does not contain a front-end command. You can use psql command in postgresql package, if necessary.
+
+```
+[kaigai@masu ~]$ psql postgres
+Welcome to psql 8.2.4, the PostgreSQL interactive terminal.
+
+Type:  \copyright for distribution terms
+       \h for help with SQL commands
+       \? for help with psql commands
+       \g or terminate with semicolon to execute query
+       \q to quit
+
+postgres=# select security_context, * from drink;
+NOTICE:  SELinux: denied { select } scontext=system_u:system_r:unconfined_t
+        tcontext=user_u:object_r:sepgsql_table_t:Classified tclass=tuple
+NOTICE:  SELinux: denied { select } scontext=system_u:system_r:unconfined_t
+        tcontext=user_u:object_r:sepgsql_table_t:Classified tclass=tuple
+         security_context          | id | name  | price | alcohol
+-----------------------------------+----+-------+-------+---------
+ system_u:object_r:sepgsql_table_t |  1 | coke  |   110 | f
+ system_u:object_r:sepgsql_table_t |  2 | tea   |   120 | f
+ system_u:object_r:sepgsql_table_t |  3 | juice |   150 | f
+ system_u:object_r:sepgsql_table_t |  4 | water |   120 | f
+(4 rows)
+
+postgres=#
+```
